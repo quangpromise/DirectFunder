@@ -21,6 +21,7 @@ import { useAlert } from "@/components/alert-dialog";
 import { isDuplicateSsn, digitsOnly } from "@/lib/ssn";
 import { getFullName } from "@/lib/client-name";
 import { hasWaitingOrderForSsn, missingOrderClientFields } from "@/lib/orders";
+import { greetingPeriodFor, GreetingPeriod } from "@/lib/greeting";
 import { useT, useLanguage, translateColumnLabel, translateOptionLabel } from "@/lib/i18n";
 import { PeriodSelector, ReportPanel, ReportStatCard } from "@/components/report-ui";
 import {
@@ -175,6 +176,17 @@ export default function CasesPage() {
   // mình phụ trách) và Processor (xem hồ sơ CỦA CHÍNH MÌNH do Agent nào tạo/phụ trách).
   // Mặc định "all" ("Tất cả Agent") — lựa chọn thứ 2 mới là "Hồ sơ của tôi".
   const [agentFilter, setAgentFilter] = useState<string>("all");
+  // Khung giờ hiện tại (sáng/chiều/tối/khuya, tính theo giờ Phoenix — xem greeting.ts)
+  // dùng cho lời chào đầu trang. Khởi tạo null (thay vì tính ngay lúc render) để tránh
+  // lệch giữa server/client (server không có múi giờ Phoenix của client) -> chỉ set khi
+  // đã mount ở client, tự cập nhật lại mỗi phút phòng khi mở trang qua lúc giao ca.
+  const [greetingPeriod, setGreetingPeriod] = useState<GreetingPeriod | null>(null);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setGreetingPeriod(greetingPeriodFor(new Date()));
+    const id = setInterval(() => setGreetingPeriod(greetingPeriodFor(new Date())), 60_000);
+    return () => clearInterval(id);
+  }, []);
   const [tab, setTab] = useState<CaseTab>("all");
   const [dragColId, setDragColId] = useState<string | null>(null);
   const [dragRowId, setDragRowId] = useState<string | null>(null);
@@ -485,7 +497,8 @@ export default function CasesPage() {
       <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3 sm:px-6">
         <div>
           <h1 className="text-base font-semibold tracking-tight sm:text-lg">
-            {t("cases.greeting")} {user.name.split(" ").slice(-1)[0]} · {t("cases.title")}
+            {t("cases.greeting")} {user.name.split(" ").slice(-1)[0]}
+            {greetingPeriod && <> - {t(`cases.greetingPeriod.${greetingPeriod}`)}</>}
           </h1>
         </div>
 

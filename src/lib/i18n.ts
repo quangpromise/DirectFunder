@@ -63,6 +63,10 @@ const dict: Record<Language, Record<string, string>> = {
     // Cases page
     "cases.supportBlocked": "Tài khoản Support chỉ có quyền truy cập tab Order.",
     "cases.greeting": "Chào",
+    "cases.greetingPeriod.morning": "Chào buổi sáng",
+    "cases.greetingPeriod.afternoon": "Chào buổi chiều",
+    "cases.greetingPeriod.evening": "Chào buổi tối",
+    "cases.greetingPeriod.night": "Chào buổi khuya",
     "cases.title": "Hồ sơ khách hàng",
     "cases.addRowConfirm": "Thêm một hồ sơ mới vào bảng?",
     "cases.addRowTitle": "Thêm dòng",
@@ -379,6 +383,10 @@ const dict: Record<Language, Record<string, string>> = {
     // Cases page
     "cases.supportBlocked": "Support accounts only have access to the Order tab.",
     "cases.greeting": "Hello",
+    "cases.greetingPeriod.morning": "Good Morning",
+    "cases.greetingPeriod.afternoon": "Good Afternoon",
+    "cases.greetingPeriod.evening": "Good Evening",
+    "cases.greetingPeriod.night": "Good Night",
     "cases.title": "Customer Cases",
     "cases.addRowConfirm": "Add a new case to the table?",
     "cases.addRowTitle": "Add row",
