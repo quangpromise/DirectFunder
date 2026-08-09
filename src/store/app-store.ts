@@ -337,48 +337,60 @@ export const useAppStore = create<AppState>()(
       },
 
       addRow: (creatorId, creatorRole) => {
-        let created: CaseRecord | null = null;
-        set((state) => {
-          const id = uniqueId("c");
-          // Số hồ sơ hiển thị (dạng số thuần) tính theo số lớn nhất đang có (kể cả hồ sơ
-          // đã xóa trong lịch sử) + 1 — đọc trực tiếp từ dữ liệu hiện tại thay vì bộ đếm
-          // riêng, nên không bao giờ lặp lại số dù reload trang bao nhiêu lần.
-          const maxCaseNum = [...state.cases, ...state.deletionHistory.map((d) => d.caseSnapshot)].reduce(
-            (max, c) => {
-              const m = /^(\d+)$/.exec(c.caseNumber);
-              return m ? Math.max(max, Number(m[1])) : max;
-            },
-            1000
-          );
-          const newCase: CaseRecord = {
-            id,
-            status: "pre_processing",
-            clients: [
-              { firstName: "", lastName: "" },
-              { firstName: "", lastName: "" },
-            ],
-            clientLink: null,
-            zipcode: "",
-            address: "",
-            phone: "",
-            description: "",
-            caseNumber: `${maxCaseNum + 1}`,
-            money: 0,
-            orders: [],
-            // Tự gán cho người tạo nếu là Agent/Processor, để hồ sơ mới không biến mất
-            // khỏi danh sách hồ sơ họ được thấy (đã lọc theo canViewCase).
-            assignedTo: creatorRole === "agent" ? creatorId : null,
-            assignedProcessor: creatorRole === "processor" ? creatorId : null,
-            ssn: [null, null],
-            descriptionReplies: [],
-            descriptionReadBy: [],
-            custom: {},
-            updatedAt: new Date().toISOString(),
-          };
-          created = newCase;
-          return { cases: [...state.cases, newCase] };
-        });
-        if (created) syncInBackground("addRow", api.createCase(created));
+        const state = get();
+        const id = uniqueId("c");
+        // Số hồ sơ hiển thị (dạng số thuần) tính theo số lớn nhất đang có (kể cả hồ sơ
+        // đã xóa trong lịch sử) + 1 — đọc trực tiếp từ dữ liệu hiện tại thay vì bộ đếm
+        // riêng, nên không bao giờ lặp lại số dù reload trang bao nhiêu lần. Đây chỉ là
+        // giá trị TẠM để hiển thị ngay: state.cases có thể đã bị lọc theo quyền xem (Agent/
+        // Processor chỉ thấy hồ sơ của mình) nên số này dễ bị trùng — server luôn tự tính
+        // lại caseNumber thật trên toàn bộ dữ liệu và trả về, xem phần reconcile bên dưới.
+        const maxCaseNum = [...state.cases, ...state.deletionHistory.map((d) => d.caseSnapshot)].reduce(
+          (max, c) => {
+            const m = /^(\d+)$/.exec(c.caseNumber);
+            return m ? Math.max(max, Number(m[1])) : max;
+          },
+          1000
+        );
+        const optimistic: CaseRecord = {
+          id,
+          status: "pre_processing",
+          clients: [
+            { firstName: "", lastName: "" },
+            { firstName: "", lastName: "" },
+          ],
+          clientLink: null,
+          zipcode: "",
+          address: "",
+          phone: "",
+          description: "",
+          caseNumber: `${maxCaseNum + 1}`,
+          money: 0,
+          orders: [],
+          // Tự gán cho người tạo nếu là Agent/Processor, để hồ sơ mới không biến mất
+          // khỏi danh sách hồ sơ họ được thấy (đã lọc theo canViewCase).
+          assignedTo: creatorRole === "agent" ? creatorId : null,
+          assignedProcessor: creatorRole === "processor" ? creatorId : null,
+          ssn: [null, null],
+          descriptionReplies: [],
+          descriptionReadBy: [],
+          custom: {},
+          updatedAt: new Date().toISOString(),
+        };
+        set((s) => ({ cases: [...s.cases, optimistic] }));
+
+        // Đợi phản hồi rồi thay case tạm bằng bản server trả về (có caseNumber thật);
+        // nếu request lỗi (vd. hết quyền), rollback bỏ dòng tạm để không hiển thị nhầm
+        // 1 hồ sơ chưa thực sự được lưu.
+        api.createCase(optimistic).then(
+          (serverCase) => {
+            set((s) => ({ cases: s.cases.map((c) => (c.id === optimistic.id ? serverCase : c)) }));
+          },
+          (err) => {
+            console.error("[sync:addRow] Tạo hồ sơ thất bại, hoàn tác dòng tạm:", err);
+            set((s) => ({ cases: s.cases.filter((c) => c.id !== optimistic.id) }));
+          }
+        );
       },
 
       deleteRow: (caseId, deletedByUserId) => {

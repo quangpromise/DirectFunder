@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "db:pull-prod": "tsx prisma/pull-from-prod.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.9.1",

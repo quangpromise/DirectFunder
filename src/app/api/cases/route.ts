@@ -58,6 +58,21 @@ export async function GET() {
   return NextResponse.json(visible);
 }
 
+/**
+ * Tính số hồ sơ (caseNumber) tiếp theo dựa trên TOÀN BỘ case trong DB — không tin số do
+ * client gửi lên, vì client (đặc biệt Agent/Processor) chỉ nhìn thấy tập case đã bị lọc
+ * theo quyền (canViewCase), nên tính "số lớn nhất + 1" phía client dễ ra số bị trùng với
+ * case mà họ không nhìn thấy được, vi phạm ràng buộc unique trên caseNumber.
+ */
+async function nextCaseNumber(): Promise<string> {
+  const rows = await prisma.case.findMany({ select: { caseNumber: true } });
+  const max = rows.reduce((m, r) => {
+    const n = Number(r.caseNumber);
+    return Number.isFinite(n) ? Math.max(m, n) : m;
+  }, 1000);
+  return String(max + 1);
+}
+
 export async function POST(request: NextRequest) {
   const me = await requireUser();
   if (!me) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
@@ -68,11 +83,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Không có quyền thêm hồ sơ" }, { status: 403 });
   }
 
-  // Frontend (app-store.ts addRow) đã tự tính sẵn id/số hồ sơ/auto-assign theo đúng
-  // logic nghiệp vụ hiện có (xét cả lịch sử xoá) và gửi nguyên object CaseRecord lên —
-  // server chỉ việc lưu lại, tránh viết trùng 2 nơi 2 phiên bản logic đánh số khác nhau.
-  // Nếu gọi API trực tiếp không kèm body (vd. test), fallback tự sinh tối thiểu.
+  // Frontend (app-store.ts addRow) đã tự tính sẵn id/auto-assign theo đúng logic nghiệp
+  // vụ hiện có và gửi nguyên object CaseRecord lên — server giữ lại các field đó, CHỈ
+  // riêng caseNumber luôn tự tính lại server-side (xem nextCaseNumber ở trên) vì đây là
+  // field cần đúng trên toàn bộ dữ liệu, không thể tin tưởng góc nhìn đã lọc của client.
   const body = (await request.json().catch(() => null)) as Partial<CaseRecord> | null;
+  const caseNumber = await nextCaseNumber();
 
   let data: Prisma.CaseCreateInput;
   if (body && typeof body === "object") {
@@ -90,7 +106,7 @@ export async function POST(request: NextRequest) {
       description: body.description ?? "",
       descriptionReplies: (body.descriptionReplies ?? []) as unknown as Prisma.InputJsonValue,
       descriptionReadBy: body.descriptionReadBy ?? [],
-      caseNumber: body.caseNumber ?? String(Date.now()),
+      caseNumber,
       money: body.money ?? 0,
       orders: (body.orders ?? []) as unknown as Prisma.InputJsonValue,
       ssn: (body.ssn ?? [null, null]) as unknown as Prisma.InputJsonValue,
@@ -101,7 +117,6 @@ export async function POST(request: NextRequest) {
   } else {
     const columns = (config?.columns as ColumnDef[] | undefined) ?? [];
     const statusColumn = columns.find((c) => c.id === "status");
-    const last = await prisma.case.findFirst({ orderBy: { caseNumber: "desc" } });
     data = {
       status: statusColumn?.options?.[0]?.id ?? "",
       clients: [
@@ -115,7 +130,7 @@ export async function POST(request: NextRequest) {
       description: "",
       descriptionReplies: [],
       descriptionReadBy: [],
-      caseNumber: String((Number(last?.caseNumber ?? "1000") || 1000) + 1),
+      caseNumber,
       money: 0,
       orders: [],
       ssn: [null, null],
