@@ -1,0 +1,535 @@
+import { useAppStore } from "@/store/app-store";
+import { Language } from "./types";
+
+/**
+ * Từ điển dịch phẳng (flat key -> chuỗi) cho 2 ngôn ngữ. Chỉ chứa text hiển thị cho
+ * người dùng (UI chrome) — không dịch tên cột/nhãn nghiệp vụ vốn đã là thuật ngữ tiếng
+ * Anh chuẩn (Status, Client Name, SSN, Order 8821...) vì đó là danh từ riêng của sản
+ * phẩm, không phải câu chữ cần bản địa hóa.
+ */
+const dict: Record<Language, Record<string, string>> = {
+  vi: {
+    // Top nav
+    "nav.cases": "Hồ sơ",
+    "nav.orders": "Order",
+    "nav.users": "Tài khoản",
+    "nav.permissions": "Phân quyền",
+    "nav.openMenu": "Mở menu",
+    "nav.changePassword": "Đổi mật khẩu",
+    "nav.logout": "Đăng xuất",
+
+    // Language switcher
+    "lang.vietnamese": "Tiếng Việt",
+    "lang.english": "English",
+
+    // Login page
+    "login.tagline": "Nền tảng quản lý hồ sơ & công việc theo thời gian thực. Đăng nhập để tiếp tục.",
+    "login.heading": "Đăng nhập",
+    "login.email": "Email",
+    "login.password": "Mật khẩu",
+    "login.showPassword": "Hiện mật khẩu",
+    "login.hidePassword": "Ẩn mật khẩu",
+    "login.submit": "Đăng nhập",
+    "login.error": "Email hoặc mật khẩu không đúng.",
+    "login.defaultAdmin": "Tài khoản Admin mặc định",
+    "login.footer": "© 2026 Direct Funder. Thiết kế lấy cảm hứng tài chính · công nghệ.",
+
+    // Common
+    "common.total": "Tổng",
+    "common.value": "Giá trị",
+    "common.allStatus": "Tất cả trạng thái",
+    "common.searchPlaceholder": "Tìm client, phone, case...",
+    "common.addColumn": "Thêm cột",
+    "common.history": "Lịch sử",
+    "common.addRow": "Thêm dòng",
+    "common.noRowsFound": "Không tìm thấy hồ sơ nào.",
+    "common.cancel": "Hủy",
+    "common.close": "Đóng",
+    "common.save": "Lưu",
+    "common.done": "Xong",
+    "common.add": "Thêm",
+    "common.yes": "Có",
+    "common.no": "Không",
+    "common.confirm": "Xác nhận",
+    "common.warning": "Cảnh báo",
+    "common.gotIt": "Đã hiểu",
+
+    // Cases page
+    "cases.supportBlocked": "Tài khoản Support chỉ có quyền truy cập tab Order.",
+    "cases.greeting": "Chào",
+    "cases.title": "Hồ sơ khách hàng",
+    "cases.addRowConfirm": "Thêm một hồ sơ mới vào bảng?",
+    "cases.addRowTitle": "Thêm dòng",
+    "cases.deleteRowConfirm": "Xóa hồ sơ này? Hành động này sẽ được ghi lại vào lịch sử xóa.",
+    "cases.deleteRowTitle": "Xóa hồ sơ",
+    "cases.placeOrderConfirm": "Đặt {label} cho hồ sơ này?",
+    "cases.placeOrderTitle": "Đặt order",
+    "cases.missingFieldsTitle": "Thiếu thông tin bắt buộc",
+    "cases.missingFieldsBody": "Vui lòng nhập đầy đủ các trường sau trước khi đặt {label}:",
+    "cases.tab.all": "Tất cả",
+    "cases.tab.cannotProcess": "Không thể xử lý",
+    "cases.tab.processing": "Đang xử lý",
+    "cases.tab.done": "Hoàn tất",
+
+    // Column headers (mặc định)
+    "col.header.status": "Trạng thái",
+    "col.header.clientName": "Tên khách hàng",
+    "col.header.ssn": "SSN",
+    "col.header.phone": "Số điện thoại",
+    "col.header.zipcode": "Mã Zip",
+    "col.header.address": "Địa chỉ",
+    "col.header.description": "Mô tả",
+    "col.header.caseNumber": "Case",
+    "col.header.money": "Số tiền",
+    "col.header.order": "Order",
+    "col.header.orderStatus": "Trạng thái",
+    "col.header.agent": "Agent",
+    "col.header.processor": "Processor",
+
+    // Status option labels (mặc định)
+    "status.pre_processing": "Chuẩn bị hồ sơ",
+    "status.processing": "Đang xử lý",
+    "status.missing_docs": "Thiếu hồ sơ",
+    "status.cpa_review": "Kế toán duyệt",
+    "status.approved": "Đã duyệt",
+    "status.cancelled": "Đã hủy",
+    "status.on_hold": "Tạm hoãn",
+    "status.done": "Hoàn tất",
+    "status.pending": "Đang chờ",
+
+    // Orders page
+    "orders.supportOnlyDesc": "Toàn bộ hồ sơ đã đặt order của tất cả tài khoản, theo từng loại, sắp xếp theo thời gian đặt order trước.",
+    "orders.selfOnlyDesc": "Hồ sơ order do chính bạn đặt, theo từng loại, sắp xếp theo thời gian đặt order trước.",
+    "orders.accessDenied": "Chỉ tài khoản Agent, Processor hoặc Support mới có quyền truy cập trang này.",
+    "orders.sub.waiting": "Đang chờ",
+    "orders.sub.done": "Hoàn tất",
+    "orders.col.placedAt": "Ngày đặt order",
+    "orders.col.clientName": "Tên khách hàng",
+    "orders.col.phone": "Số điện thoại",
+    "orders.col.ssn": "SSN",
+    "orders.col.formatName": "Format Name",
+    "orders.col.address": "Địa chỉ",
+    "orders.col.account": "Tài khoản",
+    "orders.col.statusUpdatedAt": "Ngày thực hiện",
+    "orders.col.assign": "Giao việc",
+    "orders.deleteRowConfirm": 'Xóa dòng "{name}" khỏi tab {tab}?',
+    "orders.deleteRowTitle": "Xóa dòng Order",
+    "orders.deleteRow": "Xóa dòng",
+    "orders.emptyState": "Chưa có hồ sơ nào đặt {tab} ở trạng thái {sub}.",
+
+    // Users page
+    "users.title": "Quản lý tài khoản",
+    "users.count": "tài khoản",
+    "users.add": "Thêm tài khoản",
+    "users.addNew": "Thêm tài khoản mới",
+    "users.fullName": "Họ tên",
+    "users.fullNamePlaceholder": "Nguyễn Văn A",
+    "users.email": "Email",
+    "users.password": "Mật khẩu",
+    "users.passwordPlaceholder": "Mật khẩu đăng nhập",
+    "users.role": "Vai trò",
+    "users.deleteLastManager": "Không thể xóa Admin cuối cùng",
+    "users.deleteSelf": "Không thể tự xóa chính mình",
+    "users.delete": "Xóa tài khoản",
+    "users.accessDenied": "Chỉ Quản lý (Admin) mới có quyền truy cập trang này.",
+    "users.errRequired": "Vui lòng nhập đầy đủ họ tên, email và mật khẩu.",
+    "users.errEmailTaken": "Email này đã được dùng cho tài khoản khác.",
+
+    // Permissions page
+    "permissions.title": "Phân quyền tính năng",
+    "permissions.desc": "Chọn vai trò nào được phép dùng từng tính năng. Quản lý (Admin) luôn được phép, không thể tắt.",
+    "permissions.feature": "Tính năng",
+    "permissions.footnote": "Quyền sửa từng cột dữ liệu trong bảng hồ sơ được cấu hình riêng ở nút cài đặt (⚙) trên tiêu đề mỗi cột, trang Hồ sơ.",
+
+    // Column settings dialog
+    "col.settingsTitle": "Cài đặt cột",
+    "col.settingsBtn": "Cài đặt cột {label}",
+    "col.name": "Tên cột",
+    "col.editableRoles": "Vai trò được phép sửa",
+    "col.editableRolesNote": "Kể cả Quản lý (Admin) — bỏ chọn nghĩa là vai trò đó không sửa được ô dữ liệu của cột này.",
+    "col.optionsList": "Danh sách lựa chọn & màu sắc",
+    "col.textColor": "Màu chữ",
+    "col.bgColor": "Màu nền",
+    "col.removeOption": "Xóa lựa chọn",
+    "col.newOptionPlaceholder": "Tên lựa chọn mới...",
+    "col.deleteColumn": "Xóa cột",
+    "col.renameConfirm": 'Đổi tên cột "{old}" thành "{new}"?',
+    "col.renameTitle": "Sửa cột",
+    "col.removeOptionConfirm": 'Xóa lựa chọn "{label}" khỏi cột?',
+    "col.removeOptionTitle": "Xóa lựa chọn",
+    "col.deleteColumnConfirm": 'Xóa cột "{label}"? Toàn bộ dữ liệu của cột này trên mọi hồ sơ sẽ bị xóa.',
+    "col.deleteColumnTitle": "Xóa cột",
+
+    // Add column dialog
+    "addCol.type.text": "Văn bản",
+    "addCol.type.number": "Số",
+    "addCol.type.currency": "Tiền tệ ($)",
+    "addCol.type.boolean": "Có/Không",
+    "addCol.type.date": "Ngày",
+    "addCol.type.select": "Danh sách lựa chọn",
+    "addCol.title": "Thêm cột mới",
+    "addCol.name": "Tên cột",
+    "addCol.namePlaceholder": "Ví dụ: Ngày hẹn",
+    "addCol.dataType": "Kiểu dữ liệu",
+    "addCol.optionsList": "Danh sách lựa chọn & màu sắc",
+    "addCol.newOptionPlaceholder": "Tên lựa chọn...",
+    "addCol.confirm": 'Thêm cột "{label}" vào bảng?',
+
+    // Change password dialog
+    "pwd.title": "Đổi mật khẩu",
+    "pwd.current": "Mật khẩu hiện tại",
+    "pwd.new": "Mật khẩu mới",
+    "pwd.confirmNew": "Xác nhận mật khẩu mới",
+    "pwd.errEmpty": "Mật khẩu mới không được để trống.",
+    "pwd.errMismatch": "Xác nhận mật khẩu mới không khớp.",
+    "pwd.errWrongCurrent": "Mật khẩu hiện tại không đúng.",
+    "pwd.success": "Đổi mật khẩu thành công.",
+    "pwd.save": "Lưu mật khẩu",
+
+    // History dialog
+    "history.button": "Lịch sử thay đổi",
+    "history.title": "Lịch sử thay đổi",
+    "history.edits": "Chỉnh sửa",
+    "history.deletes": "Xóa",
+    "history.noEdits": "Chưa có chỉnh sửa nào.",
+    "history.noDeletes": "Chưa có hồ sơ nào bị xóa.",
+    "history.editedBy": "Sửa bởi",
+    "history.deletedBy": "Xóa bởi",
+
+    // Description cell
+    "desc.reply": "Reply",
+    "desc.viewAll": "Xem tất cả",
+    "desc.historyTitle": "Lịch sử Description",
+    "desc.original": "Mô tả ban đầu",
+    "desc.noReplies": "Chưa có reply nào.",
+    "desc.replyTitle": "Reply Description",
+    "desc.replyPlaceholder": "Nhập nội dung reply...",
+    "desc.send": "Gửi",
+    "desc.unknown": "Không rõ",
+
+    // SSN cell
+    "ssn.errFormat": "SSN phải đủ 9 số (xxx-xx-xxxx)",
+    "ssn.errDuplicate": "Số SSN này đã tồn tại ở hồ sơ khác",
+    "ssn.add": "+ Thêm SSN",
+
+    // Client link button
+    "link.edit": "Sửa liên kết",
+    "link.insert": "Chèn liên kết",
+    "link.view": "Xem liên kết",
+    "link.open": "Mở liên kết",
+    "link.remove": "Xóa liên kết",
+
+    // Assign menu
+    "assign.notAssigned": "Chưa giao",
+    "assign.assign": "Giao việc",
+    "assign.noMatching": "Chưa có tài khoản nào phù hợp.",
+
+    // Avatar upload
+    "avatar.change": "Đổi ảnh đại diện",
+    "avatar.remove": "Xóa ảnh đại diện",
+    "avatar.errNotImage": "Vui lòng chọn file ảnh.",
+    "avatar.errProcess": "Không thể xử lý ảnh này.",
+
+    // Notifications
+    "notif.title": "Thông báo",
+    "notif.markAllRead": "Đánh dấu đã đọc",
+    "notif.empty": "Không có thông báo",
+    "notif.ariaLabel": "Thông báo",
+  },
+  en: {
+    // Top nav
+    "nav.cases": "Cases",
+    "nav.orders": "Orders",
+    "nav.users": "Accounts",
+    "nav.permissions": "Permissions",
+    "nav.openMenu": "Open menu",
+    "nav.changePassword": "Change password",
+    "nav.logout": "Log out",
+
+    // Language switcher
+    "lang.vietnamese": "Tiếng Việt",
+    "lang.english": "English",
+
+    // Login page
+    "login.tagline": "Real-time case & task management platform. Log in to continue.",
+    "login.heading": "Log in",
+    "login.email": "Email",
+    "login.password": "Password",
+    "login.showPassword": "Show password",
+    "login.hidePassword": "Hide password",
+    "login.submit": "Log in",
+    "login.error": "Incorrect email or password.",
+    "login.defaultAdmin": "Default Admin account",
+    "login.footer": "© 2026 Direct Funder. Fintech-inspired design.",
+
+    // Common
+    "common.total": "Total",
+    "common.value": "Value",
+    "common.allStatus": "All statuses",
+    "common.searchPlaceholder": "Search client, phone, case...",
+    "common.addColumn": "Add column",
+    "common.history": "History",
+    "common.addRow": "Add row",
+    "common.noRowsFound": "No cases found.",
+    "common.cancel": "Cancel",
+    "common.close": "Close",
+    "common.save": "Save",
+    "common.done": "Done",
+    "common.add": "Add",
+    "common.yes": "Yes",
+    "common.no": "No",
+    "common.confirm": "Confirm",
+    "common.warning": "Warning",
+    "common.gotIt": "Got it",
+
+    // Cases page
+    "cases.supportBlocked": "Support accounts only have access to the Order tab.",
+    "cases.greeting": "Hello",
+    "cases.title": "Customer Cases",
+    "cases.addRowConfirm": "Add a new case to the table?",
+    "cases.addRowTitle": "Add row",
+    "cases.deleteRowConfirm": "Delete this case? This action will be logged in the deletion history.",
+    "cases.deleteRowTitle": "Delete case",
+    "cases.placeOrderConfirm": "Place {label} for this case?",
+    "cases.placeOrderTitle": "Place order",
+    "cases.missingFieldsTitle": "Missing required information",
+    "cases.missingFieldsBody": "Please fill in the following fields before placing {label}:",
+    "cases.tab.all": "All",
+    "cases.tab.cannotProcess": "Can not Process",
+    "cases.tab.processing": "Processing",
+    "cases.tab.done": "Done",
+
+    // Column headers (default)
+    "col.header.status": "Status",
+    "col.header.clientName": "Client Name",
+    "col.header.ssn": "SSN",
+    "col.header.phone": "Phone",
+    "col.header.zipcode": "Zip",
+    "col.header.address": "Address",
+    "col.header.description": "Description",
+    "col.header.caseNumber": "Case",
+    "col.header.money": "Money",
+    "col.header.order": "Order",
+    "col.header.orderStatus": "Status",
+    "col.header.agent": "Agent",
+    "col.header.processor": "Processor",
+
+    // Status option labels (default)
+    "status.pre_processing": "Pre-processing",
+    "status.processing": "Processing",
+    "status.missing_docs": "Missing Docs",
+    "status.cpa_review": "CPA Review",
+    "status.approved": "Approved",
+    "status.cancelled": "Cancelled",
+    "status.on_hold": "On-Hold",
+    "status.done": "Done",
+    "status.pending": "Pending",
+
+    // Orders page
+    "orders.supportOnlyDesc": "All cases with placed orders from every account, grouped by type, sorted by order date.",
+    "orders.selfOnlyDesc": "Cases you personally placed orders on, grouped by type, sorted by order date.",
+    "orders.accessDenied": "Only Agent, Processor, or Support accounts have access to this page.",
+    "orders.sub.waiting": "Waiting",
+    "orders.sub.done": "Done",
+    "orders.col.placedAt": "Order Placed",
+    "orders.col.clientName": "Client Name",
+    "orders.col.phone": "Phone",
+    "orders.col.ssn": "SSN",
+    "orders.col.formatName": "Format Name",
+    "orders.col.address": "Address",
+    "orders.col.account": "Account",
+    "orders.col.statusUpdatedAt": "Status Date",
+    "orders.col.assign": "Assign",
+    "orders.deleteRowConfirm": 'Remove "{name}" from the {tab} tab?',
+    "orders.deleteRowTitle": "Remove order row",
+    "orders.deleteRow": "Remove row",
+    "orders.emptyState": "No cases with {tab} in {sub} status yet.",
+
+    // Users page
+    "users.title": "Account Management",
+    "users.count": "accounts",
+    "users.add": "Add account",
+    "users.addNew": "Add new account",
+    "users.fullName": "Full name",
+    "users.fullNamePlaceholder": "John Smith",
+    "users.email": "Email",
+    "users.password": "Password",
+    "users.passwordPlaceholder": "Login password",
+    "users.role": "Role",
+    "users.deleteLastManager": "Cannot delete the last Admin",
+    "users.deleteSelf": "You cannot delete your own account",
+    "users.delete": "Delete account",
+    "users.accessDenied": "Only Manager (Admin) accounts have access to this page.",
+    "users.errRequired": "Please fill in full name, email, and password.",
+    "users.errEmailTaken": "This email is already used by another account.",
+
+    // Permissions page
+    "permissions.title": "Feature Permissions",
+    "permissions.desc": "Choose which roles are allowed to use each feature. Manager (Admin) is always allowed and cannot be turned off.",
+    "permissions.feature": "Feature",
+    "permissions.footnote": "Per-column edit permissions for the case table are configured separately via the settings button (⚙) on each column header, on the Cases page.",
+
+    // Column settings dialog
+    "col.settingsTitle": "Column settings",
+    "col.settingsBtn": "Settings for column {label}",
+    "col.name": "Column name",
+    "col.editableRoles": "Roles allowed to edit",
+    "col.editableRolesNote": "Includes Manager (Admin) — unchecking a role means it cannot edit values in this column.",
+    "col.optionsList": "Options & colors",
+    "col.textColor": "Text color",
+    "col.bgColor": "Background color",
+    "col.removeOption": "Remove option",
+    "col.newOptionPlaceholder": "New option name...",
+    "col.deleteColumn": "Delete column",
+    "col.renameConfirm": 'Rename column "{old}" to "{new}"?',
+    "col.renameTitle": "Edit column",
+    "col.removeOptionConfirm": 'Remove option "{label}" from this column?',
+    "col.removeOptionTitle": "Remove option",
+    "col.deleteColumnConfirm": 'Delete column "{label}"? All data in this column across every case will be removed.',
+    "col.deleteColumnTitle": "Delete column",
+
+    // Add column dialog
+    "addCol.type.text": "Text",
+    "addCol.type.number": "Number",
+    "addCol.type.currency": "Currency ($)",
+    "addCol.type.boolean": "Yes/No",
+    "addCol.type.date": "Date",
+    "addCol.type.select": "Option list",
+    "addCol.title": "Add new column",
+    "addCol.name": "Column name",
+    "addCol.namePlaceholder": "E.g. Appointment Date",
+    "addCol.dataType": "Data type",
+    "addCol.optionsList": "Options & colors",
+    "addCol.newOptionPlaceholder": "Option name...",
+    "addCol.confirm": 'Add column "{label}" to the table?',
+
+    // Change password dialog
+    "pwd.title": "Change password",
+    "pwd.current": "Current password",
+    "pwd.new": "New password",
+    "pwd.confirmNew": "Confirm new password",
+    "pwd.errEmpty": "New password cannot be empty.",
+    "pwd.errMismatch": "New password confirmation does not match.",
+    "pwd.errWrongCurrent": "Current password is incorrect.",
+    "pwd.success": "Password changed successfully.",
+    "pwd.save": "Save password",
+
+    // History dialog
+    "history.button": "History",
+    "history.title": "Change history",
+    "history.edits": "Edits",
+    "history.deletes": "Deletions",
+    "history.noEdits": "No edits yet.",
+    "history.noDeletes": "No deleted cases yet.",
+    "history.editedBy": "Edited by",
+    "history.deletedBy": "Deleted by",
+
+    // Description cell
+    "desc.reply": "Reply",
+    "desc.viewAll": "View all",
+    "desc.historyTitle": "Description History",
+    "desc.original": "Original description",
+    "desc.noReplies": "No replies yet.",
+    "desc.replyTitle": "Reply to Description",
+    "desc.replyPlaceholder": "Type your reply...",
+    "desc.send": "Send",
+    "desc.unknown": "Unknown",
+
+    // SSN cell
+    "ssn.errFormat": "SSN must be 9 digits (xxx-xx-xxxx)",
+    "ssn.errDuplicate": "This SSN already exists on another case",
+    "ssn.add": "+ Add SSN",
+
+    // Client link button
+    "link.edit": "Edit link",
+    "link.insert": "Insert link",
+    "link.view": "View link",
+    "link.open": "Open link",
+    "link.remove": "Remove link",
+
+    // Assign menu
+    "assign.notAssigned": "Not assigned",
+    "assign.assign": "Assign",
+    "assign.noMatching": "No matching accounts.",
+
+    // Avatar upload
+    "avatar.change": "Change avatar",
+    "avatar.remove": "Remove avatar",
+    "avatar.errNotImage": "Please select an image file.",
+    "avatar.errProcess": "Could not process this image.",
+
+    // Notifications
+    "notif.title": "Notifications",
+    "notif.markAllRead": "Mark all as read",
+    "notif.empty": "No notifications",
+    "notif.ariaLabel": "Notifications",
+  },
+};
+
+/**
+ * Cột và lựa chọn (option) mặc định của app dùng id cố định (status, clientName,
+ * pre_processing, done...) — id KHÔNG đổi kể cả khi admin đổi tên hiển thị, nên tra
+ * theo id là cách an toàn để tự động dịch mà không đụng tới cột/lựa chọn do người
+ * dùng tự thêm (luôn có id ngẫu nhiên khác, không trùng các id dưới đây).
+ */
+const DEFAULT_COLUMN_LABEL_KEY: Record<string, string> = {
+  status: "col.header.status",
+  clientName: "col.header.clientName",
+  ssn: "col.header.ssn",
+  phone: "col.header.phone",
+  zipcode: "col.header.zipcode",
+  address: "col.header.address",
+  description: "col.header.description",
+  caseNumber: "col.header.caseNumber",
+  money: "col.header.money",
+  order: "col.header.order",
+  orderStatus: "col.header.orderStatus",
+};
+
+const DEFAULT_OPTION_LABEL_KEY: Record<string, string> = {
+  pre_processing: "status.pre_processing",
+  processing: "status.processing",
+  missing_docs: "status.missing_docs",
+  cpa_review: "status.cpa_review",
+  approved: "status.approved",
+  cancelled: "status.cancelled",
+  on_hold: "status.on_hold",
+  done: "status.done",
+  pending: "status.pending",
+};
+
+/** Nhãn hiển thị của 1 cột — cột mặc định luôn theo ngôn ngữ hiện tại, cột do người
+ * dùng tự thêm/đổi tên giữ nguyên như đã nhập (không tự dịch được văn bản tự do). */
+export function translateColumnLabel(language: Language, columnId: string, fallbackLabel: string): string {
+  const key = DEFAULT_COLUMN_LABEL_KEY[columnId];
+  return key ? translate(language, key) : fallbackLabel;
+}
+
+/** Nhãn hiển thị của 1 lựa chọn (option) trong cột select — tương tự translateColumnLabel. */
+export function translateOptionLabel(language: Language, optionId: string, fallbackLabel: string): string {
+  const key = DEFAULT_OPTION_LABEL_KEY[optionId];
+  return key ? translate(language, key) : fallbackLabel;
+}
+
+/** Thay {var} trong chuỗi dịch bằng giá trị tương ứng trong `vars`. */
+function interpolate(template: string, vars?: Record<string, string | number>): string {
+  if (!vars) return template;
+  return template.replace(/\{(\w+)\}/g, (match, key) => (key in vars ? String(vars[key]) : match));
+}
+
+export function translate(language: Language, key: string, vars?: Record<string, string | number>): string {
+  const template = dict[language][key] ?? dict.vi[key] ?? key;
+  return interpolate(template, vars);
+}
+
+/** Hook lấy hàm t(key, vars?) dịch theo ngôn ngữ hiện tại trong store. */
+export function useT() {
+  const language = useAppStore((s) => s.language);
+  return (key: string, vars?: Record<string, string | number>) => translate(language, key, vars);
+}
+
+export function useLanguage() {
+  const language = useAppStore((s) => s.language);
+  const setLanguage = useAppStore((s) => s.setLanguage);
+  return { language, setLanguage };
+}

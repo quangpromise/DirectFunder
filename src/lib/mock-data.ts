@@ -1,0 +1,166 @@
+import { AppNotification, CaseRecord, OrderRecord, User } from "./types";
+
+export const DEFAULT_ADMIN_EMAIL = "admin@directfunder.com";
+export const DEFAULT_ADMIN_PASSWORD = "DirectFunder";
+
+export const INITIAL_USERS: User[] = [
+  {
+    id: "u-admin",
+    name: "Admin",
+    email: DEFAULT_ADMIN_EMAIL,
+    password: DEFAULT_ADMIN_PASSWORD,
+    role: "manager",
+    avatarColor: "#8457f0",
+  },
+];
+
+function order8821(id: string, placedAt: string): OrderRecord {
+  return { id, type: "order8821", placedAt, placedBy: "u-admin", status: null, statusUpdatedAt: null, assignedSupport: null };
+}
+
+function orderTtsWit(id: string, placedAt: string): OrderRecord {
+  return { id, type: "orderTtsWit", placedAt, placedBy: "u-admin", status: null, statusUpdatedAt: null, assignedSupport: null };
+}
+
+export const INITIAL_CASES: CaseRecord[] = [
+  {
+    id: "c-1001",
+    status: "processing",
+    clients: [
+      { firstName: "Sarah", lastName: "Johnson" },
+      { firstName: "", lastName: "" },
+    ],
+    clientLink: null,
+    zipcode: "90210",
+    address: "123 Rodeo Dr, Beverly Hills, CA",
+    phone: "3105550142",
+    description: "Merchant cash advance renewal, needs updated bank statements",
+    caseNumber: "1001",
+    money: 45000,
+    orders: [order8821("ord-1001-1", "2026-08-05T09:15:00Z")],
+    assignedTo: null,
+    assignedProcessor: null,
+    ssn: [null, null],
+    descriptionReplies: [],
+    descriptionReadBy: [],
+    custom: {},
+    updatedAt: "2026-08-05T09:12:00Z",
+  },
+  {
+    id: "c-1002",
+    status: "pre_processing",
+    clients: [
+      { firstName: "David", lastName: "Kim" },
+      { firstName: "", lastName: "" },
+    ],
+    clientLink: null,
+    zipcode: "10001",
+    address: "455 W 34th St, New York, NY",
+    phone: "2125550198",
+    description: "New funding application, restaurant business, 8mo in operation",
+    caseNumber: "1002",
+    money: 25000,
+    orders: [],
+    assignedTo: null,
+    assignedProcessor: null,
+    ssn: [null, null],
+    descriptionReplies: [],
+    descriptionReadBy: [],
+    custom: {},
+    updatedAt: "2026-08-06T14:30:00Z",
+  },
+  {
+    id: "c-1003",
+    status: "missing_docs",
+    clients: [
+      { firstName: "Maria", lastName: "Gonzalez" },
+      { firstName: "", lastName: "" },
+    ],
+    clientLink: null,
+    zipcode: "75201",
+    address: "800 Main St, Dallas, TX",
+    phone: "2145550177",
+    description: "Waiting on client to send voided check for ACH setup",
+    caseNumber: "1003",
+    money: 60000,
+    orders: [order8821("ord-1003-1", "2026-08-07T11:10:00Z")],
+    assignedTo: null,
+    assignedProcessor: null,
+    ssn: [null, null],
+    descriptionReplies: [],
+    descriptionReadBy: [],
+    custom: {},
+    updatedAt: "2026-08-07T11:05:00Z",
+  },
+  {
+    id: "c-1004",
+    status: "approved",
+    clients: [
+      { firstName: "James", lastName: "Wilson" },
+      { firstName: "", lastName: "" },
+    ],
+    clientLink: null,
+    zipcode: "60601",
+    address: "233 S Wacker Dr, Chicago, IL",
+    phone: "3125550163",
+    description: "Funded successfully, contract signed and disbursed",
+    caseNumber: "1004",
+    money: 80000,
+    orders: [order8821("ord-1004-1", "2026-08-04T16:50:00Z"), orderTtsWit("ord-1004-2", "2026-08-04T17:05:00Z")],
+    assignedTo: null,
+    assignedProcessor: null,
+    ssn: [null, null],
+    descriptionReplies: [],
+    descriptionReadBy: [],
+    custom: {},
+    updatedAt: "2026-08-04T16:45:00Z",
+  },
+  {
+    id: "c-1005",
+    status: "cancelled",
+    clients: [
+      { firstName: "Emily", lastName: "Chen" },
+      { firstName: "", lastName: "" },
+    ],
+    clientLink: null,
+    zipcode: "94103",
+    address: "1 Market St, San Francisco, CA",
+    phone: "4155550121",
+    description: "Denied due to insufficient monthly revenue, follow up in 90 days",
+    caseNumber: "1005",
+    money: 15000,
+    orders: [],
+    assignedTo: null,
+    assignedProcessor: null,
+    ssn: [null, null],
+    descriptionReplies: [],
+    descriptionReadBy: [],
+    custom: {},
+    updatedAt: "2026-08-03T08:20:00Z",
+  },
+  {
+    id: "c-1006",
+    status: "approved",
+    clients: [
+      { firstName: "Robert", lastName: "Davis" },
+      { firstName: "", lastName: "" },
+    ],
+    clientLink: null,
+    zipcode: "33101",
+    address: "100 Biscayne Blvd, Miami, FL",
+    phone: "3055550189",
+    description: "Approved, drafting contract, pending client signature",
+    caseNumber: "1006",
+    money: 52000,
+    orders: [order8821("ord-1006-1", "2026-08-07T18:05:00Z")],
+    assignedTo: null,
+    assignedProcessor: null,
+    ssn: [null, null],
+    descriptionReplies: [],
+    descriptionReadBy: [],
+    custom: {},
+    updatedAt: "2026-08-07T18:00:00Z",
+  },
+];
+
+export const INITIAL_NOTIFICATIONS: AppNotification[] = [];

@@ -1,0 +1,68 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Giai đoạn 1 của kế hoạch backend hoá (xem .claude/rules/deployment-database-sync.md):
+/// chỉ Users + Auth + Cases (kèm Orders/DescriptionReplies dạng JSON nhúng trong Case
+/// cho đơn giản, sẽ tách bảng riêng ở giai đoạn sau nếu cần). Notifications, audit log,
+/// deletion history vẫn tạm ở Zustand/localStorage, chưa migrate.
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         String
+  avatarColor  String
+  avatarUrl    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("users")
+}
+
+model Case {
+  id                 String   @id @default(cuid())
+  status             String
+  /// [ClientNameEntry, ClientNameEntry] — { firstName, lastName }
+  clients            Json
+  clientLink         String?
+  zipcode            String
+  phone              String
+  address            String
+  description        String
+  /// DescriptionReply[]
+  descriptionReplies Json     @default("[]")
+  descriptionReadBy  String[] @default([])
+  caseNumber         String   @unique
+  money              Float
+  /// OrderRecord[]
+  orders             Json     @default("[]")
+  /// [string | null, string | null]
+  ssn                Json
+  assignedTo         String?
+  assignedProcessor  String?
+  /// Giá trị các cột tuỳ chỉnh (custom columns)
+  custom             Json     @default("{}")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@map("cases")
+}
+
+/// Bảng cấu hình dạng singleton (luôn chỉ 1 dòng, id cố định "singleton") — lưu cấu
+/// hình cột (ColumnDef[]) và ma trận phân quyền tính năng (FeaturePermissions), tương
+/// đương state.columns / state.featurePermissions trong Zustand store hiện tại.
+model AppConfig {
+  id                 String   @id @default("singleton")
+  /// ColumnDef[]
+  columns            Json
+  /// FeaturePermissions
+  featurePermissions Json
+  updatedAt          DateTime @updatedAt
+
+  @@map("app_config")
+}
