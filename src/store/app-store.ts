@@ -11,6 +11,7 @@ import {
   ClientNameEntry,
   ColumnDef,
   ColumnType,
+  CpaEmailDefaults,
   DeletedRowRecord,
   EditHistoryRecord,
   FeatureKey,
@@ -94,6 +95,12 @@ interface AppState {
   notifications: AppNotification[];
   users: User[];
   featurePermissions: FeaturePermissions;
+  cpaEmailDefaults: CpaEmailDefaults;
+  /** Tài khoản Gmail dùng để gửi mail CPA (đọc từ GMAIL_USER phía server) — chỉ đọc, dùng
+   * làm fallback cho chữ ký cuối mail nếu tên người dùng đang đăng nhập rỗng (không có
+   * action set riêng, không sửa được qua UI). Chữ ký chính lấy tên user hiện tại — xem
+   * cases/page.tsx (RowCells truyền user.name làm cpaSenderName cho SendCpaEmailDialog). */
+  cpaSenderEmail: string;
   deletionHistory: DeletedRowRecord[];
   editHistory: EditHistoryRecord[];
 
@@ -167,6 +174,22 @@ interface AppState {
   updateUserTeam: (userId: string, teamMemberIds: string[]) => void;
 
   setFeaturePermission: (feature: FeatureKey, role: Role, allowed: boolean) => void;
+  setCpaEmailDefaults: (defaults: CpaEmailDefaults) => void;
+  /** Foreground action (KHÁC placeOrder/syncInBackground) — gửi mail có thể fail rõ
+   * ràng (sai App Password, email không hợp lệ...) nên phải await + trả kết quả thật
+   * cho UI báo lỗi ngay, không optimistic/fire-and-forget. Ghi 1 dòng vào editHistory
+   * khi gửi thành công. */
+  sendCpaEmail: (
+    caseId: string,
+    payload: {
+      to: string[];
+      cc: string[];
+      subject: string;
+      html: string;
+      text: string;
+      attachments: { filename: string; contentType: string; contentBase64: string }[];
+    }
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
 
   reorderColumn: (fromId: string, toId: string) => void;
   reorderCase: (fromId: string, toId: string) => void;
@@ -207,7 +230,7 @@ export const useAppStore = create<AppState>()(
        * trang cài đặt cột/phân quyền vốn chỉ hiện cho manager). */
       function syncConfig() {
         const state = get();
-        syncInBackground("config", api.putConfig(state.columns, state.featurePermissions));
+        syncInBackground("config", api.putConfig(state.columns, state.featurePermissions, state.cpaEmailDefaults));
       }
 
       return {
@@ -222,6 +245,8 @@ export const useAppStore = create<AppState>()(
       notifications: INITIAL_NOTIFICATIONS,
       users: INITIAL_USERS,
       featurePermissions: DEFAULT_FEATURE_PERMISSIONS,
+      cpaEmailDefaults: { to: [], cc: [] },
+      cpaSenderEmail: "",
       deletionHistory: [],
       editHistory: [],
 
@@ -249,6 +274,8 @@ export const useAppStore = create<AppState>()(
           cases,
           columns: config.columns,
           featurePermissions: config.featurePermissions,
+          cpaEmailDefaults: config.cpaEmailDefaults ?? { to: [], cc: [] },
+          cpaSenderEmail: config.cpaSenderEmail ?? "",
           hydrated: true,
         });
       },
@@ -870,6 +897,25 @@ export const useAppStore = create<AppState>()(
           return { featurePermissions: { ...state.featurePermissions, [feature]: next } };
         });
         syncConfig();
+      },
+
+      setCpaEmailDefaults: (defaults) => {
+        set({ cpaEmailDefaults: defaults });
+        syncConfig();
+      },
+
+      // Foreground: KHÔNG dùng syncInBackground — gửi mail có thể fail rõ ràng (sai App
+      // Password, email không hợp lệ, file quá lớn...), UI cần await + báo lỗi ngay thay
+      // vì optimistic-update-rồi-âm-thầm-log-console như các action khác trong file này.
+      sendCpaEmail: async (caseId, payload) => {
+        try {
+          await api.sendCpaEmail(caseId, payload);
+          const recipients = `To: ${payload.to.join(", ")}${payload.cc.length > 0 ? `; Cc: ${payload.cc.join(", ")}` : ""}`;
+          logEdit(caseId, "Gửi mail CPA", "", `${recipients} — ${payload.subject}`);
+          return { ok: true } as const;
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Gửi email thất bại" } as const;
+        }
       },
 
       // Ghi chú: reorderColumn/reorderCase chỉ đổi thứ tự hiển thị cục bộ, AppConfig/Case

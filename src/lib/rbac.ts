@@ -160,6 +160,12 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermissions = {
   // trang Phân quyền.
   assignSupport: ["manager", "support"],
   manageUsers: ["manager"],
+  // Nút "Send mail to CPA" trong OrderCell — chỉ Quản lý (mặc định luôn được) và
+  // Processor được dùng, Admin có thể cấp thêm cho role khác qua trang Phân quyền.
+  // "manager" không cần liệt kê ở đây — hasFeature() luôn cho manager true mặc định
+  // (xem trên), liệt kê thêm chỉ để rõ ý định lúc đọc code là thừa/dễ hiểu lầm là cấu
+  // hình được (Kế toán/Agent/Support KHÔNG được cấp — chỉ Processor + Manager thấy nút).
+  sendCpaEmail: ["processor"],
 };
 
 /** Quyền sửa từng cột hoàn toàn theo cấu hình editableBy — kể cả với Admin. */

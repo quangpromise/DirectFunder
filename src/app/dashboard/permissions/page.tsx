@@ -5,11 +5,14 @@ import { useAppStore, useCurrentUser } from "@/store/app-store";
 import { ASSIGNABLE_FEATURES, FEATURE_LABEL, ROLE_LABEL } from "@/lib/types";
 import { ASSIGNABLE_ROLES } from "@/lib/rbac";
 import { useT, useLanguage } from "@/lib/i18n";
+import { CpaEmailDefaultsDialog } from "@/components/cpa-email-defaults-dialog";
 
 export default function PermissionsPage() {
   const user = useCurrentUser();
   const permissions = useAppStore((s) => s.featurePermissions);
   const setFeaturePermission = useAppStore((s) => s.setFeaturePermission);
+  const cpaEmailDefaults = useAppStore((s) => s.cpaEmailDefaults);
+  const setCpaEmailDefaults = useAppStore((s) => s.setCpaEmailDefaults);
   const t = useT();
   const { language } = useLanguage();
 
@@ -26,8 +29,13 @@ export default function PermissionsPage() {
 
   return (
     <div className="px-4 py-6 sm:px-6">
-      <h1 className="text-lg font-semibold tracking-tight">{t("permissions.title")}</h1>
-      <p className="mt-0.5 text-xs text-text-faint">{t("permissions.desc")}</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-lg font-semibold tracking-tight">{t("permissions.title")}</h1>
+          <p className="mt-0.5 text-xs text-text-faint">{t("permissions.desc")}</p>
+        </div>
+        <CpaEmailDefaultsDialog defaults={cpaEmailDefaults} onSave={setCpaEmailDefaults} />
+      </div>
 
       {/* Bỏ giới hạn max-w-3xl + max-h-[65vh] cũ (chỉ chiếm 1 khối nhỏ giữa màn hình) —
           giờ chiếm full chiều rộng/cao màn hình giống bảng Hồ sơ/Order, cuộn theo

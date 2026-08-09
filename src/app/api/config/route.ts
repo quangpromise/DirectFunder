@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
+import type { Prisma } from "@prisma/client";
 
 export async function GET() {
   const me = await requireUser();
@@ -8,7 +9,15 @@ export async function GET() {
 
   const config = await prisma.appConfig.findUnique({ where: { id: "singleton" } });
   if (!config) return NextResponse.json({ error: "Chưa có cấu hình" }, { status: 404 });
-  return NextResponse.json({ columns: config.columns, featurePermissions: config.featurePermissions });
+  return NextResponse.json({
+    columns: config.columns,
+    featurePermissions: config.featurePermissions,
+    cpaEmailDefaults: config.cpaEmailDefaults,
+    // Chỉ đọc, không qua PUT — tài khoản Gmail dùng để gửi luôn hiện công khai ở "From"
+    // của mọi mail đã gửi nên không phải bí mật, dùng làm fallback nếu {senderName}
+    // (tên người dùng đang đăng nhập — xem cases/page.tsx) không có sẵn.
+    cpaSenderEmail: process.env.GMAIL_USER ?? null,
+  });
 }
 
 /** 2 cột Status riêng của tab Order (Order 8821 / Order TTS & WIT) — Support được cấp
@@ -72,9 +81,25 @@ export async function PUT(request: NextRequest) {
     if (!allowed) return NextResponse.json({ error: "Không có quyền sửa cấu hình" }, { status: 403 });
   }
 
+  // cpaEmailDefaults là field độc lập, riêng biệt với cụm columns/featurePermissions ở
+  // trên (không đi qua isOrderStatusOptionsOnlyChange) — chỉ manager mới được set, role
+  // khác gửi kèm field này thì âm thầm bỏ qua (không set, không 403 cả request) vì
+  // columns/featurePermissions của họ (nhánh order-status-options-only) vẫn hợp lệ.
+  const data: Prisma.AppConfigUpdateInput = {
+    columns: body.columns,
+    featurePermissions: body.featurePermissions,
+  };
+  if (me.role === "manager" && "cpaEmailDefaults" in body) {
+    data.cpaEmailDefaults = body.cpaEmailDefaults;
+  }
+
   const config = await prisma.appConfig.update({
     where: { id: "singleton" },
-    data: { columns: body.columns, featurePermissions: body.featurePermissions },
+    data,
   });
-  return NextResponse.json({ columns: config.columns, featurePermissions: config.featurePermissions });
+  return NextResponse.json({
+    columns: config.columns,
+    featurePermissions: config.featurePermissions,
+    cpaEmailDefaults: config.cpaEmailDefaults,
+  });
 }

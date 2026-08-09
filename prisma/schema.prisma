@@ -68,6 +68,8 @@ model AppConfig {
   columns            Json
   /// FeaturePermissions
   featurePermissions Json
+  /// CpaEmailDefaults ({ to: string[]; cc: string[] }) — null = Admin chưa cấu hình.
+  cpaEmailDefaults   Json?
   updatedAt          DateTime @updatedAt
 
   @@map("app_config")

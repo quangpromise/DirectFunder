@@ -6,7 +6,7 @@ import { Search, Plus, Trash2, FileText, DollarSign, GripVertical, ShieldAlert, 
 import { downloadCaseTemplate, parseCaseExcelFile } from "@/lib/excel";
 import { useAppStore, useCurrentUser } from "@/store/app-store";
 import { canEditCase, canEditColumn, canViewCase, hasFeature } from "@/lib/rbac";
-import { CaseRecord, ColumnDef, SelectOption, User } from "@/lib/types";
+import { CaseRecord, ColumnDef, CpaEmailDefaults, SelectOption, User } from "@/lib/types";
 import { EditableCell } from "@/components/editable-cell";
 import { AssignMenu } from "@/components/assign-menu";
 import { AddColumnDialog } from "@/components/add-column-dialog";
@@ -145,6 +145,9 @@ export default function CasesPage() {
   const permissions = useAppStore((s) => s.featurePermissions);
   const updateCell = useAppStore((s) => s.updateCell);
   const placeOrder = useAppStore((s) => s.placeOrder);
+  const cpaEmailDefaults = useAppStore((s) => s.cpaEmailDefaults);
+  const cpaSenderEmail = useAppStore((s) => s.cpaSenderEmail);
+  const sendCpaEmail = useAppStore((s) => s.sendCpaEmail);
   const addRow = useAppStore((s) => s.addRow);
   const importCases = useAppStore((s) => s.importCases);
   const deleteRow = useAppStore((s) => s.deleteRow);
@@ -416,6 +419,7 @@ export default function CasesPage() {
   const canAddRowFeature = hasFeature(permissions, "addRow", user.role);
   const canAssignFeature = hasFeature(permissions, "assignCase", user.role);
   const canDeleteRowFeature = hasFeature(permissions, "deleteRow", user.role);
+  const canSendCpaEmailFeature = hasFeature(permissions, "sendCpaEmail", user.role);
 
   const tabStatusOptions = tab === "all" ? statusOptions : statusOptions.filter((o) => getCaseTab(o.id) === tab);
 
@@ -739,6 +743,10 @@ export default function CasesPage() {
               markDescriptionRead={markDescriptionRead}
               canAssignFeature={canAssignFeature}
               canDeleteRowFeature={canDeleteRowFeature}
+              canSendCpaEmailFeature={canSendCpaEmailFeature}
+              cpaEmailDefaults={cpaEmailDefaults}
+              cpaSenderEmail={cpaSenderEmail}
+              sendCpaEmail={sendCpaEmail}
               confirm={confirm}
               alertWarn={alertWarn}
               dragRowId={dragRowId}
@@ -919,6 +927,10 @@ function RowCells({
   markDescriptionRead,
   canAssignFeature,
   canDeleteRowFeature,
+  canSendCpaEmailFeature,
+  cpaEmailDefaults,
+  cpaSenderEmail,
+  sendCpaEmail,
   confirm,
   alertWarn,
   dragRowId,
@@ -955,6 +967,20 @@ function RowCells({
   markDescriptionRead: (caseId: string, userId: string) => void;
   canAssignFeature: boolean;
   canDeleteRowFeature: boolean;
+  canSendCpaEmailFeature: boolean;
+  cpaEmailDefaults: CpaEmailDefaults;
+  cpaSenderEmail: string;
+  sendCpaEmail: (
+    caseId: string,
+    payload: {
+      to: string[];
+      cc: string[];
+      subject: string;
+      html: string;
+      text: string;
+      attachments: { filename: string; contentType: string; contentBase64: string }[];
+    }
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
   confirm: (message: string, opts?: { title?: string; tone?: "default" | "danger" }) => Promise<boolean>;
   alertWarn: (message: string, opts?: { title?: string }) => Promise<void>;
   dragRowId: string | null;
@@ -963,6 +989,11 @@ function RowCells({
   onRowDragEnd: () => void;
 }) {
   const t = useT();
+  const { language } = useLanguage();
+  const cpaEmailStatusLabel = (() => {
+    const opt = statusColumn?.options?.find((o) => o.id === row.status);
+    return opt ? translateOptionLabel(language, opt.id, opt.label) : row.status;
+  })();
   const clientColDef: ColumnDef = clientColumn ?? {
     id: "clientName",
     key: "clientName",
@@ -1087,6 +1118,13 @@ function RowCells({
                 }
                 return false;
               }}
+              caseRecord={row}
+              cpaEmailDefaults={cpaEmailDefaults}
+              cpaEmailStatusLabel={cpaEmailStatusLabel}
+              cpaSenderEmail={cpaSenderEmail}
+              cpaSenderName={user.name}
+              canSendCpaEmail={canSendCpaEmailFeature}
+              onSendCpaEmail={(payload) => sendCpaEmail(row.id, payload)}
             />
           </div>
         ) : (

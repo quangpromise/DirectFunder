@@ -60,7 +60,7 @@ export function Order8821Picker({
         className={`w-full shrink-0 cursor-pointer whitespace-nowrap rounded-md border px-1.5 py-1 text-center text-[10px] font-bold leading-tight transition disabled:cursor-default ${
           justPlaced
             ? "border-emerald-500/60 bg-emerald-500/25 text-emerald-300 light:text-emerald-700"
-            : "border-border bg-transparent text-text-faint hover:bg-surface-hover"
+            : "border-amber-800/60 bg-amber-900/40 text-amber-200 hover:bg-amber-900/60 light:border-amber-300 light:bg-amber-100 light:text-amber-900 light:hover:bg-amber-200"
         }`}
       >
         {justPlaced ? (

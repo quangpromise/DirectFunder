@@ -1,4 +1,4 @@
-import type { CaseRecord, ColumnDef, FeaturePermissions, Role, User } from "./types";
+import type { CaseRecord, ColumnDef, CpaEmailDefaults, FeaturePermissions, Role, User } from "./types";
 
 class ApiError extends Error {}
 
@@ -58,12 +58,36 @@ export const api = {
     request<{ id: string; updatedAt: string }>(`/api/cases/${caseId}`, { method: "PATCH", body: JSON.stringify(patch) }),
   deleteCase: (caseId: string) => request<{ ok: true }>(`/api/cases/${caseId}`, { method: "DELETE" }),
 
-  getConfig: () => request<{ columns: ColumnDef[]; featurePermissions: FeaturePermissions }>("/api/config"),
-  putConfig: (columns: ColumnDef[], featurePermissions: FeaturePermissions) =>
-    request<{ columns: ColumnDef[]; featurePermissions: FeaturePermissions }>("/api/config", {
+  getConfig: () =>
+    request<{
+      columns: ColumnDef[];
+      featurePermissions: FeaturePermissions;
+      cpaEmailDefaults: CpaEmailDefaults | null;
+      cpaSenderEmail: string | null;
+    }>("/api/config"),
+  putConfig: (columns: ColumnDef[], featurePermissions: FeaturePermissions, cpaEmailDefaults?: CpaEmailDefaults) =>
+    request<{
+      columns: ColumnDef[];
+      featurePermissions: FeaturePermissions;
+      cpaEmailDefaults: CpaEmailDefaults | null;
+      cpaSenderEmail: string | null;
+    }>("/api/config", {
       method: "PUT",
-      body: JSON.stringify({ columns, featurePermissions }),
+      body: JSON.stringify({ columns, featurePermissions, cpaEmailDefaults }),
     }),
+
+  /** Gửi email cho CPA từ 1 hồ sơ — xem POST /api/cases/[id]/send-cpa-email. */
+  sendCpaEmail: (
+    caseId: string,
+    payload: {
+      to: string[];
+      cc: string[];
+      subject: string;
+      html: string;
+      text: string;
+      attachments: { filename: string; contentType: string; contentBase64: string }[];
+    }
+  ) => request<{ ok: true }>(`/api/cases/${caseId}/send-cpa-email`, { method: "POST", body: JSON.stringify(payload) }),
 };
 
 /** Gọi API nền, không chặn UI (các action Zustand vẫn cập nhật local state ngay lập

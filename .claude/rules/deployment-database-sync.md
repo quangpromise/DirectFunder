@@ -28,6 +28,15 @@ Khác với `columns`/`featurePermissions` ở Zustand persist (có `migrate()` 
 
 **Quy tắc rút ra — LUÔN LÀM khi sửa `DEFAULT_COLUMNS` hoặc `DEFAULT_FEATURE_PERMISSIONS` trong `rbac.ts` VÀ production đã có dữ liệu thật**: sau khi deploy code, phải chạy thêm 1 script merge cộng dồn tương tự nhắm vào `DATABASE_URL` production để đồng bộ `AppConfig` — **không được** `prisma.appConfig.update()` ghi đè thẳng `DEFAULT_COLUMNS`/`DEFAULT_FEATURE_PERMISSIONS` vào production (sẽ xoá mất mọi tuỳ biến admin đã làm qua UI, vd. đổi tên cột, thêm option mới, đổi màu badge). Luôn dry-run (in ra kết quả merge, không ghi) trước khi ghi thật.
 
+### 4.9 [CHỜ XỬ LÝ] Đồng bộ production cho tính năng "Send mail to CPA" (thêm 2026-08-10)
+
+Tính năng mới thêm `cpaEmailDefaults` (cột Json nullable, additive) + feature key `sendCpaEmail` vào `DEFAULT_FEATURE_PERMISSIONS` — đúng loại thay đổi mô tả ở mục 4.8, nên **sau khi deploy code này lên production PHẢI làm đủ các bước sau** (xoá mục này khỏi file khi đã làm xong):
+1. `prisma migrate deploy` nhắm production (thêm cột `cpaEmailDefaults`, an toàn/additive).
+2. Chạy script merge cộng dồn thêm `sendCpaEmail: ["manager","processor"]` vào `AppConfig.featurePermissions` production nếu key đó chưa có (nếu bỏ qua, processor trên production sẽ không thấy nút dù code đúng — xem cơ chế lỗi ở mục 4.8).
+3. Thêm `GMAIL_USER`/`GMAIL_APP_PASSWORD` vào Vercel Environment Variables (Production) — thiếu sẽ gây lỗi "Thiếu GMAIL_USER/GMAIL_APP_PASSWORD" khi bấm gửi.
+4. Đăng nhập bằng tài khoản **processor** thật trên production để verify nút hiện đúng (Admin luôn full quyền nên không lộ được lỗi featurePermissions thiếu).
+5. Vào trang Phân quyền (Admin), mở dialog "Cấu hình email CPA mặc định", nhập To/Cc thật lần đầu (mặc định rỗng sau migration).
+
 Mục 2–5 bên dưới là kiến trúc/quy trình đề xuất (phần lớn đã áp dụng đúng như mô tả, trừ Auth đã nêu ở trên). Mục 6 là checklist hành động cụ thể để đưa app này lên cloud thật.
 
 ## 2. Kiến trúc đề xuất

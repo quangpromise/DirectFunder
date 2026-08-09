@@ -45,6 +45,7 @@ export const ASSIGNABLE_FEATURES = [
   "assignCase",
   "assignSupport",
   "manageUsers",
+  "sendCpaEmail",
 ] as const;
 export type FeatureKey = (typeof ASSIGNABLE_FEATURES)[number];
 
@@ -57,6 +58,7 @@ export const FEATURE_LABEL: Record<Language, Record<FeatureKey, string>> = {
     assignCase: "Giao việc cho người khác",
     assignSupport: "Sửa cột Assign (giao Support) trong tab Order",
     manageUsers: "Quản lý tài khoản",
+    sendCpaEmail: "Gửi email cho CPA",
   },
   en: {
     addColumn: "Add new column",
@@ -66,8 +68,20 @@ export const FEATURE_LABEL: Record<Language, Record<FeatureKey, string>> = {
     assignCase: "Assign to others",
     assignSupport: "Edit Assign column (Support) in Order tab",
     manageUsers: "Manage accounts",
+    sendCpaEmail: "Send email to CPA",
   },
 };
+
+/** Danh sách To/Cc + mẫu Subject/Body mặc định khi gửi email CPA — cấu hình chung toàn app
+ * (Admin sửa qua dialog cài đặt ở trang Phân quyền), áp dụng như nhau cho mọi hồ sơ.
+ * subjectTemplate/bodyTemplate hỗ trợ biến dạng {clientName}, {ssn}... (xem cpa-email-template.ts);
+ * rỗng/undefined = dùng mẫu mặc định trong code. */
+export interface CpaEmailDefaults {
+  to: string[];
+  cc: string[];
+  subjectTemplate?: string;
+  bodyTemplate?: string;
+}
 
 export type FeaturePermissions = Record<FeatureKey, Role[]>;
 
