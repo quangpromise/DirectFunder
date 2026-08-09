@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { formatSsn, isValidSsn } from "@/lib/ssn";
 import { useT } from "@/lib/i18n";
+import { CELL_NAV_ATTR, handleCellTab } from "@/lib/cell-nav";
 
 function SsnSlot({
   value,
@@ -68,7 +69,9 @@ function SsnSlot({
               setError("");
               setEditing(false);
             }
+            handleCellTab(e, commit);
           }}
+          {...{ [CELL_NAV_ATTR]: "1" }}
           placeholder="xxx-xx-xxxx"
           maxLength={11}
           className={`w-full rounded-md border bg-bg-elevated px-1.5 py-0.5 text-center text-xs outline-none ${
@@ -91,6 +94,7 @@ function SsnSlot({
   return (
     <button
       onClick={() => setEditing(true)}
+      {...{ [CELL_NAV_ATTR]: "1" }}
       className="w-full truncate rounded-md px-2 py-0.5 text-center text-xs transition hover:bg-surface-hover"
     >
       {value || <span className="text-text-faint">{t("ssn.add")}</span>}

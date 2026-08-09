@@ -18,6 +18,7 @@ export function ColumnSettingsDialog({
   onRemoveOption,
   onDelete,
   canManageFully = true,
+  canManageOptions,
 }: {
   column: ColumnDef;
   onRename: (label: string) => void;
@@ -26,11 +27,18 @@ export function ColumnSettingsDialog({
   onUpdateOption: (optionId: string, patch: Partial<Omit<SelectOption, "id">>) => void;
   onRemoveOption: (optionId: string) => void;
   onDelete: () => void;
-  /** false = chỉ cho thêm lựa chọn mới (vd. Support được sửa giá trị nhưng không được
-   * đổi tên/xóa cột hay xóa lựa chọn có sẵn) — dùng cho tài khoản chỉ có quyền sửa ô
-   * dữ liệu (editableBy) chứ không có quyền quản lý cột đầy đủ (editColumn feature). */
+  /** false = không được đổi tên/xóa cột hay đổi quyền sửa theo role (những phần chỉ
+   * Admin mới cấu hình) — dùng cho tài khoản chỉ có quyền sửa ô dữ liệu (editableBy)
+   * chứ không có quyền quản lý cột đầy đủ (editColumn feature). */
   canManageFully?: boolean;
+  /** Sửa/xóa/đổi màu các lựa chọn CÓ SẴN trong danh sách (options) — mặc định theo
+   * canManageFully, nhưng có thể cấp riêng cho vài cột (vd. Status trong tab Order,
+   * Support được toàn quyền quản lý danh sách trạng thái dù không có quyền editColumn
+   * đầy đủ). Không có quyền này thì chỉ được thêm lựa chọn mới (xem phần "add" bên
+   * dưới, luôn hiện với mọi cột kiểu select bất kể quyền). */
+  canManageOptions?: boolean;
 }) {
+  const canEditOptions = canManageOptions ?? canManageFully;
   const [open, setOpen] = useState(false);
   const [label, setLabel] = useState(column.label);
   const [newOptionLabel, setNewOptionLabel] = useState("");
@@ -147,7 +155,7 @@ export function ColumnSettingsDialog({
                   <label className="mb-1.5 block text-xs text-text-dim">{t("col.optionsList")}</label>
                   <div className="flex flex-col gap-1.5">
                     {(column.options ?? []).map((o) =>
-                      canManageFully ? (
+                      canEditOptions ? (
                         <div
                           key={o.id}
                           className="flex items-center gap-2 rounded-lg border border-border bg-bg-elevated px-2 py-1.5"

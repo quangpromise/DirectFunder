@@ -34,7 +34,18 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/users/
     return NextResponse.json({ ok: true });
   }
 
-  const patch: { role?: string; avatarUrl?: string | null } = {};
+  // Admin đặt lại mật khẩu tài khoản KHÁC — không cần biết mật khẩu cũ (khác nhánh
+  // "tự đổi mật khẩu của chính mình" ở trên), chỉ cần quyền manageUsers.
+  if (typeof body.adminNewPassword === "string") {
+    if (!(await canManageUsers(me.role))) {
+      return NextResponse.json({ error: "Không có quyền đặt lại mật khẩu tài khoản khác" }, { status: 403 });
+    }
+    const passwordHash = await hashPassword(body.adminNewPassword);
+    await prisma.user.update({ where: { id }, data: { passwordHash } });
+    return NextResponse.json({ ok: true });
+  }
+
+  const patch: { role?: string; avatarUrl?: string | null; teamMemberIds?: string[] } = {};
   if (typeof body.role === "string") {
     if (!(await canManageUsers(me.role))) {
       return NextResponse.json({ error: "Không có quyền quản lý tài khoản" }, { status: 403 });
@@ -47,6 +58,12 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/users/
     }
     patch.avatarUrl = body.avatarUrl;
   }
+  if (Array.isArray(body.teamMemberIds)) {
+    if (!(await canManageUsers(me.role))) {
+      return NextResponse.json({ error: "Không có quyền quản lý tài khoản" }, { status: 403 });
+    }
+    patch.teamMemberIds = body.teamMemberIds.map(String);
+  }
 
   const user = await prisma.user.update({ where: { id }, data: patch });
   return NextResponse.json({
@@ -56,6 +73,7 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/users/
     role: user.role,
     avatarColor: user.avatarColor,
     avatarUrl: user.avatarUrl,
+    teamMemberIds: user.teamMemberIds,
   });
 }
 

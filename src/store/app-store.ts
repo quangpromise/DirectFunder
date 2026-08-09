@@ -2,8 +2,9 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { DEFAULT_COLUMNS, DEFAULT_FEATURE_PERMISSIONS } from "@/lib/rbac";
 import { INITIAL_CASES, INITIAL_NOTIFICATIONS, INITIAL_USERS } from "@/lib/mock-data";
-import { getFullName } from "@/lib/client-name";
+import { getFullName, primarySsn } from "@/lib/client-name";
 import { api, syncInBackground } from "@/lib/api-client";
+import type { ParsedCaseRow } from "@/lib/excel";
 import {
   AppNotification,
   CaseRecord,
@@ -19,6 +20,7 @@ import {
   OrderType,
   Role,
   SelectOption,
+  Theme,
   User,
 } from "@/lib/types";
 
@@ -31,6 +33,16 @@ import {
  */
 function uniqueId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/** Định danh hồ sơ dùng trong thông báo (bell) — theo quy ước dự án SSN là số duy nhất
+ * đại diện cho mỗi hồ sơ, nên tham chiếu bằng SSN kèm tên Client thay vì mã hồ sơ (Case
+ * Code). Xem workflow-conventions.md và primarySsn trong lib/client-name.ts. */
+function caseRefLabel(c: CaseRecord | undefined): string {
+  if (!c) return "";
+  const name = getFullName(c);
+  const ssn = primarySsn(c);
+  return ssn ? `${name} (SSN: ${ssn})` : name;
 }
 
 /**
@@ -70,6 +82,13 @@ interface AppState {
   /** Ngôn ngữ hiển thị hiện tại của app — lưu persist để giữ lựa chọn qua các lần
    * đăng nhập/tải lại trang. */
   language: Language;
+  /** Giao diện tối/sáng — lưu persist theo trình duyệt. Chỉ áp dụng ở các màn hình sau
+   * đăng nhập (DashboardLayout tự set data-theme trên <html>); trang Login luôn giữ
+   * nguyên nền tối cố định bất kể lựa chọn này. */
+  theme: Theme;
+  /** Tắt/bật âm thanh chuông khi có notification mới — lưu persist theo trình duyệt,
+   * không theo tài khoản (đơn giản, đủ dùng cho 1 người dùng 1 máy). */
+  notificationSoundMuted: boolean;
   cases: CaseRecord[];
   columns: ColumnDef[];
   notifications: AppNotification[];
@@ -80,6 +99,11 @@ interface AppState {
 
   /** true khi đã hydrate xong dữ liệu thật từ server ít nhất 1 lần trong phiên này. */
   hydrated: boolean;
+  /** Nonce (timestamp) đổi mỗi lần 1 hồ sơ VỪA chuyển status sang "cpa_review" — chỉ dùng
+   * để trigger overlay video ăn mừng ở StatusCelebrationOverlay, không persist lâu dài,
+   * không đồng bộ cho tài khoản khác (chỉ hiện cho người vừa thao tác trên trình duyệt
+   * của họ). */
+  celebration: number | null;
   login: (email: string, password: string) => Promise<boolean>;
   logout: () => void;
   /** Nạp lại users/cases/columns/featurePermissions mới nhất từ database — gọi sau khi
@@ -87,6 +111,8 @@ interface AppState {
    * chỉ dựa vào bản cache cũ trong localStorage). */
   hydrateFromServer: () => Promise<void>;
   setLanguage: (language: Language) => void;
+  setTheme: (theme: Theme) => void;
+  setNotificationSoundMuted: (muted: boolean) => void;
 
   updateCell: (
     caseId: string,
@@ -95,14 +121,28 @@ interface AppState {
     isCustom: boolean
   ) => void;
   addRow: (creatorId: string, creatorRole: Role) => void;
+  /** Thêm hàng loạt hồ sơ từ file Excel (xem src/lib/excel.ts) — mỗi dòng parse thành 1
+   * request tạo hồ sơ riêng (server tự tính caseNumber duy nhất cho từng dòng, không lo
+   * trùng). Trả về số dòng tạo thành công/thất bại để UI báo lại cho người dùng. */
+  importCases: (rows: ParsedCaseRow[], creatorId: string, creatorRole: Role) => Promise<{ success: number; failed: number }>;
   deleteRow: (caseId: string, deletedByUserId: string) => void;
   updateClientLink: (caseId: string, link: string | null) => void;
   updateSsn: (caseId: string, slot: 0 | 1, value: string | null) => void;
   updateClientName: (caseId: string, slot: 0 | 1, field: "firstName" | "lastName", value: string) => void;
-  placeOrder: (caseId: string, type: OrderType, byUserId: string) => void;
+  /** clientSlots: [0], [1], hoặc [0,1] (chọn "Cả 2") từ popup chọn client (Order 8821
+   * lẫn Order TTS & WIT) — tạo 1 bản ghi order RIÊNG cho mỗi slot trong danh sách.
+   * description: CHỈ áp dụng cho type "orderTtsWit" (bắt buộc nhập ở popup). */
+  placeOrder: (
+    caseId: string,
+    type: OrderType,
+    byUserId: string,
+    clientSlots?: (0 | 1)[],
+    description?: string
+  ) => void;
   deleteOrder: (caseId: string, orderId: string) => void;
   updateOrderStatus: (caseId: string, orderId: string, status: string | null) => void;
-  assignOrderSupport: (caseId: string, orderId: string, toUserId: string) => void;
+  updateOrderMilestoneDate: (caseId: string, orderId: string, value: string | null) => void;
+  assignOrderSupport: (caseId: string, orderId: string, toUserId: string | null) => void;
   addDescriptionReply: (caseId: string, authorId: string, text: string) => void;
   markDescriptionRead: (caseId: string, userId: string) => void;
 
@@ -114,7 +154,7 @@ interface AppState {
   updateColumnOption: (columnId: string, optionId: string, patch: Partial<Omit<SelectOption, "id">>) => void;
   removeColumnOption: (columnId: string, optionId: string) => void;
 
-  assignCase: (caseId: string, toUserId: string, field: "assignedTo" | "assignedProcessor") => void;
+  assignCase: (caseId: string, toUserId: string | null, field: "assignedTo" | "assignedProcessor") => void;
   markNotificationRead: (id: string) => void;
   markAllNotificationsRead: () => void;
 
@@ -122,7 +162,9 @@ interface AppState {
   updateUserRole: (userId: string, role: Role) => void;
   removeUser: (userId: string) => void;
   changePassword: (userId: string, currentPassword: string, newPassword: string) => Promise<boolean>;
+  resetUserPassword: (userId: string, newPassword: string) => Promise<boolean>;
   updateAvatar: (userId: string, avatarUrl: string | null) => void;
+  updateUserTeam: (userId: string, teamMemberIds: string[]) => void;
 
   setFeaturePermission: (feature: FeatureKey, role: Role, allowed: boolean) => void;
 
@@ -140,7 +182,8 @@ export const useAppStore = create<AppState>()(
         const entry: EditHistoryRecord = {
           id: uniqueId("edit"),
           caseId,
-          caseNumber: kase?.caseNumber ?? "",
+          ssn: kase ? primarySsn(kase) : null,
+          clientName: kase ? getFullName(kase) : "",
           fieldLabel,
           oldValue,
           newValue,
@@ -170,7 +213,10 @@ export const useAppStore = create<AppState>()(
       return {
       currentUserId: null,
       hydrated: false,
+      celebration: null,
       language: "vi",
+      theme: "dark",
+      notificationSoundMuted: false,
       cases: INITIAL_CASES,
       columns: DEFAULT_COLUMNS,
       notifications: INITIAL_NOTIFICATIONS,
@@ -207,15 +253,22 @@ export const useAppStore = create<AppState>()(
         });
       },
       setLanguage: (language) => set({ language }),
+      setTheme: (theme) => set({ theme }),
+      setNotificationSoundMuted: (muted) => set({ notificationSoundMuted: muted }),
 
       updateCell: (caseId, columnKey, value, isCustom) => {
         const state = get();
         const kase = state.cases.find((c) => c.id === caseId);
+        let oldRaw: unknown;
         if (kase) {
           const col = state.columns.find((c) => c.key === columnKey);
-          const oldRaw = isCustom ? kase.custom[columnKey] : (kase as unknown as Record<string, unknown>)[columnKey];
+          oldRaw = isCustom ? kase.custom[columnKey] : (kase as unknown as Record<string, unknown>)[columnKey];
           logEdit(caseId, col?.label ?? columnKey, formatHistoryValue(oldRaw, col), formatHistoryValue(value, col));
         }
+        // Hồ sơ VỪA chuyển status sang "CPA Review" (không tính trường hợp đã ở đó rồi
+        // set lại) -> trigger overlay video ăn mừng (StatusCelebrationOverlay đọc field
+        // này, tự ẩn sau 4 giây).
+        const justEnteredCpaReview = !isCustom && columnKey === "status" && value === "cpa_review" && oldRaw !== "cpa_review";
         set((s) => ({
           cases: s.cases.map((c) => {
             if (c.id !== caseId) return c;
@@ -224,6 +277,7 @@ export const useAppStore = create<AppState>()(
             }
             return { ...c, [columnKey]: value, updatedAt: new Date().toISOString() };
           }),
+          celebration: justEnteredCpaReview ? Date.now() : s.celebration,
         }));
         syncInBackground(
           "updateCell",
@@ -238,19 +292,30 @@ export const useAppStore = create<AppState>()(
       // ghi MỚI vào orders[], không ghi đè/xóa order cũ — tab Order luôn giữ đủ lịch
       // sử mọi lần order trước đó dưới dạng các row riêng biệt. Order 8821 và Order
       // TTS & WIT là 2 danh sách hoàn toàn tách biệt (lọc theo `type`).
-      placeOrder: (caseId, type, byUserId) => {
-        const newOrder: OrderRecord = {
+      placeOrder: (caseId, type, byUserId, clientSlots, description) => {
+        const placedAt = new Date().toISOString();
+        // Chọn "Cả 2" (2 slot) -> 2 bản ghi độc lập cùng groupId, để Done riêng từng
+        // client. Đặt lẻ 1 client (hoặc không truyền slots, cho order cũ) -> 1 bản ghi
+        // clientSlot=null như cũ. Nút KHÔNG khoá theo trạng thái case nữa (chặn trùng
+        // dựa vào SSN qua tab Waiting — xem hasWaitingOrderForSsn trong lib/orders.ts).
+        const slots: (0 | 1 | null)[] = clientSlots && clientSlots.length > 0 ? clientSlots : [null];
+        const groupId = slots.length > 1 ? uniqueId("grp") : null;
+        const newOrders: OrderRecord[] = slots.map((slot) => ({
           id: uniqueId("ord"),
           type,
-          placedAt: new Date().toISOString(),
+          placedAt,
           placedBy: byUserId,
           status: null,
           statusUpdatedAt: null,
           assignedSupport: null,
-        };
+          milestoneDate: null,
+          clientSlot: slot,
+          groupId,
+          description: type === "orderTtsWit" ? description ?? null : null,
+        }));
         set((state) => ({
           cases: state.cases.map((c) =>
-            c.id === caseId ? { ...c, orders: [...c.orders, newOrder], updatedAt: new Date().toISOString() } : c
+            c.id === caseId ? { ...c, orders: [...c.orders, ...newOrders], updatedAt: new Date().toISOString() } : c
           ),
         }));
         syncOrders(caseId);
@@ -278,14 +343,22 @@ export const useAppStore = create<AppState>()(
       // Status RIÊNG của từng lần order — mỗi lần đổi giá trị tự ghi lại mốc thời gian
       // thay đổi (statusUpdatedAt) để hiển thị ở cột "Ngày thực hiện".
       updateOrderStatus: (caseId, orderId, status) => {
-        const kase = get().cases.find((c) => c.id === caseId);
+        const state = get();
+        const kase = state.cases.find((c) => c.id === caseId);
         const target = kase?.orders.find((o) => o.id === orderId);
         if (target) {
           const label = target.type === "order8821" ? "Order 8821 - Status" : "Order TTS & WIT - Status";
           logEdit(caseId, label, formatHistoryValue(target.status), formatHistoryValue(status));
         }
-        set((state) => ({
-          cases: state.cases.map((c) =>
+        // Order vừa chuyển sang Done (không tính trường hợp đã Done từ trước rồi sửa lại
+        // giá trị khác) -> báo cho đúng tài khoản đã đặt order đó (target.placedBy), không
+        // phải người đang thao tác (Support) — bỏ qua nếu tự đặt tự hoàn tất.
+        const fromUserId = state.currentUserId ?? "u-admin";
+        const fromUser = state.users.find((u) => u.id === fromUserId);
+        const justCompleted = target && target.status !== "done" && status === "done";
+        const orderLabel = target?.type === "orderTtsWit" ? "Order TTS & WIT" : "Order 8821";
+        set((s) => ({
+          cases: s.cases.map((c) =>
             c.id === caseId
               ? {
                   ...c,
@@ -296,12 +369,52 @@ export const useAppStore = create<AppState>()(
                 }
               : c
           ),
+          notifications:
+            justCompleted && target?.placedBy && target.placedBy !== fromUserId
+              ? [
+                  {
+                    id: uniqueId("n"),
+                    type: "status_change",
+                    toUserId: target.placedBy,
+                    fromUserId,
+                    caseId,
+                    message: `${fromUser?.name ?? "Ai đó"} đã hoàn tất ${orderLabel} của hồ sơ ${caseRefLabel(kase)}`,
+                    read: false,
+                    createdAt: new Date().toISOString(),
+                  },
+                  ...s.notifications,
+                ]
+              : s.notifications,
+        }));
+        syncOrders(caseId);
+      },
+
+      // Ngày chọn tay riêng của từng lần order — "Sign Date" cho Order 8821, "Downloaded
+      // Date" cho Order TTS & WIT (cùng 1 field milestoneDate, khác ý nghĩa theo type).
+      updateOrderMilestoneDate: (caseId, orderId, value) => {
+        const kase = get().cases.find((c) => c.id === caseId);
+        const target = kase?.orders.find((o) => o.id === orderId);
+        if (target) {
+          const label = target.type === "order8821" ? "Order 8821 - Sign Date" : "Order TTS & WIT - Downloaded Date";
+          logEdit(caseId, label, formatHistoryValue(target.milestoneDate), formatHistoryValue(value));
+        }
+        set((state) => ({
+          cases: state.cases.map((c) =>
+            c.id === caseId
+              ? {
+                  ...c,
+                  orders: c.orders.map((o) => (o.id === orderId ? { ...o, milestoneDate: value } : o)),
+                  updatedAt: new Date().toISOString(),
+                }
+              : c
+          ),
         }));
         syncOrders(caseId);
       },
 
       // Giao tài khoản Support xử lý RIÊNG 1 lần order — tách biệt hoàn toàn giữa Order
-      // 8821 và Order TTS & WIT (không dùng chung Assign như trước).
+      // 8821 và Order TTS & WIT (không dùng chung Assign như trước). toUserId = null
+      // nghĩa là "để trống" (bỏ giao việc) — không tạo notification khi bỏ giao.
       assignOrderSupport: (caseId, orderId, toUserId) => {
         const state = get();
         const fromUserId = state.currentUserId ?? "u-admin";
@@ -319,19 +432,21 @@ export const useAppStore = create<AppState>()(
                 }
               : c
           ),
-          notifications: [
-            {
-              id: uniqueId("n"),
-              type: "assigned",
-              toUserId,
-              fromUserId,
-              caseId,
-              message: `${fromUser?.name ?? "Ai đó"} đã giao cho bạn ${orderLabel} của hồ sơ ${targetCase?.caseNumber ?? ""} (${targetCase ? getFullName(targetCase) : ""})`,
-              read: false,
-              createdAt: new Date().toISOString(),
-            },
-            ...s.notifications,
-          ],
+          notifications: toUserId
+            ? [
+                {
+                  id: uniqueId("n"),
+                  type: "assigned",
+                  toUserId,
+                  fromUserId,
+                  caseId,
+                  message: `${fromUser?.name ?? "Ai đó"} đã giao cho bạn ${orderLabel} của hồ sơ ${caseRefLabel(targetCase)}`,
+                  read: false,
+                  createdAt: new Date().toISOString(),
+                },
+                ...s.notifications,
+              ]
+            : s.notifications,
         }));
         syncOrders(caseId);
       },
@@ -368,16 +483,24 @@ export const useAppStore = create<AppState>()(
           money: 0,
           orders: [],
           // Tự gán cho người tạo nếu là Agent/Processor, để hồ sơ mới không biến mất
-          // khỏi danh sách hồ sơ họ được thấy (đã lọc theo canViewCase).
+          // khỏi danh sách hồ sơ họ được thấy (đã lọc theo canViewCase). Agent Leader/
+          // Processor Leader không tự gán vào assignedTo/assignedProcessor (2 field đó
+          // dành cho thành viên trong nhóm) — thay vào đó createdBy giữ hồ sơ hiển thị
+          // trong bảng của leader cho tới khi được gán cho ai đó trong nhóm.
           assignedTo: creatorRole === "agent" ? creatorId : null,
           assignedProcessor: creatorRole === "processor" ? creatorId : null,
+          createdBy: creatorId,
           ssn: [null, null],
           descriptionReplies: [],
           descriptionReadBy: [],
-          custom: {},
+          // Cột "Case" hiển thị (cột tuỳ chỉnh caseLabel, khác với "caseNumber" nội bộ đã
+          // đổi tên thành "Code" và ẩn đi) mặc định "1" mỗi hồ sơ mới, người dùng tự sửa
+          // tay — không cần duy nhất nên không phải tính toán như caseNumber.
+          custom: { caseLabel: "1" },
+          createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
-        set((s) => ({ cases: [...s.cases, optimistic] }));
+        set((s) => ({ cases: [optimistic, ...s.cases] }));
 
         // Đợi phản hồi rồi thay case tạm bằng bản server trả về (có caseNumber thật);
         // nếu request lỗi (vd. hết quyền), rollback bỏ dòng tạm để không hiển thị nhầm
@@ -391,6 +514,63 @@ export const useAppStore = create<AppState>()(
             set((s) => ({ cases: s.cases.filter((c) => c.id !== optimistic.id) }));
           }
         );
+      },
+
+      // Excel export/import chỉ có 1 dòng "Client Name" (không tách First/Last riêng như
+      // bảng Hồ sơ) — tách theo khoảng trắng đầu tiên: từ đầu tiên -> firstName, phần còn
+      // lại -> lastName. Agent/Processor khớp theo TÊN chính xác (không phân biệt hoa
+      // thường) với danh sách tài khoản hiện có, không khớp được thì để trống (không lỗi).
+      importCases: async (rows, creatorId, creatorRole) => {
+        const state = get();
+        const agentUsers = state.users.filter((u) => u.role === "agent");
+        const processorUsers = state.users.filter((u) => u.role === "processor");
+
+        const results = await Promise.allSettled(
+          rows.map((row) => {
+            const spaceIdx = row.clientName.indexOf(" ");
+            const firstName = spaceIdx === -1 ? row.clientName : row.clientName.slice(0, spaceIdx);
+            const lastName = spaceIdx === -1 ? "" : row.clientName.slice(spaceIdx + 1).trim();
+            const agent = agentUsers.find((u) => u.name.trim().toLowerCase() === row.agentName.toLowerCase());
+            const processor = processorUsers.find(
+              (u) => u.name.trim().toLowerCase() === row.processorName.toLowerCase()
+            );
+            const record: CaseRecord = {
+              id: uniqueId("c"),
+              status: "pre_processing",
+              clients: [
+                { firstName, lastName },
+                { firstName: "", lastName: "" },
+              ],
+              clientLink: null,
+              zipcode: row.zip,
+              address: row.address,
+              phone: row.phone,
+              description: "",
+              caseNumber: "0",
+              money: row.money,
+              orders: [],
+              assignedTo: agent?.id ?? (creatorRole === "agent" ? creatorId : null),
+              assignedProcessor: processor?.id ?? (creatorRole === "processor" ? creatorId : null),
+              createdBy: creatorId,
+              ssn: [row.ssn || null, null],
+              descriptionReplies: [],
+              descriptionReadBy: [],
+              custom: { caseLabel: row.caseLabel || "1" },
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            };
+            return api.createCase(record);
+          })
+        );
+
+        const created = results
+          .filter((r): r is PromiseFulfilledResult<CaseRecord> => r.status === "fulfilled")
+          .map((r) => r.value);
+        const failed = results.length - created.length;
+        if (created.length > 0) {
+          set((s) => ({ cases: [...s.cases, ...created] }));
+        }
+        return { success: created.length, failed };
       },
 
       deleteRow: (caseId, deletedByUserId) => {
@@ -576,6 +756,8 @@ export const useAppStore = create<AppState>()(
         syncConfig();
       },
 
+      // toUserId = null nghĩa là "để trống" (bỏ giao việc) — chỉ tạo notification khi
+      // thực sự giao cho ai đó, bỏ giao thì không cần báo.
       assignCase: (caseId, toUserId, field) => {
         const state = get();
         const fromUserId = state.currentUserId ?? "u-admin";
@@ -586,19 +768,21 @@ export const useAppStore = create<AppState>()(
           cases: s.cases.map((c) =>
             c.id === caseId ? { ...c, [field]: toUserId, updatedAt: new Date().toISOString() } : c
           ),
-          notifications: [
-            {
-              id: uniqueId("n"),
-              type: "assigned",
-              toUserId,
-              fromUserId,
-              caseId,
-              message: `${fromUser?.name ?? "Ai đó"} đã giao cho bạn hồ sơ ${targetCase?.caseNumber ?? ""} (${targetCase ? getFullName(targetCase) : ""}) vai trò ${roleLabel}`,
-              read: false,
-              createdAt: new Date().toISOString(),
-            },
-            ...s.notifications,
-          ],
+          notifications: toUserId
+            ? [
+                {
+                  id: uniqueId("n"),
+                  type: "assigned",
+                  toUserId,
+                  fromUserId,
+                  caseId,
+                  message: `${fromUser?.name ?? "Ai đó"} đã giao cho bạn hồ sơ ${caseRefLabel(targetCase)} vai trò ${roleLabel}`,
+                  read: false,
+                  createdAt: new Date().toISOString(),
+                },
+                ...s.notifications,
+              ]
+            : s.notifications,
         }));
         syncInBackground("assignCase", api.patchCase(caseId, { [field]: toUserId } as Partial<CaseRecord>));
       },
@@ -654,11 +838,29 @@ export const useAppStore = create<AppState>()(
         }
       },
 
+      // Admin đặt lại mật khẩu tài khoản KHÁC (không cần biết mật khẩu cũ) — khác
+      // changePassword ở trên vốn dùng cho chính chủ tự đổi mật khẩu của mình.
+      resetUserPassword: async (userId, newPassword) => {
+        try {
+          await api.resetUserPassword(userId, newPassword);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+
       updateAvatar: (userId, avatarUrl) => {
         set((state) => ({
           users: state.users.map((u) => (u.id === userId ? { ...u, avatarUrl } : u)),
         }));
         syncInBackground("updateAvatar", api.updateUserAvatar(userId, avatarUrl));
+      },
+
+      updateUserTeam: (userId, teamMemberIds) => {
+        set((state) => ({
+          users: state.users.map((u) => (u.id === userId ? { ...u, teamMemberIds } : u)),
+        }));
+        syncInBackground("updateUserTeam", api.updateUserTeam(userId, teamMemberIds));
       },
 
       setFeaturePermission: (feature, role, allowed) => {
@@ -701,7 +903,7 @@ export const useAppStore = create<AppState>()(
     },
     {
       name: "direct-funder-store-v10",
-      version: 23,
+      version: 24,
       migrate: (persisted, version) => {
         const state = persisted as PersistedShape;
         if (!state) return state as unknown as AppState;
@@ -1128,6 +1330,34 @@ export const useAppStore = create<AppState>()(
               if (col.id === "order" && col.width === 150) return { ...col, width: 122 };
               return col;
             });
+          }
+        }
+
+        if (version < 24) {
+          // Tách cột Status dùng chung cho cả 2 tab Order (Order 8821 & Order TTS & WIT)
+          // thành 2 cột RIÊNG BIỆT — trước đây "orderStatus" áp dụng chung cho cả 2 tab,
+          // giờ mỗi tab tự quản lý (thêm/sửa/xóa/đổi màu) danh sách trạng thái của mình,
+          // không dùng chung nữa. Nhân đôi cấu hình cũ (giữ nguyên editableBy + options
+          // đã tùy biến) sang cả 2 cột mới để không mất dữ liệu đã cấu hình — từ đây trở
+          // đi 2 cột tách nhau hoàn toàn, sửa cột này không ảnh hưởng cột kia.
+          if (Array.isArray(state.columns)) {
+            const old = state.columns.find((col) => col.id === "orderStatus") as
+              | Record<string, unknown>
+              | undefined;
+            if (old) {
+              const { id: _id, key: _key, ...rest } = old;
+              const options = Array.isArray(old.options) ? (old.options as Record<string, unknown>[]) : [];
+              state.columns = [
+                ...state.columns.filter((col) => col.id !== "orderStatus"),
+                { ...rest, id: "orderStatusOrder8821", key: "orderStatusOrder8821", options: options.map((o) => ({ ...o })) },
+                { ...rest, id: "orderStatusOrderTtsWit", key: "orderStatusOrderTtsWit", options: options.map((o) => ({ ...o })) },
+              ];
+            } else if (!state.columns.some((col) => col.id === "orderStatusOrder8821")) {
+              const extra = DEFAULT_COLUMNS.filter(
+                (c) => c.id === "orderStatusOrder8821" || c.id === "orderStatusOrderTtsWit"
+              );
+              state.columns = [...state.columns, ...(extra as unknown as Record<string, unknown>[])];
+            }
           }
         }
 

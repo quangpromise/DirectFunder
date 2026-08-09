@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
-import { canEditColumn, hasFeature } from "@/lib/rbac";
+import { canEditCase, canEditColumn, hasFeature } from "@/lib/rbac";
 import type { ColumnDef, FeaturePermissions } from "@/lib/types";
 import type { Prisma } from "@prisma/client";
 
@@ -45,6 +45,19 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/cases/
 
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object") return NextResponse.json({ error: "Payload không hợp lệ" }, { status: 400 });
+
+  // Agent Leader/Processor Leader chỉ được sửa hồ sơ do chính mình thêm vào hoặc đang
+  // gán cho thành viên trong nhóm mình phụ trách — kiểm tra riêng theo từng dòng, chặt
+  // hơn quyền sửa theo cột (canEditColumn) áp dụng chung cho các role khác.
+  if (me.role === "agent_leader" || me.role === "processor_leader") {
+    const target = await prisma.case.findUnique({
+      where: { id },
+      select: { assignedTo: true, assignedProcessor: true, createdBy: true },
+    });
+    if (!target || !canEditCase(me.role, me.id, target, me.teamMemberIds)) {
+      return NextResponse.json({ error: "Không có quyền sửa hồ sơ này" }, { status: 403 });
+    }
+  }
 
   const config = await prisma.appConfig.findUnique({ where: { id: "singleton" } });
   const columns = (config?.columns as ColumnDef[] | undefined) ?? [];

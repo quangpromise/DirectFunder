@@ -9,6 +9,7 @@ export interface SessionUser {
   role: Role;
   avatarColor: string;
   avatarUrl: string | null;
+  teamMemberIds: string[];
 }
 
 /** Trả về user hiện tại (dựa vào cookie session) hoặc null nếu chưa đăng nhập / user đã bị xoá. */
@@ -24,5 +25,6 @@ export async function requireUser(): Promise<SessionUser | null> {
     role: user.role as Role,
     avatarColor: user.avatarColor,
     avatarUrl: user.avatarUrl,
+    teamMemberIds: user.teamMemberIds,
   };
 }

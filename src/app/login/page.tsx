@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, AlertCircle, Clock } from "lucide-react";
 import { useAppStore } from "@/store/app-store";
@@ -77,24 +78,44 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="relative flex min-h-screen flex-1 flex-col items-center justify-center overflow-hidden px-4 py-16 bg-glow">
-      <div className="pointer-events-none absolute inset-0 bg-bg" style={{ zIndex: -1 }} />
+    <main className="login-glow relative flex min-h-screen flex-1 flex-col items-center justify-center overflow-hidden px-4 py-16">
+      <div
+        className="pointer-events-none absolute inset-0 bg-cover bg-center"
+        style={{ backgroundImage: "url(/login-bg.jpg)", zIndex: -2 }}
+      />
+      <div className="pointer-events-none absolute inset-0 bg-bg/75" style={{ zIndex: -1 }} />
+
+      {/* 2 quầng sáng mờ trôi nhẹ phía sau card — hiệu ứng hiện đại, tông xanh theo logo. */}
+      <div
+        className="login-orb pointer-events-none absolute left-1/2 top-20 h-72 w-72 -translate-x-[65%] rounded-full bg-[radial-gradient(circle,var(--accent-from),transparent_70%)] opacity-25 blur-3xl"
+        style={{ zIndex: -1 }}
+      />
+      <div
+        className="login-orb pointer-events-none absolute left-1/2 top-44 h-80 w-80 translate-x-[5%] rounded-full bg-[radial-gradient(circle,var(--accent-to),transparent_70%)] opacity-20 blur-3xl"
+        style={{ zIndex: -1, animationDelay: "-5.5s" }}
+      />
 
       <div className="absolute right-4 top-4 sm:right-6 sm:top-6">
         <LanguageSwitcher />
       </div>
 
-      <div className="mb-10 flex flex-col items-center gap-3 text-center">
-        <div className="flex h-11 w-11 items-center justify-center rounded-xl gradient-btn shadow-lg shadow-orange-950/40">
-          <span className="text-lg font-bold text-white">D</span>
-        </div>
-        <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-          <span className="gradient-text">Direct Funder</span>
-        </h1>
+      <div className="relative mb-10 flex flex-col items-center gap-3 text-center">
+        <div className="pointer-events-none absolute left-1/2 top-1/2 h-20 w-56 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent/25 blur-3xl" />
+        <Image
+          src="/df-logo.png"
+          alt="Direct Funder"
+          width={273}
+          height={35}
+          priority
+          className="relative h-11 w-auto drop-shadow-[0_4px_26px_rgba(59,143,209,0.4)]"
+        />
         <p className="max-w-sm text-sm text-text-dim">{t("login.tagline")}</p>
       </div>
 
-      <form onSubmit={handleSubmit} className="glass w-full max-w-sm rounded-2xl p-6 shadow-2xl shadow-black/40">
+      <form
+        onSubmit={handleSubmit}
+        className="glass w-full max-w-sm rounded-2xl p-6 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.55),0_0_90px_-25px_var(--accent)] ring-1 ring-accent/15"
+      >
         <h2 className="text-sm font-medium text-text">{t("login.heading")}</h2>
 
         <div className="mt-4 flex flex-col gap-3">
@@ -110,7 +131,7 @@ export default function LoginPage() {
               onClick={() => setShowSuggestions(true)}
               placeholder="ten@directfunder.com"
               autoComplete="off"
-              className="w-full rounded-lg border border-border bg-bg-elevated px-3 py-2 text-sm outline-none focus:border-accent"
+              className="w-full rounded-lg border border-border bg-bg-elevated px-3 py-2 text-sm outline-none transition focus:border-accent focus:ring-4 focus:ring-accent/15"
             />
             {showSuggestions && filteredSuggestions.length > 0 && (
               <div className="popover absolute left-0 right-0 top-full z-20 mt-1.5 overflow-hidden rounded-lg shadow-2xl shadow-black/40">
@@ -141,7 +162,7 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full rounded-lg border border-border bg-bg-elevated px-3 py-2 pr-9 text-sm outline-none focus:border-accent"
+                className="w-full rounded-lg border border-border bg-bg-elevated px-3 py-2 pr-9 text-sm outline-none transition focus:border-accent focus:ring-4 focus:ring-accent/15"
               />
               <button
                 type="button"
@@ -165,7 +186,7 @@ export default function LoginPage() {
         <button
           type="submit"
           disabled={submitting}
-          className="gradient-btn mt-4 flex h-10 w-full items-center justify-center rounded-lg text-sm font-medium text-white shadow-lg shadow-orange-950/30 disabled:opacity-60"
+          className="gradient-btn mt-4 flex h-10 w-full items-center justify-center rounded-lg text-sm font-medium text-white shadow-[0_10px_30px_-10px_var(--accent)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_36px_-10px_var(--accent)] active:translate-y-0 disabled:cursor-default disabled:opacity-60 disabled:hover:translate-y-0"
         >
           {t("login.submit")}
         </button>

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ColumnType, SelectOption } from "@/lib/types";
 import { OptionBadge } from "@/components/option-badge";
+import { CELL_NAV_ATTR, handleCellTab } from "@/lib/cell-nav";
 
 type Value = string | number | boolean | null;
 
@@ -95,7 +96,9 @@ export function EditableCell({
             setDraft(value);
             setEditing(false);
           }
+          handleCellTab(e, commit);
         }}
+        {...{ [CELL_NAV_ATTR]: "1" }}
         className="w-full rounded-md border border-accent bg-bg-elevated px-2 py-1 text-center text-xs outline-none"
       />
     );
@@ -104,6 +107,7 @@ export function EditableCell({
   return (
     <button
       onClick={() => setEditing(true)}
+      {...{ [CELL_NAV_ATTR]: "1" }}
       className="w-full truncate rounded-md px-2.5 py-1.5 text-center text-xs transition hover:bg-surface-hover"
       title={displayText || undefined}
     >

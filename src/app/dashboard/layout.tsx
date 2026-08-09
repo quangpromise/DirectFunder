@@ -4,13 +4,27 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAppStore, useCurrentUser } from "@/store/app-store";
 import { TopNav } from "@/components/top-nav";
+import { StatusCelebrationOverlay } from "@/components/status-celebration-overlay";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const currentUserId = useAppStore((s) => s.currentUserId);
   const hydrateFromServer = useAppStore((s) => s.hydrateFromServer);
   const logout = useAppStore((s) => s.logout);
+  const theme = useAppStore((s) => s.theme);
   const user = useCurrentUser();
+
+  // Áp dụng Dark/Light theme (data-theme trên <html>, đọc bởi các biến CSS trong
+  // globals.css) — CHỈ có hiệu lực ở các màn hình sau đăng nhập. Đặt trên <html> (không
+  // phải 1 div con) để các phần render qua portal (dropdown, dialog...) cũng ăn đúng
+  // theme. Trang Login tự xoá attribute này khi mount nên luôn giữ nguyên nền tối cố
+  // định bất kể lựa chọn theme đã lưu.
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    return () => {
+      delete document.documentElement.dataset.theme;
+    };
+  }, [theme]);
 
   // Zustand persist đọc localStorage bất đồng bộ (Promise) dù storage bản chất là đồng
   // bộ — ở lần render đầu currentUserId có thể tạm là null trước khi persist hydrate
@@ -46,9 +60,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   if (!persistReady || !user) return null;
 
   return (
-    <div className="flex min-h-screen flex-col bg-bg">
+    <div className="flex h-screen flex-col overflow-hidden">
+      {/* Ảnh nền theo theme (darkmode.jpg/lightmode.avif) + lớp phủ để bảng/chữ luôn đủ
+          tương phản — 2 div fixed nằm dưới mọi nội dung, không nằm trong luồng cuộn. */}
+      <div className="app-bg" aria-hidden />
+      <div className="app-bg-overlay" aria-hidden />
       <TopNav />
       <main className="flex-1 overflow-auto">{children}</main>
+      <StatusCelebrationOverlay />
     </div>
   );
 }

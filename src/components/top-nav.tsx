@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { LogOut, Menu, X, Table2, Users, ShieldCheck, ClipboardList, ChevronDown } from "lucide-react";
@@ -12,13 +13,24 @@ import { ChangePasswordDialog } from "@/components/change-password-dialog";
 import { PhoenixClock } from "@/components/phoenix-clock";
 import { NotificationBell } from "@/components/notification-bell";
 import { LanguageSwitcher } from "@/components/language-switcher";
+import { ThemeSwitcher } from "@/components/theme-switcher";
 import { Role } from "@/lib/types";
 import { useT } from "@/lib/i18n";
 
 const NAV: { href: string; labelKey: string; icon: typeof Table2; roles: Role[] | "all" }[] = [
   // Support chỉ làm việc trên tab Order — không hiện tab Hồ sơ với nhóm này.
-  { href: "/dashboard/cases", labelKey: "nav.cases", icon: Table2, roles: ["manager", "accounting", "agent", "processor"] },
-  { href: "/dashboard/orders", labelKey: "nav.orders", icon: ClipboardList, roles: ["agent", "processor", "support"] },
+  {
+    href: "/dashboard/cases",
+    labelKey: "nav.cases",
+    icon: Table2,
+    roles: ["manager", "accounting", "agent", "processor", "agent_leader", "processor_leader"],
+  },
+  {
+    href: "/dashboard/orders",
+    labelKey: "nav.orders",
+    icon: ClipboardList,
+    roles: ["agent", "processor", "support", "agent_leader", "processor_leader"],
+  },
   { href: "/dashboard/users", labelKey: "nav.users", icon: Users, roles: ["manager"] },
   { href: "/dashboard/permissions", labelKey: "nav.permissions", icon: ShieldCheck, roles: ["manager"] },
 ];
@@ -39,13 +51,8 @@ export function TopNav() {
 
   return (
     <header className="sticky top-0 z-40 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-bg-elevated px-4 sm:px-6">
-      <div className="flex shrink-0 items-center gap-2.5">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg gradient-btn">
-          <span className="text-sm font-bold text-white">D</span>
-        </div>
-        <span className="hidden text-sm font-semibold tracking-tight sm:inline">
-          <span className="gradient-text">Direct Funder</span>
-        </span>
+      <div className="flex shrink-0 items-center">
+        <Image src="/df-logo.png" alt="Direct Funder" width={273} height={35} priority className="h-6 w-auto" />
       </div>
 
       <nav className="ml-2 hidden items-center gap-1 md:flex">
@@ -77,6 +84,7 @@ export function TopNav() {
       </button>
 
       <div className="ml-auto flex items-center gap-2">
+        <ThemeSwitcher compact />
         <LanguageSwitcher compact />
         <PhoenixClock />
         <NotificationBell currentUserId={user.id} />
@@ -147,8 +155,9 @@ export function TopNav() {
                 </Link>
               );
             })}
-            <div className="mt-1 px-1">
+            <div className="mt-1 flex items-center gap-2 px-1">
               <LanguageSwitcher />
+              <ThemeSwitcher />
             </div>
           </nav>
         </div>

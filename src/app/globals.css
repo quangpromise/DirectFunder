@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+/* Variant "light:" — dùng cho các badge màu pastel (vd. text-red-300) vốn chỉ chọn để
+   đọc được trên nền TỐI mặc định; những chỗ đó thêm class light:text-red-700 (hoặc
+   tương đương đậm hơn) để vẫn đọc được khi Light Mode đang bật. */
+@custom-variant light (&:where([data-theme="light"], [data-theme="light"] *));
+
 :root {
   --bg: #0b0b0c;
   --bg-elevated: #17171a;
@@ -11,10 +16,17 @@
   --text-dim: #a6a39c;
   --text-faint: #726f68;
 
-  --accent-from: #ffa41c;
-  --accent-to: #ff7a00;
-  --accent: #ff9900;
-  --accent-soft: rgba(255, 153, 0, 0.14);
+  /* Tông xanh lấy theo logo Direct Funder (mẫu màu thật từ df-logo-1.png: chữ "Funder" và
+     icon tam giác #3888c8) — thay cho tông cam trước đó để toàn bộ giao diện (header bảng,
+     nút chính, badge active...) đồng nhất với thương hiệu. */
+  --accent-from: #5cb0ee;
+  --accent-to: #2569b0;
+  --accent: #3b8fd1;
+  --accent-soft: rgba(59, 143, 209, 0.16);
+  /* Nền header bảng — đậm, tông xanh đồng bộ accent, tách biệt rõ với --bg-elevated
+     (nền cell thường) để header "nổi bật" như yêu cầu thiết kế. */
+  --table-head-bg: #142337;
+  --table-head-text: #cfe4fb;
 
   --status-new: #3b82f6;
   --status-progress: #f59e0b;
@@ -22,6 +34,36 @@
   --status-approved: #22c55e;
   --status-denied: #ef4444;
   --status-completed: #6b7280;
+
+  /* Ảnh nền theo theme (áp dụng ở mọi màn hình TRỪ trang Login — xem
+     DashboardLayout/ThemeSwitcher) + lớp phủ tối để chữ/bảng dữ liệu luôn đủ tương phản
+     dù ảnh nền có vùng sáng/tối khác nhau. */
+  --app-bg-image: url("/theme-dark.jpg");
+  --app-bg-overlay: rgba(11, 11, 12, 0.82);
+}
+
+/* Light mode: nền xám xanh trung tính (đậm hơn trắng rõ rệt) để card/input/button nền
+   trắng (--bg-elevated) thực sự NỔI lên trên, không bị chìm lẫn vào nền như bản đầu quá
+   nhạt. Border/surface cũng đậm hơn hẳn bản dark-mode-invert đầu tiên để textbox, nút,
+   viền bảng luôn rõ ràng dễ nhìn. Toàn bộ UI (bảng, card, dialog...) tự đổi theo vì đều
+   dùng chung các biến CSS này, không cần sửa từng component. */
+:root[data-theme="light"] {
+  --bg: #dde2ea;
+  --bg-elevated: #ffffff;
+  --surface: rgba(20, 30, 48, 0.065);
+  --surface-hover: rgba(20, 30, 48, 0.12);
+  --border: rgba(20, 30, 48, 0.18);
+  --border-strong: rgba(20, 30, 48, 0.30);
+  --text: #0e1117;
+  --text-dim: #333a48;
+  --text-faint: #5c6474;
+
+  --accent-soft: rgba(59, 143, 209, 0.16);
+  --table-head-bg: #dceafc;
+  --table-head-text: #0f3b63;
+
+  --app-bg-image: url("/theme-light.avif");
+  --app-bg-overlay: rgba(221, 226, 234, 0.9);
 }
 
 @theme inline {
@@ -37,6 +79,9 @@
   --color-accent: var(--accent);
   --color-accent-from: var(--accent-from);
   --color-accent-to: var(--accent-to);
+  --color-accent-soft: var(--accent-soft);
+  --color-table-head-bg: var(--table-head-bg);
+  --color-table-head-text: var(--table-head-text);
   --font-sans: var(--font-inter);
 }
 
@@ -48,6 +93,10 @@ html {
   color-scheme: dark;
 }
 
+html[data-theme="light"] {
+  color-scheme: light;
+}
+
 body {
   background: var(--bg);
   color: var(--text);
@@ -55,11 +104,41 @@ body {
   min-height: 100vh;
 }
 
-.bg-glow {
+/* Nền ảnh theo theme (Dark/Light) cho mọi màn hình sau khi đăng nhập — dùng ở
+   DashboardLayout, KHÔNG áp dụng cho trang Login (trang Login giữ nguyên nền gradient
+   tối cố định .login-glow). Lớp phủ overlay đảm bảo bảng/chữ luôn đủ tương phản dù ảnh
+   nền sáng/tối khác nhau giữa 2 theme. */
+.app-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  background-image: var(--app-bg-image);
+  background-size: cover;
+  background-position: center;
+}
+
+.app-bg-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: var(--app-bg-overlay);
+}
+
+.bg-glow,
+.login-glow {
   background-image:
-    radial-gradient(60% 50% at 15% 0%, rgba(255, 153, 0, 0.14), transparent 60%),
-    radial-gradient(50% 40% at 85% 10%, rgba(255, 122, 0, 0.10), transparent 60%),
-    radial-gradient(40% 30% at 50% 100%, rgba(255, 153, 0, 0.06), transparent 60%);
+    radial-gradient(55% 45% at 18% 8%, rgba(58, 141, 209, 0.22), transparent 60%),
+    radial-gradient(50% 40% at 85% 12%, rgba(43, 105, 176, 0.16), transparent 60%),
+    radial-gradient(45% 35% at 50% 100%, rgba(58, 141, 209, 0.08), transparent 60%);
+}
+
+@keyframes orb-float {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(0, -18px, 0) scale(1.08); }
+}
+
+.login-orb {
+  animation: orb-float 11s ease-in-out infinite;
 }
 
 .glass {
@@ -108,4 +187,21 @@ body {
 table {
   border-collapse: separate;
   border-spacing: 0;
+}
+
+/* Nhấp nháy 1 dòng trong bảng khi điều hướng tới từ thông báo (notification bell) —
+   khớp SSN/case của thông báo đó. Grid dùng display:contents cho wrapper mỗi dòng nên
+   nhắm CSS vào các div con trực tiếp (từng ô) thay vì chính wrapper. 5 lần lặp x 1s = 5s
+   theo đúng yêu cầu, tự hết class sau đó (xem cases/orders page). */
+@keyframes row-highlight-pulse {
+  0%,
+  100% {
+    background-color: transparent;
+  }
+  50% {
+    background-color: var(--accent-soft);
+  }
+}
+.row-highlight > div {
+  animation: row-highlight-pulse 1s ease-in-out 5;
 }

@@ -18,6 +18,7 @@ export async function GET() {
       role: u.role,
       avatarColor: u.avatarColor,
       avatarUrl: u.avatarUrl,
+      teamMemberIds: u.teamMemberIds,
     }))
   );
 }
@@ -33,7 +34,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json().catch(() => null);
-  const { name, email, password, role, avatarColor } = body ?? {};
+  const { name, email, password, role, avatarColor, teamMemberIds } = body ?? {};
   if (!name || !email || !password || !role || !avatarColor) {
     return NextResponse.json({ error: "Thiếu dữ liệu tạo tài khoản" }, { status: 400 });
   }
@@ -51,11 +52,20 @@ export async function POST(request: NextRequest) {
       passwordHash,
       role: String(role),
       avatarColor: String(avatarColor),
+      teamMemberIds: Array.isArray(teamMemberIds) ? teamMemberIds.map(String) : [],
     },
   });
 
   return NextResponse.json(
-    { id: user.id, name: user.name, email: user.email, role: user.role, avatarColor: user.avatarColor, avatarUrl: user.avatarUrl },
+    {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      avatarColor: user.avatarColor,
+      avatarUrl: user.avatarUrl,
+      teamMemberIds: user.teamMemberIds,
+    },
     { status: 201 }
   );
 }

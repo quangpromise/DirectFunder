@@ -47,6 +47,7 @@ async function main() {
         ssn: kase.ssn as unknown as Prisma.InputJsonValue,
         assignedTo: kase.assignedTo,
         assignedProcessor: kase.assignedProcessor,
+        createdBy: kase.createdBy,
         custom: kase.custom as unknown as Prisma.InputJsonValue,
       },
     });

@@ -15,11 +15,35 @@ export const INITIAL_USERS: User[] = [
 ];
 
 function order8821(id: string, placedAt: string): OrderRecord {
-  return { id, type: "order8821", placedAt, placedBy: "u-admin", status: null, statusUpdatedAt: null, assignedSupport: null };
+  return {
+    id,
+    type: "order8821",
+    placedAt,
+    placedBy: "u-admin",
+    status: null,
+    statusUpdatedAt: null,
+    assignedSupport: null,
+    milestoneDate: null,
+    clientSlot: null,
+    groupId: null,
+    description: null,
+  };
 }
 
 function orderTtsWit(id: string, placedAt: string): OrderRecord {
-  return { id, type: "orderTtsWit", placedAt, placedBy: "u-admin", status: null, statusUpdatedAt: null, assignedSupport: null };
+  return {
+    id,
+    type: "orderTtsWit",
+    placedAt,
+    placedBy: "u-admin",
+    status: null,
+    statusUpdatedAt: null,
+    assignedSupport: null,
+    milestoneDate: null,
+    clientSlot: null,
+    groupId: null,
+    description: null,
+  };
 }
 
 export const INITIAL_CASES: CaseRecord[] = [
@@ -39,11 +63,13 @@ export const INITIAL_CASES: CaseRecord[] = [
     money: 45000,
     orders: [order8821("ord-1001-1", "2026-08-05T09:15:00Z")],
     assignedTo: null,
+    createdBy: null,
     assignedProcessor: null,
     ssn: [null, null],
     descriptionReplies: [],
     descriptionReadBy: [],
     custom: {},
+    createdAt: "2026-08-05T09:12:00Z",
     updatedAt: "2026-08-05T09:12:00Z",
   },
   {
@@ -62,11 +88,13 @@ export const INITIAL_CASES: CaseRecord[] = [
     money: 25000,
     orders: [],
     assignedTo: null,
+    createdBy: null,
     assignedProcessor: null,
     ssn: [null, null],
     descriptionReplies: [],
     descriptionReadBy: [],
     custom: {},
+    createdAt: "2026-08-06T14:30:00Z",
     updatedAt: "2026-08-06T14:30:00Z",
   },
   {
@@ -85,11 +113,13 @@ export const INITIAL_CASES: CaseRecord[] = [
     money: 60000,
     orders: [order8821("ord-1003-1", "2026-08-07T11:10:00Z")],
     assignedTo: null,
+    createdBy: null,
     assignedProcessor: null,
     ssn: [null, null],
     descriptionReplies: [],
     descriptionReadBy: [],
     custom: {},
+    createdAt: "2026-08-07T11:05:00Z",
     updatedAt: "2026-08-07T11:05:00Z",
   },
   {
@@ -108,11 +138,13 @@ export const INITIAL_CASES: CaseRecord[] = [
     money: 80000,
     orders: [order8821("ord-1004-1", "2026-08-04T16:50:00Z"), orderTtsWit("ord-1004-2", "2026-08-04T17:05:00Z")],
     assignedTo: null,
+    createdBy: null,
     assignedProcessor: null,
     ssn: [null, null],
     descriptionReplies: [],
     descriptionReadBy: [],
     custom: {},
+    createdAt: "2026-08-04T16:45:00Z",
     updatedAt: "2026-08-04T16:45:00Z",
   },
   {
@@ -131,11 +163,13 @@ export const INITIAL_CASES: CaseRecord[] = [
     money: 15000,
     orders: [],
     assignedTo: null,
+    createdBy: null,
     assignedProcessor: null,
     ssn: [null, null],
     descriptionReplies: [],
     descriptionReadBy: [],
     custom: {},
+    createdAt: "2026-08-03T08:20:00Z",
     updatedAt: "2026-08-03T08:20:00Z",
   },
   {
@@ -154,11 +188,13 @@ export const INITIAL_CASES: CaseRecord[] = [
     money: 52000,
     orders: [order8821("ord-1006-1", "2026-08-07T18:05:00Z")],
     assignedTo: null,
+    createdBy: null,
     assignedProcessor: null,
     ssn: [null, null],
     descriptionReplies: [],
     descriptionReadBy: [],
     custom: {},
+    createdAt: "2026-08-07T18:00:00Z",
     updatedAt: "2026-08-07T18:00:00Z",
   },
 ];

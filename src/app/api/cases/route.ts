@@ -22,7 +22,9 @@ function toCaseRecord(row: {
   ssn: Prisma.JsonValue;
   assignedTo: string | null;
   assignedProcessor: string | null;
+  createdBy: string | null;
   custom: Prisma.JsonValue;
+  createdAt: Date;
   updatedAt: Date;
 }): CaseRecord {
   return {
@@ -42,7 +44,9 @@ function toCaseRecord(row: {
     ssn: row.ssn as unknown as CaseRecord["ssn"],
     assignedTo: row.assignedTo,
     assignedProcessor: row.assignedProcessor,
+    createdBy: row.createdBy,
     custom: row.custom as unknown as CaseRecord["custom"],
+    createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
 }
@@ -51,10 +55,17 @@ export async function GET() {
   const me = await requireUser();
   if (!me) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
 
-  const rows = await prisma.case.findMany({ orderBy: { createdAt: "asc" } });
+  const rows = await prisma.case.findMany({ orderBy: { createdAt: "desc" } });
   const visible = rows
     .map(toCaseRecord)
-    .filter((c) => canViewCase(me.role, me.id, { assignedTo: c.assignedTo, assignedProcessor: c.assignedProcessor }));
+    .filter((c) =>
+      canViewCase(
+        me.role,
+        me.id,
+        { assignedTo: c.assignedTo, assignedProcessor: c.assignedProcessor, createdBy: c.createdBy },
+        me.teamMemberIds
+      )
+    );
   return NextResponse.json(visible);
 }
 
@@ -112,6 +123,7 @@ export async function POST(request: NextRequest) {
       ssn: (body.ssn ?? [null, null]) as unknown as Prisma.InputJsonValue,
       assignedTo: body.assignedTo ?? null,
       assignedProcessor: body.assignedProcessor ?? null,
+      createdBy: body.createdBy ?? me.id,
       custom: (body.custom ?? {}) as unknown as Prisma.InputJsonValue,
     };
   } else {
@@ -136,7 +148,10 @@ export async function POST(request: NextRequest) {
       ssn: [null, null],
       assignedTo: me.role === "agent" ? me.id : null,
       assignedProcessor: null,
-      custom: {},
+      createdBy: me.id,
+      // Cột "Case" hiển thị (custom field caseLabel) mặc định "1" — xem ghi chú tương ứng
+      // trong app-store.ts addRow.
+      custom: { caseLabel: "1" },
     };
   }
 

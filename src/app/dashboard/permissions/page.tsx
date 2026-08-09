@@ -25,17 +25,25 @@ export default function PermissionsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-6 sm:px-6">
+    <div className="px-4 py-6 sm:px-6">
       <h1 className="text-lg font-semibold tracking-tight">{t("permissions.title")}</h1>
       <p className="mt-0.5 text-xs text-text-faint">{t("permissions.desc")}</p>
 
-      <div className="mt-5 overflow-x-auto rounded-xl border border-border">
+      {/* Bỏ giới hạn max-w-3xl + max-h-[65vh] cũ (chỉ chiếm 1 khối nhỏ giữa màn hình) —
+          giờ chiếm full chiều rộng/cao màn hình giống bảng Hồ sơ/Order, cuộn theo
+          <main className="overflow-auto"> ở layout ngoài (header dính sticky top-0). */}
+      <div className="mt-5 overflow-auto rounded-xl border border-border-strong">
         <table className="w-full min-w-max text-sm">
           <thead>
-            <tr className="border-b border-border bg-bg-elevated">
-              <th className="px-4 py-2.5 text-left text-xs font-medium text-text-dim">{t("permissions.feature")}</th>
+            <tr>
+              <th className="sticky top-0 z-10 border-b-2 border-r border-border-strong border-b-accent bg-table-head-bg px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-normal text-table-head-text">
+                {t("permissions.feature")}
+              </th>
               {ASSIGNABLE_ROLES.map((role) => (
-                <th key={role} className="px-3 py-2.5 text-center text-xs font-medium text-text-dim">
+                <th
+                  key={role}
+                  className="sticky top-0 z-10 border-b-2 border-b-accent bg-table-head-bg px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-normal text-table-head-text"
+                >
                   {ROLE_LABEL[language][role]}
                 </th>
               ))}

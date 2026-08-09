@@ -11,4 +11,4 @@ Lấy cảm hứng từ [www.authkit.com_.png](../../www.authkit.com_.png): phon
 - **Nút & badge trạng thái**: bo tròn, màu theo semantic (xanh lá = hoàn thành, vàng = đang xử lý, đỏ = từ chối/quá hạn, xanh dương = mới).
 - Tham khảo thêm skill `dataviz` khi làm dashboard/báo cáo để đảm bảo hệ màu nhất quán sáng/tối.
 
-> **Lưu ý (2026-08-09)**: tông màu thực tế trong code hiện đã đổi sang đen–cam kiểu Amazon (xem `src/app/globals.css`), khác với mô tả tím–xanh dương ở trên — tài liệu này cần được cập nhật lại cho khớp thực tế trong một lượt riêng.
+> **Cập nhật (2026-08-09)**: tông màu thực tế trong code hiện là **xanh dương** lấy theo logo chính thức Direct Funder (`df-logo-1.png`, mẫu màu `#3888c8`) — `--accent`/`--accent-from`/`--accent-to` trong `src/app/globals.css` đã đổi từ cam sang xanh để đồng nhất toàn bộ giao diện (header bảng, nút chính, active state, trang Login) với logo. Mô tả "tím–xanh dương" ở mục Accent color phía trên đã lỗi thời, thay bằng gradient xanh dương nhạt → đậm (`#5cb0ee` → `#2569b0`).

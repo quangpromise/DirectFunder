@@ -22,6 +22,7 @@ export interface ApiUser {
   role: Role;
   avatarColor: string;
   avatarUrl: string | null;
+  teamMemberIds?: string[];
 }
 
 export const api = {
@@ -36,10 +37,18 @@ export const api = {
     request<ApiUser>(`/api/users/${userId}`, { method: "PATCH", body: JSON.stringify({ role }) }),
   updateUserAvatar: (userId: string, avatarUrl: string | null) =>
     request<ApiUser>(`/api/users/${userId}`, { method: "PATCH", body: JSON.stringify({ avatarUrl }) }),
+  updateUserTeam: (userId: string, teamMemberIds: string[]) =>
+    request<ApiUser>(`/api/users/${userId}`, { method: "PATCH", body: JSON.stringify({ teamMemberIds }) }),
   changePassword: (userId: string, currentPassword: string, newPassword: string) =>
     request<{ ok: true }>(`/api/users/${userId}`, {
       method: "PATCH",
       body: JSON.stringify({ currentPassword, newPassword }),
+    }),
+  /** Admin đặt lại mật khẩu tài khoản KHÁC, không cần mật khẩu cũ (xem PATCH /api/users/[id]). */
+  resetUserPassword: (userId: string, newPassword: string) =>
+    request<{ ok: true }>(`/api/users/${userId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ adminNewPassword: newPassword }),
     }),
   removeUser: (userId: string) => request<{ ok: true }>(`/api/users/${userId}`, { method: "DELETE" }),
 

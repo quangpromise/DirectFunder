@@ -1,11 +1,14 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { UserPlus } from "lucide-react";
+import { UserPlus, X } from "lucide-react";
 import { User } from "@/lib/types";
 import { Avatar } from "@/components/avatar";
 import { useT } from "@/lib/i18n";
+import { useConfirm } from "@/components/confirm-dialog";
+
+const MENU_MARGIN = 8;
 
 export function AssignMenu({
   users,
@@ -16,13 +19,52 @@ export function AssignMenu({
   users: User[];
   assignedTo: string | null;
   canAssign: boolean;
-  onAssign: (userId: string) => void;
+  /** null = bỏ giao việc (chọn mục "Để trống") — chỉ xoá người được giao, KHÔNG xoá hồ sơ/
+   * dòng dữ liệu. Không cần xác nhận, khác với giao cho 1 người cụ thể (luôn hỏi xác nhận
+   * trước khi lưu). Lưu ý: nếu người đang xem chính là người vừa bị bỏ giao (Agent tự bỏ
+   * mình khỏi cột Agent, Processor tự bỏ mình khỏi cột Processor), hồ sơ đó có thể biến
+   * mất khỏi BẢNG CỦA HỌ do canViewCase lọc theo đúng field này — đây chỉ là thay đổi
+   * hiển thị theo quyền xem, dữ liệu hồ sơ vẫn còn nguyên cho Manager/Accounting/Support. */
+  onAssign: (userId: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState({ x: 0, y: 0 });
+  const [pos, setPos] = useState({ x: 0, y: 0, maxHeight: 320 });
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const assignedUser = users.find((u) => u.id === assignedTo);
   const t = useT();
+  const { confirm, ConfirmDialogUI } = useConfirm();
+
+  // Sau khi menu render (biết chiều cao thật), tự đo lại và lật lên trên nếu không đủ
+  // chỗ bên dưới — tránh bị khuất màn hình khi trigger nằm ở hàng cuối bảng.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const trigger = triggerRef.current;
+    const menu = menuRef.current;
+    if (!trigger || !menu) return;
+    const rect = trigger.getBoundingClientRect();
+    const menuHeight = menu.offsetHeight;
+    const spaceBelow = window.innerHeight - rect.bottom - MENU_MARGIN;
+    const spaceAbove = rect.top - MENU_MARGIN;
+    const openUpward = menuHeight > spaceBelow && spaceAbove > spaceBelow;
+    const maxHeight = Math.max(120, (openUpward ? spaceAbove : spaceBelow));
+    const y = openUpward ? rect.top - 4 - Math.min(menuHeight, maxHeight) : rect.bottom + 4;
+    setPos((p) => (p.x === rect.left && p.y === y && p.maxHeight === maxHeight ? p : { x: rect.left, y, maxHeight }));
+  }, [open, users.length]);
+
+  async function selectUser(u: User) {
+    setOpen(false);
+    if (await confirm(t("assign.confirmMessage", { name: u.name }), { title: t("assign.confirmTitle") })) {
+      onAssign(u.id);
+    }
+  }
+
+  async function clearAssignment() {
+    setOpen(false);
+    if (await confirm(t("assign.confirmClearMessage"), { title: t("assign.confirmTitle") })) {
+      onAssign(null);
+    }
+  }
 
   if (!canAssign) {
     return assignedUser ? (
@@ -37,7 +79,7 @@ export function AssignMenu({
 
   function openMenu() {
     const rect = triggerRef.current?.getBoundingClientRect();
-    if (rect) setPos({ x: rect.left, y: rect.bottom + 4 });
+    if (rect) setPos({ x: rect.left, y: rect.bottom + 4, maxHeight: 320 });
     setOpen((o) => !o);
   }
 
@@ -68,16 +110,23 @@ export function AssignMenu({
           <>
             <div className="fixed inset-0 z-[90]" onClick={() => setOpen(false)} />
             <div
-              className="popover fixed z-[100] w-48 rounded-xl p-1.5 shadow-2xl shadow-black/60"
-              style={{ left: pos.x, top: pos.y }}
+              ref={menuRef}
+              className="popover fixed z-[100] w-48 overflow-y-auto rounded-xl p-1.5 shadow-2xl shadow-black/60"
+              style={{ left: pos.x, top: pos.y, maxHeight: pos.maxHeight }}
             >
+              <button
+                onClick={clearAssignment}
+                className="flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs text-text-faint transition hover:bg-surface-hover"
+              >
+                <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full border border-dashed border-border">
+                  <X size={12} />
+                </span>
+                <span className="min-w-0 flex-1 truncate">{t("assign.clear")}</span>
+              </button>
               {users.map((u) => (
                 <button
                   key={u.id}
-                  onClick={() => {
-                    onAssign(u.id);
-                    setOpen(false);
-                  }}
+                  onClick={() => selectUser(u)}
                   className="flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition hover:bg-surface-hover"
                 >
                   <Avatar name={u.name} color={u.avatarColor} url={u.avatarUrl} size={22} />
@@ -91,6 +140,7 @@ export function AssignMenu({
           </>,
           document.body
         )}
+      {ConfirmDialogUI}
     </div>
   );
 }

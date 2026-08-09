@@ -3,16 +3,19 @@
 import { useEffect, useRef, useState } from "react";
 import { ClientNameEntry } from "@/lib/types";
 import { ClientLinkButton } from "@/components/client-link-button";
+import { CELL_NAV_ATTR, handleCellTab } from "@/lib/cell-nav";
 
 function NameField({
   value,
   placeholder,
   editable,
+  hasLink,
   onCommit,
 }: {
   value: string;
   placeholder: string;
   editable: boolean;
+  hasLink: boolean;
   onCommit: (value: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -42,16 +45,25 @@ function NameField({
             setDraft(value);
             setEditing(false);
           }
+          handleCellTab(e, commit);
         }}
+        {...{ [CELL_NAV_ATTR]: "1" }}
         placeholder={placeholder}
         className="min-w-0 flex-1 rounded-md border border-accent bg-bg-elevated px-1.5 py-0.5 text-center text-xs outline-none"
       />
     );
   }
 
+  // Có link đính kèm (kiểu hyperlink Excel) -> đổi màu chữ tên khách sang xanh dương
+  // sáng để nhận biết ngay trên bảng, không cần hover vào icon link.
+  const linkColorClass = hasLink && value ? "text-blue-400" : "";
+
   if (!editable) {
     return (
-      <div className="min-w-0 flex-1 truncate px-1.5 py-0.5 text-center text-xs text-text-dim" title={value || undefined}>
+      <div
+        className={`min-w-0 flex-1 truncate px-1.5 py-0.5 text-center text-xs ${linkColorClass || "text-text-dim"}`}
+        title={value || undefined}
+      >
         {value || <span className="text-text-faint">—</span>}
       </div>
     );
@@ -61,7 +73,8 @@ function NameField({
     <button
       onClick={() => setEditing(true)}
       title={value || undefined}
-      className="min-w-0 flex-1 truncate rounded-md px-1.5 py-0.5 text-center text-xs transition hover:bg-surface-hover"
+      {...{ [CELL_NAV_ATTR]: "1" }}
+      className={`min-w-0 flex-1 truncate rounded-md px-1.5 py-0.5 text-center text-xs transition hover:bg-surface-hover ${linkColorClass}`}
     >
       {value || <span className="text-text-faint">{placeholder}</span>}
     </button>
@@ -71,18 +84,20 @@ function NameField({
 function ClientSlot({
   entry,
   editable,
+  hasLink,
   onCommitFirstName,
   onCommitLastName,
 }: {
   entry: ClientNameEntry;
   editable: boolean;
+  hasLink: boolean;
   onCommitFirstName: (value: string) => void;
   onCommitLastName: (value: string) => void;
 }) {
   return (
     <div className="flex min-w-0 items-center gap-1">
-      <NameField value={entry.firstName} placeholder="First name" editable={editable} onCommit={onCommitFirstName} />
-      <NameField value={entry.lastName} placeholder="Last name" editable={editable} onCommit={onCommitLastName} />
+      <NameField value={entry.firstName} placeholder="First name" editable={editable} hasLink={hasLink} onCommit={onCommitFirstName} />
+      <NameField value={entry.lastName} placeholder="Last name" editable={editable} hasLink={hasLink} onCommit={onCommitLastName} />
     </div>
   );
 }
@@ -112,12 +127,14 @@ export function ClientNameCell({
         <ClientSlot
           entry={clients[0]}
           editable={editable}
+          hasLink={Boolean(link)}
           onCommitFirstName={(v) => onCommitName(0, "firstName", v)}
           onCommitLastName={(v) => onCommitName(0, "lastName", v)}
         />
         <ClientSlot
           entry={clients[1]}
           editable={editable}
+          hasLink={Boolean(link)}
           onCommitFirstName={(v) => onCommitName(1, "firstName", v)}
           onCommitLastName={(v) => onCommitName(1, "lastName", v)}
         />

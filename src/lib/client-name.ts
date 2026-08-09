@@ -1,6 +1,6 @@
 import { ClientNameEntry } from "./types";
 
-function fullName(entry: ClientNameEntry): string {
+export function fullName(entry: ClientNameEntry): string {
   return [entry.firstName, entry.lastName].filter(Boolean).join(" ").trim();
 }
 
@@ -22,6 +22,14 @@ export function getFullName(c: { clients: [ClientNameEntry, ClientNameEntry] }):
 /** Tên đầy đủ của cả 2 client (bỏ qua dòng trống), nối bằng " & " — dùng cho tìm kiếm/hiển thị gộp. */
 export function getAllClientNames(c: { clients: [ClientNameEntry, ClientNameEntry] }): string {
   return c.clients.map(fullName).filter(Boolean).join(" & ");
+}
+
+/** SSN đại diện cho hồ sơ — theo quy ước dự án (xem workflow-conventions.md), SSN là số
+ * duy nhất định danh mỗi hồ sơ nên mọi thông báo/lịch sử chỉnh sửa-xóa dùng SSN (kèm tên
+ * Client) thay vì mã hồ sơ (Case Code) để tham chiếu. Ưu tiên SSN dòng 1, dòng 2 nếu
+ * dòng 1 trống, null nếu hồ sơ chưa có SSN nào. */
+export function primarySsn(c: { ssn: [string | null, string | null] }): string | null {
+  return c.ssn[0] || c.ssn[1] || null;
 }
 
 /**

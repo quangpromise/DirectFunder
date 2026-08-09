@@ -100,13 +100,13 @@ export function ChangePasswordDialog({ userId }: { userId: string }) {
             </div>
 
             {error && (
-              <div className="mt-3 flex items-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+              <div className="mt-3 flex items-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300 light:text-red-700">
                 <AlertCircle size={13} className="shrink-0" />
                 {error}
               </div>
             )}
             {success && (
-              <div className="mt-3 flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300">
+              <div className="mt-3 flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300 light:text-emerald-700">
                 <CheckCircle2 size={13} className="shrink-0" />
                 {t("pwd.success")}
               </div>

@@ -1,6 +1,20 @@
 export type Language = "vi" | "en";
 
-export type Role = "manager" | "accounting" | "agent" | "processor" | "support";
+/** Giao diện tối/sáng — áp dụng ở mọi màn hình sau khi đăng nhập, KHÔNG áp dụng cho
+ * trang Login (trang Login luôn giữ nguyên nền gradient tối cố định). */
+export type Theme = "dark" | "light";
+
+export type Role = "manager" | "accounting" | "agent" | "processor" | "support" | "agent_leader" | "processor_leader";
+
+/** 2 role "trưởng nhóm": chỉ xem (không sửa) toàn bộ hồ sơ của các thành viên trong
+ * nhóm mình phụ trách — nhóm do Admin gán qua field User.teamMemberIds. */
+export const LEADER_ROLES: Role[] = ["agent_leader", "processor_leader"];
+
+/** Với mỗi leader role, role của các thành viên hợp lệ có thể thêm vào nhóm. */
+export const LEADER_MANAGES_ROLE: Partial<Record<Role, Role>> = {
+  agent_leader: "agent",
+  processor_leader: "processor",
+};
 
 export const ROLE_LABEL: Record<Language, Record<Role, string>> = {
   vi: {
@@ -9,6 +23,8 @@ export const ROLE_LABEL: Record<Language, Record<Role, string>> = {
     agent: "Agent",
     processor: "Processor",
     support: "Support",
+    agent_leader: "Agent Leader",
+    processor_leader: "Processor Leader",
   },
   en: {
     manager: "Manager (Admin)",
@@ -16,6 +32,8 @@ export const ROLE_LABEL: Record<Language, Record<Role, string>> = {
     agent: "Agent",
     processor: "Processor",
     support: "Support",
+    agent_leader: "Agent Leader",
+    processor_leader: "Processor Leader",
   },
 };
 
@@ -68,6 +86,9 @@ export interface User {
   /** Ảnh đại diện dạng data URL (base64) do người dùng tự upload — null/undefined thì
    * dùng fallback là vòng tròn màu + chữ cái đầu tên (avatarColor). */
   avatarUrl?: string | null;
+  /** Chỉ có ý nghĩa với role agent_leader/processor_leader — danh sách id các Agent/
+   * Processor mà leader này được xem hồ sơ. Do Admin gán qua trang Quản lý tài khoản. */
+  teamMemberIds?: string[];
 }
 
 export type ColumnType = "text" | "number" | "currency" | "boolean" | "date" | "select" | "phone" | "order" | "zipcode" | "digits";
@@ -88,6 +109,10 @@ export interface ColumnDef {
   custom?: boolean;
   width?: number;
   options?: SelectOption[];
+  /** Cột vẫn tồn tại trong dữ liệu (id nội bộ, unique...) nhưng không hiển thị trong bảng
+   * Hồ sơ và không có nút cấu hình (⚙) — dùng cho "caseNumber" (đổi tên thành "Code", ẩn
+   * đi) khi cột "Case" hiển thị được thay bằng 1 cột tuỳ chỉnh khác cho người dùng tự gõ. */
+  hidden?: boolean;
 }
 
 export interface DescriptionReply {
@@ -122,6 +147,22 @@ export interface OrderRecord {
   statusUpdatedAt: string | null;
   /** Tài khoản nhóm Support được giao xử lý RIÊNG lần order này. */
   assignedSupport: string | null;
+  /** Ngày chọn tay (yyyy-mm-dd, không phải mốc thời gian hệ thống) — ý nghĩa khác nhau
+   * theo type: "Sign Date" cho Order 8821, "Downloaded Date" cho Order TTS & WIT. */
+  milestoneDate: string | null;
+  /** CHỈ có ý nghĩa với Order 8821 (đặt qua popup chọn Client 1/Client 2/Cả 2) — order
+   * này lấy Client Name + SSN của đúng client nào (0 = dòng 1, 1 = dòng 2) — áp dụng cho
+   * cả Order 8821 lẫn Order TTS & WIT (cả 2 đều đặt qua popup chọn client). null = order
+   * cũ trước khi có tính năng chọn client (vẫn tách hiển thị theo số Client Name đã điền
+   * như trước, xem getClientEntries). */
+  clientSlot: 0 | 1 | null;
+  /** Id chung cho các order được tạo CÙNG 1 LẦN chọn "Cả 2" (2 bản ghi, mỗi bản ghi 1
+   * client). null nếu không thuộc lô nào (đặt lẻ 1 client, hoặc order cũ trước khi có
+   * tính năng này). */
+  groupId: string | null;
+  /** CHỈ có ý nghĩa với Order TTS & WIT (nhập ở popup chọn client lúc đặt order, bắt
+   * buộc) — mô tả riêng cho lần order này. null cho Order 8821 hoặc order cũ. */
+  description: string | null;
 }
 
 export interface CaseRecord {
@@ -154,6 +195,10 @@ export interface CaseRecord {
   /** Người phụ trách vai trò Processor cho hồ sơ này. */
   assignedProcessor: string | null;
   custom: Record<string, string | number | boolean | null>;
+  /** Id người tạo hồ sơ này — dùng để Agent Leader/Processor Leader tự sửa được hồ sơ
+   * do chính mình thêm vào, kể cả khi chưa gán cho thành viên nào trong nhóm. */
+  createdBy: string | null;
+  createdAt: string;
   updatedAt: string;
 }
 
@@ -165,11 +210,16 @@ export interface DeletedRowRecord {
   deletedAt: string;
 }
 
-/** Lịch sử chỉnh sửa 1 ô dữ liệu — áp dụng cho mọi cột (kể cả Client Name, SSN, Status...). */
+/** Lịch sử chỉnh sửa 1 ô dữ liệu — áp dụng cho mọi cột (kể cả Client Name, SSN, Status...).
+ * Định danh hồ sơ trong lịch sử dùng SSN (kèm tên Client) thay vì mã hồ sơ (Case Code) —
+ * theo quy ước dự án, xem workflow-conventions.md. */
 export interface EditHistoryRecord {
   id: string;
   caseId: string;
-  caseNumber: string;
+  /** SSN đại diện của hồ sơ tại thời điểm sửa (xem primarySsn trong lib/client-name.ts)
+   * — null nếu hồ sơ chưa có SSN nào. */
+  ssn: string | null;
+  clientName: string;
   fieldLabel: string;
   oldValue: string;
   newValue: string;

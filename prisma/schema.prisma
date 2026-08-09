@@ -18,6 +18,9 @@ model User {
   role         String
   avatarColor  String
   avatarUrl    String?
+  /// Chỉ có ý nghĩa với role agent_leader/processor_leader — id các Agent/Processor mà
+  /// leader này được xem hồ sơ. Admin gán qua trang Quản lý tài khoản.
+  teamMemberIds String[] @default([])
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -45,6 +48,9 @@ model Case {
   ssn                Json
   assignedTo         String?
   assignedProcessor  String?
+  /// Id người tạo hồ sơ — dùng cho Agent Leader/Processor Leader tự sửa hồ sơ do mình
+  /// thêm vào dù chưa gán cho ai trong nhóm.
+  createdBy          String?
   /// Giá trị các cột tuỳ chỉnh (custom columns)
   custom             Json     @default("{}")
   createdAt          DateTime @default(now())
