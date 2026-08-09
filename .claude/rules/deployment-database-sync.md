@@ -14,8 +14,19 @@
 **Còn thiếu / chưa làm:**
 - Orders/Notifications/Deletion/Edit history vẫn dùng field JSON nhúng trong `Case` hoặc còn ở Zustand-only, chưa tách bảng riêng.
 - `reorderCase`/`reorderColumn` (thứ tự hiển thị) chưa đồng bộ lên server — DB chưa có field lưu thứ tự.
-- **Chưa deploy production thật** — chưa có tài khoản Vercel/Neon, chưa có remote GitHub. Xem mục 6 (checklist hành động) để biết chính xác cần làm gì.
 - Chưa có script export dữ liệu localStorage cũ (mục 3) — không cấp thiết vì dữ liệu hiện tại chỉ là seed demo, chưa có người dùng thật nào dùng bản local-only trước đó.
+
+**Cập nhật 2026-08-10 — production ĐÃ deploy thật**: Vercel (`funder-crm-mini.vercel.app`) + Neon, remote GitHub đã có (`origin`). Dòng "chưa deploy production thật" ở các mục dưới đây đã lỗi thời — chỉ còn đúng ở lịch sử, không áp dụng nữa. Xem mục 4.8 (mới) cho một class lỗi quan trọng vừa phát hiện + đã vá liên quan tới việc này.
+
+### 4.8 Gotcha quan trọng: bảng `AppConfig` (columns/featurePermissions) KHÔNG có cơ chế migrate
+
+Khác với `columns`/`featurePermissions` ở Zustand persist (có `migrate()` ladder chạy tự động mỗi lần load), bảng **`AppConfig` trên server KHÔNG có bất kỳ cơ chế đồng bộ tự động nào** khi `DEFAULT_COLUMNS`/`DEFAULT_FEATURE_PERMISSIONS` trong `src/lib/rbac.ts` thay đổi — DB chỉ nhận giá trị này **đúng 1 lần lúc `prisma db seed` chạy**, sau đó hoàn toàn độc lập với code.
+
+**Hậu quả thực tế đã xảy ra** (phát hiện 2026-08-10): production được seed từ rất lâu, sau đó `rbac.ts` được sửa nhiều lần (thêm quyền `processor`/`agent_leader`/`processor_leader` vào các cột SSN/Phone/Zip/Order, tách cột `orderStatus` thành `orderStatusOrder8821`/`orderStatusOrderTtsWit`, đổi `caseNumber` thành ẩn + thêm `caseLabel`...) nhưng **AppConfig trên production không hề được cập nhật theo** → Processor không sửa được SSN/Phone/Zip, cột Order không dùng được, cột Case không nhận giá trị mới, cột Status (vốn chỉ dành cho tab Order) bị lộ ra bảng Hồ sơ chính — dù code đã deploy đúng, đã pass mọi test ở local.
+
+**Cách vá đã dùng** (không mất dữ liệu, không đụng bảng `User`/`Case`): script merge CỘNG DỒN — với mỗi cột trong `DEFAULT_COLUMNS`, hợp nhất (union) `editableBy` giữa bản production hiện có và bản default (giữ mọi quyền production đang có + thêm quyền mới thiếu), giữ `options` của production nếu có (đề phòng đã tuỳ biến màu/tên qua UI), thêm cột nào production thiếu hẳn (`caseLabel`), tách `orderStatus` cũ thành 2 cột mới nếu production còn ở dạng cũ. Tương tự với `featurePermissions` — union từng danh sách role theo từng feature.
+
+**Quy tắc rút ra — LUÔN LÀM khi sửa `DEFAULT_COLUMNS` hoặc `DEFAULT_FEATURE_PERMISSIONS` trong `rbac.ts` VÀ production đã có dữ liệu thật**: sau khi deploy code, phải chạy thêm 1 script merge cộng dồn tương tự nhắm vào `DATABASE_URL` production để đồng bộ `AppConfig` — **không được** `prisma.appConfig.update()` ghi đè thẳng `DEFAULT_COLUMNS`/`DEFAULT_FEATURE_PERMISSIONS` vào production (sẽ xoá mất mọi tuỳ biến admin đã làm qua UI, vd. đổi tên cột, thêm option mới, đổi màu badge). Luôn dry-run (in ra kết quả merge, không ghi) trước khi ghi thật.
 
 Mục 2–5 bên dưới là kiến trúc/quy trình đề xuất (phần lớn đã áp dụng đúng như mô tả, trừ Auth đã nêu ở trên). Mục 6 là checklist hành động cụ thể để đưa app này lên cloud thật.
 
@@ -60,21 +71,25 @@ Khi backend thật sẵn sàng, cần một đường di trú 1 lần để khô
 - [ ] Đã có backup mới nhất trước khi migrate production chưa?
 - [ ] Migration file đã commit vào git cùng code tính năng liên quan chưa?
 
-## 6. Checklist triển khai thực tế lên cloud
+## 6. Checklist triển khai thực tế lên cloud (ĐÃ HOÀN THÀNH — giữ lại làm tham khảo quy trình)
 
-Repo đã chuẩn bị sẵn cho deploy: `.env.example` (danh sách biến môi trường cần thiết, không chứa giá trị thật), `package.json` có `postinstall: "prisma generate"` (tự generate Prisma Client trên máy CI/Vercel sạch — đã test bằng cách xoá `node_modules/@prisma/client` rồi `npm install` lại, chạy đúng). Phần còn lại cần tài khoản cá nhân nên tách rõ 2 nhóm việc:
+Production đã live thật tại **`funder-crm-mini.vercel.app`** (Vercel, auto-deploy từ GitHub `origin/main`) + Neon Postgres, có dữ liệu người dùng thật (không phải seed demo nữa). Mục này giữ lại nguyên văn để tham khảo lại quy trình ban đầu đã dùng; các bước A/B bên dưới đã xong hết, không cần làm lại — trừ bước B.4 (mỗi lần schema đổi vẫn phải lặp lại) và mục 4.8 mới (đồng bộ AppConfig, dễ bị quên vì không có lỗi build/deploy nào báo hiệu, chỉ lộ ra khi người dùng thật gặp lỗi phân quyền).
 
-**A. Việc bạn cần tự làm** (cần tài khoản cá nhân/thanh toán, không làm thay được):
-1. Tạo repo trống trên GitHub, rồi báo tôi URL — tôi sẽ chạy `git remote add origin ...` + `git push` giúp (repo hiện **chưa có remote nào**).
-2. Tạo tài khoản tại [neon.tech](https://neon.tech) (đã chốt dùng Neon — xem lý do ở mục 2) → tạo 1 project Postgres mới → copy connection string dạng **pooled connection** (phù hợp môi trường serverless của Vercel).
-3. Tạo tài khoản tại [vercel.com](https://vercel.com) → "Add New Project" → import repo GitHub ở bước 1.
-4. Trong Vercel → Project Settings → Environment Variables, thêm cho môi trường Production:
-   - `DATABASE_URL` = connection string lấy từ Neon (bước 2).
-   - `AUTH_SECRET` = một chuỗi ngẫu nhiên **mới**, khác secret đang dùng ở `.env.local` (không tái dùng secret local cho production).
-5. Đưa tôi connection string đó (hoặc tự chạy lệnh tôi hướng dẫn) để chạy migration lần đầu — DB Neon mới tạo đang rỗng, chưa có bảng nào, cần `prisma migrate deploy` trước khi app production dùng được.
+**A. Việc đã làm (cần tài khoản cá nhân/thanh toán)**:
+1. Repo GitHub `origin` đã có, Vercel đã import và tự deploy từ `main`.
+2. Neon Postgres project đã tạo, connection string pooled đã cấu hình trong Vercel Environment Variables (`DATABASE_URL`, `AUTH_SECRET` riêng biệt với local).
 
-**B. Việc tôi sẽ làm** (khi có đủ thông tin ở mục A):
-1. `prisma migrate deploy` nhắm vào `DATABASE_URL` production — tạo bảng theo đúng các migration đã có trong `prisma/migrations/`.
-2. Chạy `prisma db seed` (tuỳ chọn) để có sẵn 1 tài khoản Admin đăng nhập lần đầu — app hiện chưa có màn hình "đăng ký tài khoản", nên production cần ít nhất 1 tài khoản Admin có sẵn.
-3. Sau khi Vercel deploy xong: mở URL production, đăng nhập thử, kiểm tra dữ liệu hiển thị đúng từ DB cloud (không phải seed cũ hay cache).
-4. Từ lần sau: mỗi tính năng mới đụng schema → tạo migration file additive-first (mục 4) → **trước khi push code lên `main`**, chạy `prisma migrate deploy` nhắm vào production để áp migration trước khi code mới lên live.
+**B. Quy trình lặp lại mỗi khi có tính năng mới đụng tới DB**:
+1. Tạo migration file additive-first ở local (mục 4), test kỹ trên DB dev.
+2. Commit + push code lên `main` (Vercel tự build/deploy).
+3. **Trước hoặc ngay sau khi push**, chạy `prisma migrate deploy` nhắm vào `DATABASE_URL` production (Neon) để áp migration — xem cú pháp cụ thể ở mục 6.1 dưới.
+4. **Nếu thay đổi đụng tới `DEFAULT_COLUMNS`/`DEFAULT_FEATURE_PERMISSIONS` trong `rbac.ts`** (thêm cột, đổi `editableBy`, đổi feature permission mặc định...): còn phải chạy thêm 1 script merge cộng dồn nhắm vào `AppConfig` production — xem mục 4.8, đây là bước **rất dễ quên** vì không có gì báo lỗi ở bước build/deploy, chỉ lộ ra khi người dùng thật gặp lỗi phân quyền trên production.
+5. Đăng nhập thử trên URL production, kiểm tra tính năng mới hoạt động đúng với ít nhất 1 tài khoản không phải Admin (Admin luôn full quyền nên không lộ được lỗi `editableBy`/`featurePermissions` thiếu).
+
+### 6.1 Cách chạy `prisma migrate deploy` nhắm production
+
+```bash
+DATABASE_URL="<connection-string-pooled-tu-Neon>" npx prisma migrate deploy
+```
+
+Kiểm tra trước bằng `prisma migrate status` (cùng cú pháp, đổi `deploy` thành `status`) để xem có migration nào chưa áp dụng không. Không bao giờ dùng `prisma db push` hay các lệnh reset trên production.
