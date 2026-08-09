@@ -37,7 +37,6 @@ const dict: Record<Language, Record<string, string>> = {
     "login.hidePassword": "Ẩn mật khẩu",
     "login.submit": "Đăng nhập",
     "login.error": "Email hoặc mật khẩu không đúng.",
-    "login.defaultAdmin": "Tài khoản Admin mặc định",
     "login.footer": "© 2026 Direct Funder. Thiết kế lấy cảm hứng tài chính · công nghệ.",
 
     // Common
@@ -357,7 +356,6 @@ const dict: Record<Language, Record<string, string>> = {
     "login.hidePassword": "Hide password",
     "login.submit": "Log in",
     "login.error": "Incorrect email or password.",
-    "login.defaultAdmin": "Default Admin account",
     "login.footer": "© 2026 Direct Funder. Fintech-inspired design.",
 
     // Common

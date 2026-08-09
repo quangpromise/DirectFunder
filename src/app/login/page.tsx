@@ -5,7 +5,6 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, AlertCircle, Clock } from "lucide-react";
 import { useAppStore } from "@/store/app-store";
-import { DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASSWORD } from "@/lib/mock-data";
 import { useT } from "@/lib/i18n";
 import { LanguageSwitcher } from "@/components/language-switcher";
 
@@ -190,16 +189,6 @@ export default function LoginPage() {
         >
           {t("login.submit")}
         </button>
-
-        <div className="mt-4 rounded-lg border border-border bg-bg-elevated/60 px-3 py-2.5 text-xs text-text-faint">
-          <div className="flex items-center gap-2">
-            <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
-            {t("login.defaultAdmin")}
-          </div>
-          <div className="mt-1 pl-3.5">
-            {DEFAULT_ADMIN_EMAIL} / {DEFAULT_ADMIN_PASSWORD}
-          </div>
-        </div>
       </form>
 
       <p className="mt-8 text-xs text-text-faint">{t("login.footer")}</p>
