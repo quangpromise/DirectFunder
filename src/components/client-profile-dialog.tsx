@@ -28,6 +28,26 @@ function draftToRefunds(draft: Record<string, string>): Record<string, number> {
   return refunds;
 }
 
+/** Chuẩn hoá text gõ vào ô Refund thành số THUẦN (không dấu phẩy) — cho phép gõ CẢ dấu ","
+ * lẫn "." mà không lỗi: dấu "," luôn bị coi là dấu ngăn cách nghìn (bỏ đi), dấu "." luôn là
+ * dấu thập phân (giữ lại, chỉ giữ tối đa 1 dấu). Kết quả là chuỗi số hợp lệ để
+ * draftToRefunds/computeRefundSummary dùng Number() trực tiếp. */
+function sanitizeMoneyDraft(raw: string): string {
+  const digitsAndDot = raw.replace(/,/g, "").replace(/[^\d.]/g, "");
+  const [intPart, ...rest] = digitsAndDot.split(".");
+  return rest.length > 0 ? `${intPart}.${rest.join("")}` : intPart;
+}
+
+/** Hiển thị lại chuỗi số thuần (từ sanitizeMoneyDraft) theo đúng cấu trúc tiền $ Mỹ — thêm
+ * dấu phẩy ngăn cách hàng nghìn ở phần nguyên, giữ nguyên phần thập phân đang gõ dở (không
+ * làm tròn/cắt trong lúc gõ). */
+function formatMoneyDraft(raw: string): string {
+  if (!raw) return "";
+  const [intPart, decPart] = raw.split(".");
+  const withCommas = (intPart || "0").replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return decPart !== undefined ? `${withCommas}.${decPart}` : withCommas;
+}
+
 /**
  * Nút bút chì "Edit Hồ sơ" đặt trước tên khách hàng trong cột Client Name — mở popup
  * sửa TOÀN BỘ thông tin khách hàng (First/Last Name x2, SSN x2, Date of Birth x2, Phone
@@ -143,7 +163,7 @@ export function ClientProfileDialog({
         onClick={openDialog}
         title={t("clientProfile.triggerBtn")}
         aria-label={t("clientProfile.triggerBtn")}
-        className="shrink-0 rounded p-0.5 text-text-faint transition hover:bg-surface-hover hover:text-text"
+        className="shrink-0 rounded p-0.5 text-red-600 transition hover:bg-red-500/15 hover:text-red-500 light:text-red-700 light:hover:bg-red-100 light:hover:text-red-800"
       >
         <Pencil size={12} />
       </button>
@@ -151,24 +171,27 @@ export function ClientProfileDialog({
       {open &&
         typeof document !== "undefined" &&
         createPortal(
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 px-4 py-8">
-            <div className="popover flex max-h-full w-full max-w-2xl flex-col rounded-2xl shadow-2xl">
-              <div className="flex items-center justify-between px-5 pt-5">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 px-4 py-4">
+            <div className="popover flex max-h-full w-full max-w-5xl flex-col rounded-2xl shadow-2xl">
+              <div className="flex items-center justify-between px-5 pt-4">
                 <h3 className="text-sm font-semibold">{t("clientProfile.title")}</h3>
                 <button onClick={() => setOpen(false)} className="text-text-faint hover:text-text">
                   <X size={16} />
                 </button>
               </div>
 
-              <div className="mt-4 flex flex-col gap-4 overflow-y-auto px-5">
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {/* Bố cục ngang, gộp mọi thông tin vào 1 hàng lớn (2 khối Taxpayer/Spouse +
+                  khối thông tin chung + khối Refund) để vừa trong 1 màn hình không cần
+                  scroll ở đa số kích thước cửa sổ, thay vì xếp chồng dọc như trước. */}
+              <div className="mt-3 flex flex-col gap-3 overflow-y-auto px-5 lg:flex-row">
+                <div className="grid flex-[2] grid-cols-1 gap-3 sm:grid-cols-2">
                   {([0, 1] as const).map((slot) => (
-                    <div key={slot} className="flex flex-col gap-2 rounded-lg border border-border p-3">
+                    <div key={slot} className="flex flex-col gap-1.5 rounded-lg border border-border p-2.5">
                       <p className="text-xs font-semibold text-text-dim">
                         {slot === 0 ? t("clientProfile.taxpayer") : t("clientProfile.spouse")}
                       </p>
                       <div>
-                        <label className="mb-1 block text-xs text-text-faint">{t("clientProfile.firstName")}</label>
+                        <label className="mb-0.5 block text-[11px] text-text-faint">{t("clientProfile.firstName")}</label>
                         <input
                           value={clients[slot].firstName}
                           disabled={!canEdit("clientName")}
@@ -183,7 +206,7 @@ export function ClientProfileDialog({
                         />
                       </div>
                       <div>
-                        <label className="mb-1 block text-xs text-text-faint">{t("clientProfile.lastName")}</label>
+                        <label className="mb-0.5 block text-[11px] text-text-faint">{t("clientProfile.lastName")}</label>
                         <input
                           value={clients[slot].lastName}
                           disabled={!canEdit("clientName")}
@@ -198,7 +221,7 @@ export function ClientProfileDialog({
                         />
                       </div>
                       <div>
-                        <label className="mb-1 block text-xs text-text-faint">{t("clientProfile.ssn")}</label>
+                        <label className="mb-0.5 block text-[11px] text-text-faint">{t("clientProfile.ssn")}</label>
                         <input
                           value={ssn[slot] ?? ""}
                           disabled={!canEdit("ssn")}
@@ -214,11 +237,11 @@ export function ClientProfileDialog({
                           className={`${inputCls} ${ssnDuplicateErrors[slot] ? "border-red-500" : ""}`}
                         />
                         {ssnDuplicateErrors[slot] && (
-                          <p className="mt-1 text-[10px] leading-tight text-red-400">{ssnDuplicateErrors[slot]}</p>
+                          <p className="mt-0.5 text-[10px] leading-tight text-red-400">{ssnDuplicateErrors[slot]}</p>
                         )}
                       </div>
                       <div>
-                        <label className="mb-1 block text-xs text-text-faint">{t("clientProfile.dob")}</label>
+                        <label className="mb-0.5 block text-[11px] text-text-faint">{t("clientProfile.dob")}</label>
                         <input
                           type="date"
                           value={dateOfBirth[slot] ?? ""}
@@ -252,70 +275,99 @@ export function ClientProfileDialog({
                   ))}
                 </div>
 
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div>
-                    <label className="mb-1 block text-xs text-text-dim">{t("clientProfile.phone1")}</label>
-                    <input
-                      value={phone}
-                      disabled={!canEdit("phone")}
-                      maxLength={10}
-                      onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
-                      className={inputCls}
-                    />
+                <div className="flex flex-[3] flex-col gap-3">
+                  <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+                    <div>
+                      <label className="mb-0.5 block text-[11px] text-text-dim">{t("clientProfile.phone1")}</label>
+                      <input
+                        value={phone}
+                        disabled={!canEdit("phone")}
+                        maxLength={10}
+                        onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                        className={inputCls}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-0.5 block text-[11px] text-text-dim">{t("clientProfile.phone2")}</label>
+                      <input
+                        value={phone2}
+                        disabled={!canEdit("phone2")}
+                        maxLength={10}
+                        onChange={(e) => setPhone2(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                        className={inputCls}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-0.5 block text-[11px] text-text-dim">{t("clientProfile.zipcode")}</label>
+                      <input
+                        value={zipcode}
+                        disabled={!canEdit("zipcode")}
+                        maxLength={5}
+                        onChange={(e) => setZipcode(e.target.value.replace(/\D/g, "").slice(0, 5))}
+                        className={inputCls}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-0.5 block text-[11px] text-text-dim">{t("clientProfile.email")}</label>
+                      <input
+                        value={email}
+                        disabled={!canEdit("email")}
+                        onChange={(e) => setEmail(e.target.value)}
+                        className={inputCls}
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="mb-0.5 block text-[11px] text-text-dim">{t("clientProfile.address")}</label>
+                      <input
+                        value={address}
+                        disabled={!canEdit("address")}
+                        onChange={(e) => setAddress(e.target.value)}
+                        className={inputCls}
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <label className="mb-1 block text-xs text-text-dim">{t("clientProfile.phone2")}</label>
-                    <input
-                      value={phone2}
-                      disabled={!canEdit("phone2")}
-                      maxLength={10}
-                      onChange={(e) => setPhone2(e.target.value.replace(/\D/g, "").slice(0, 10))}
-                      className={inputCls}
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-xs text-text-dim">{t("clientProfile.zipcode")}</label>
-                    <input
-                      value={zipcode}
-                      disabled={!canEdit("zipcode")}
-                      maxLength={5}
-                      onChange={(e) => setZipcode(e.target.value.replace(/\D/g, "").slice(0, 5))}
-                      className={inputCls}
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-xs text-text-dim">{t("clientProfile.email")}</label>
-                    <input value={email} disabled={!canEdit("email")} onChange={(e) => setEmail(e.target.value)} className={inputCls} />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="mb-1 block text-xs text-text-dim">{t("clientProfile.address")}</label>
-                    <input value={address} disabled={!canEdit("address")} onChange={(e) => setAddress(e.target.value)} className={inputCls} />
-                  </div>
-                </div>
 
-                <div>
-                  <label className="mb-1.5 block text-xs text-text-dim">{t("clientProfile.refundLabel")}</label>
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    {REFUND_YEARS.map((year) => (
-                      <div key={year} className="relative">
-                        <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-text-faint">$</span>
-                        <input
-                          type="number"
-                          min={0}
-                          step="0.01"
-                          value={refundsDraft[year]}
-                          disabled={!canEdit("refunds")}
-                          onChange={(e) => setRefundsDraft((prev) => ({ ...prev, [year]: e.target.value }))}
-                          placeholder={year}
-                          className={`${inputCls} pl-5`}
-                        />
-                        <span className="mt-0.5 block text-center text-[10px] text-text-faint">{year}</span>
-                      </div>
-                    ))}
+                  <div>
+                    <label className="mb-1 block text-[11px] text-text-dim">{t("clientProfile.refundLabel")}</label>
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                      {REFUND_YEARS.map((year) => {
+                        const isEmpty = !refundsDraft[year];
+                        return (
+                          <div key={year} className="relative">
+                            <span
+                              className={`pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs ${
+                                isEmpty ? "text-red-400" : "text-text-faint"
+                              }`}
+                            >
+                              $
+                            </span>
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              // Hiển thị luôn theo cấu trúc tiền $ Mỹ (dấu phẩy ngăn cách
+                              // nghìn) — refundsDraft[year] lưu số THUẦN không dấu phẩy
+                              // (xem sanitizeMoneyDraft), chỉ format lại lúc render.
+                              value={formatMoneyDraft(refundsDraft[year])}
+                              disabled={!canEdit("refunds")}
+                              onChange={(e) =>
+                                setRefundsDraft((prev) => ({ ...prev, [year]: sanitizeMoneyDraft(e.target.value) }))
+                              }
+                              placeholder={year}
+                              className={`${inputCls} pl-5 ${isEmpty ? "border-red-500 focus:border-red-500" : ""}`}
+                            />
+                            <span
+                              className={`mt-0.5 block text-center text-[10px] ${isEmpty ? "font-medium text-red-400" : "text-text-faint"}`}
+                            >
+                              {year}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <p className="mt-1.5 text-xs text-text-faint">
+                      {t("clientProfile.summary", { case: previewCaseCount, money: previewMoney.toLocaleString("en-US") })}
+                    </p>
                   </div>
-                  <p className="mt-2 text-xs text-text-faint">
-                    {t("clientProfile.summary", { case: previewCaseCount, money: previewMoney.toLocaleString("en-US") })}
-                  </p>
                 </div>
               </div>
 
@@ -326,7 +378,7 @@ export function ClientProfileDialog({
                 </div>
               )}
 
-              <div className="mt-5 flex justify-end gap-2 px-5 pb-5">
+              <div className="mt-4 flex justify-end gap-2 px-5 pb-4">
                 <button onClick={() => setOpen(false)} className="rounded-lg px-3.5 py-2 text-sm text-text-dim hover:bg-surface-hover">
                   {t("common.cancel")}
                 </button>

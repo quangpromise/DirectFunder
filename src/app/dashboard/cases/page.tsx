@@ -1105,7 +1105,9 @@ function RowCells({
           />
         )}
         {row.status === "cpa_review" && (canSendToSheetFeature || canSendCpaEmailFeature) && (
-          <div className="flex flex-col gap-0.5">
+          // -translate-x-1 — dịch sang trái 1 chút, tránh nằm sát nút Edit Hồ sơ ở cột
+          // Client Name ngay bên phải, dễ bấm nhầm.
+          <div className="flex -translate-x-1 flex-col gap-0.5">
             {canSendToSheetFeature && (
               <SendToSheetButton
                 caseId={row.id}

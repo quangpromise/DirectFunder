@@ -16,11 +16,12 @@ type SendResult = { ok: true } | { ok: false; error: string; needsGoogleAuth?: b
  * riêng bên dưới → popup xác nhận gửi → gửi (kèm danh sách năm đã chọn, server dùng để
  * điền cột ảo "Số tiền CPA Review" = TỔNG refund của các năm đã chọn nếu Admin có cấu
  * hình cột này — xem CPA_REVIEW_MONEY_COLUMN_ID) → thành công chuyển xanh lá đậm BỀN VỮNG
- * (không tự tắt). Bấm lại lúc đang xanh: hiện popup xác nhận RIÊNG "muốn gửi lại?" — đồng
- * ý mới quay về mặc định (KHÔNG gửi lại ngay, không mở lại popup chọn năm), phải bấm thêm
- * 1 lần nữa (lúc này đã về mặc định) mới thực sự đi lại từ đầu (chọn năm → xác nhận →
- * gửi) — 2 lớp xác nhận độc lập cho 2 hành động khác nhau, khác useSuccessFlash tự tắt
- * sau 5s của các nút Order.
+ * (không tự tắt). Popup chọn năm còn có nút phụ "Đã gửi" (markAsSent) — dùng khi đã gửi
+ * thủ công qua đường khác, chỉ đánh dấu UI mà KHÔNG gọi API thật. Bấm lại lúc đang xanh:
+ * hiện popup xác nhận RIÊNG "muốn gửi lại?" — đồng ý mới quay về mặc định (KHÔNG gửi lại
+ * ngay, không mở lại popup chọn năm), phải bấm thêm 1 lần nữa (lúc này đã về mặc định)
+ * mới thực sự đi lại từ đầu (chọn năm → xác nhận/đã gửi) — 2 lớp xác nhận độc lập cho 2
+ * hành động khác nhau, khác useSuccessFlash tự tắt sau 5s của các nút Order.
  */
 export function SendToSheetButton({
   caseId,
@@ -85,6 +86,16 @@ export function SendToSheetButton({
     await doSend(selectedYears);
   }
 
+  /** Đánh dấu "Đã gửi" thủ công — dùng khi CPA/Processor đã tự gửi dòng lên Google Sheet
+   * qua đường khác (không qua nút Send của app) và chỉ muốn UI phản ánh đúng trạng thái,
+   * KHÔNG gọi API gửi thật (không kèm reviewYears vì không có ý nghĩa ở đây). Vẫn đi vào
+   * đúng vòng lặp xác nhận gửi lại như khi gửi thật (bấm lại lúc đang xanh -> hỏi "muốn
+   * gửi lại?" -> đồng ý mới quay về mặc định). */
+  function markAsSent() {
+    setYearPickerOpen(false);
+    setSent(true);
+  }
+
   return (
     <div className="shrink-0">
       <button
@@ -146,6 +157,13 @@ export function SendToSheetButton({
                 className="gradient-btn mt-3 w-full rounded-lg py-1.5 text-xs font-medium text-white disabled:cursor-default disabled:opacity-50"
               >
                 {t("common.confirm")}
+              </button>
+              <button
+                type="button"
+                onClick={markAsSent}
+                className="mt-1.5 w-full rounded-lg border border-green-600/50 bg-green-800/20 py-1.5 text-xs font-medium text-green-300 transition hover:bg-green-800/40 light:border-green-600 light:bg-green-50 light:text-green-700 light:hover:bg-green-100"
+              >
+                {t("sheet.markSentBtn")}
               </button>
             </div>
           </div>,

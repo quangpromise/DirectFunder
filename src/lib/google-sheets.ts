@@ -57,6 +57,12 @@ export interface CellWrite {
    * GoogleSheetColumnMapping.sheetColumn trong types.ts. */
   column: string;
   value: string | number;
+  /** true nếu `value` là 1 công thức Sheets (vd "=HYPERLINK(...)") cần Sheets DIỄN GIẢI —
+   * bắt buộc ghi bằng valueInputOption "USER_ENTERED" (RAW sẽ lưu y nguyên chuỗi
+   * "=HYPERLINK(...)" dạng text, không chạy công thức). Mặc định false/undefined = ghi
+   * RAW như mọi cell khác (xem writeCells — 2 loại được tách ra ghi bằng 2 lệnh riêng vì
+   * valueInputOption áp dụng cho CẢ 1 lệnh batchUpdate, không chọn được theo từng ô). */
+  isFormula?: boolean;
 }
 
 export interface AppendRowInput {
@@ -168,22 +174,22 @@ async function ensureRowExists(
   });
 }
 
-/** Ghi các ô đã CHỈ ĐỊNH SẴN cột (`cells`) vào đúng `targetRow` — mỗi ô 1 range riêng theo
- * đúng chữ cái cột Admin đã gán, không gộp/không suy đoán vị trí liền kề, nên cột nào
- * không có trong `cells` (dù nằm giữa 2 cột khác có ghi) tuyệt đối không bị đụng tới. */
-async function writeCells(
+/** Ghi 1 nhóm ô (cùng 1 valueInputOption) vào `targetRow` — mỗi ô 1 range riêng theo đúng
+ * chữ cái cột Admin đã gán, không gộp/không suy đoán vị trí liền kề. */
+async function writeCellGroup(
   sheets: ReturnType<typeof google.sheets>,
   spreadsheetId: string,
   tabName: string,
   targetRow: number,
-  cells: CellWrite[]
+  cells: CellWrite[],
+  valueInputOption: "RAW" | "USER_ENTERED"
 ): Promise<void> {
   if (cells.length === 0) return;
   if (cells.length === 1) {
     await sheets.spreadsheets.values.update({
       spreadsheetId,
       range: `'${tabName}'!${cells[0].column}${targetRow}`,
-      valueInputOption: "RAW",
+      valueInputOption,
       requestBody: { values: [[cells[0].value]] },
     });
     return;
@@ -191,13 +197,31 @@ async function writeCells(
   await sheets.spreadsheets.values.batchUpdate({
     spreadsheetId,
     requestBody: {
-      valueInputOption: "RAW",
+      valueInputOption,
       data: cells.map((c) => ({
         range: `'${tabName}'!${c.column}${targetRow}`,
         values: [[c.value]],
       })),
     },
   });
+}
+
+/** Ghi các ô đã CHỈ ĐỊNH SẴN cột (`cells`) vào đúng `targetRow` — cột nào không có trong
+ * `cells` (dù nằm giữa 2 cột khác có ghi) tuyệt đối không bị đụng tới. Tách thành 2 lệnh
+ * ghi riêng theo `isFormula` vì 1 lệnh batchUpdate/update chỉ nhận đúng 1 valueInputOption
+ * áp dụng cho mọi ô trong lệnh đó — không trộn RAW (dữ liệu thường) và USER_ENTERED (công
+ * thức, vd HYPERLINK cho Client Name) chung 1 lệnh được. */
+async function writeCells(
+  sheets: ReturnType<typeof google.sheets>,
+  spreadsheetId: string,
+  tabName: string,
+  targetRow: number,
+  cells: CellWrite[]
+): Promise<void> {
+  const formulaCells = cells.filter((c) => c.isFormula);
+  const rawCells = cells.filter((c) => !c.isFormula);
+  await writeCellGroup(sheets, spreadsheetId, tabName, targetRow, rawCells, "RAW");
+  await writeCellGroup(sheets, spreadsheetId, tabName, targetRow, formulaCells, "USER_ENTERED");
 }
 
 /** Ghi 1 dòng dữ liệu — tự tìm dòng đích qua `findTargetRow` (bỏ qua `SKIP_LEADING_ROWS`

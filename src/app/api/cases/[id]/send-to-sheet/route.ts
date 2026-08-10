@@ -63,16 +63,21 @@ export async function POST(request: Request, ctx: RouteContext<"/api/cases/[id]/
   // `cells`, nên appendRowToSheet không bao giờ động tới, an toàn cho dropdown/công thức
   // Admin đã cấu hình sẵn ở các cột đó trên Sheet thật.
   const cells: CellWrite[] = sheetConfig.columnMappings.map(({ colId, sheetColumn }) => {
-    const value =
-      colId === SEND_DATE_COLUMN_ID
-        ? formatDateValue(todayIsoDate(), dateFormat)
-        : getColumnValue(
-            caseRecord,
-            columnById.get(colId) ?? ({ id: colId, key: colId, label: "", type: "text", editableBy: [] } as ColumnDef),
-            "vi",
-            dateFormat,
-            reviewYears
-          );
+    if (colId === SEND_DATE_COLUMN_ID) {
+      return { column: sheetColumn, value: formatDateValue(todayIsoDate(), dateFormat) };
+    }
+    const col =
+      columnById.get(colId) ?? ({ id: colId, key: colId, label: "", type: "text", editableBy: [] } as ColumnDef);
+    const value = getColumnValue(caseRecord, col, "vi", dateFormat, reviewYears);
+    // Client Name có Liên kết đính kèm (nút icon link cạnh tên trên bảng chính) -> ghi
+    // dạng công thức HYPERLINK để tên trên Google Sheet cũng bấm được thẳng vào link đó,
+    // giống hệt hành vi trên bảng chính — chỉ cột clientName mới cần công thức, mọi cột
+    // khác vẫn ghi RAW như cũ (xem writeCells).
+    if (colId === "clientName" && caseRecord.clientLink && typeof value === "string" && value) {
+      const escapedUrl = caseRecord.clientLink.replace(/"/g, '""');
+      const escapedLabel = value.replace(/"/g, '""');
+      return { column: sheetColumn, value: `=HYPERLINK("${escapedUrl}","${escapedLabel}")`, isFormula: true };
+    }
     return { column: sheetColumn, value };
   });
 

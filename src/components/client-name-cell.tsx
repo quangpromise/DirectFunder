@@ -43,7 +43,9 @@ export function ClientNameCell({
   const hasLink = Boolean(caseRecord.clientLink);
   return (
     <div className="relative flex h-full min-w-0 items-stretch">
-      <div className="flex shrink-0 items-center pl-1">
+      {/* pl-2 (thay vì pl-1) — dịch nút Edit sang phải 1 chút, tránh nằm sát 2 nút Send
+          row to Google Sheet/Send email to CPA ở cột Status ngay bên trái, dễ bấm nhầm. */}
+      <div className="flex shrink-0 items-center pl-2">
         <ClientProfileDialog
           caseRecord={caseRecord}
           columns={columns}

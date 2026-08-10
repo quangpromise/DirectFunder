@@ -38,11 +38,13 @@ function formatBytes(bytes: number): string {
 }
 
 /**
- * Nút thứ 3 trong OrderCell (cạnh Order 8821 / Order TTS & WIT) — mở popup soạn +
- * gửi email cho CPA qua Gmail SMTP. To/Cc mặc định lấy từ cấu hình chung (Admin sửa ở
- * trang Phân quyền), Subject/Nội dung tự do chỉnh, đính kèm nhiều file. Gửi là hành
- * động foreground có thể fail rõ ràng — KHÔNG optimistic, chờ kết quả thật từ server
- * (xem sendCpaEmail trong app-store.ts) trước khi báo thành công/lỗi.
+ * Icon trong cột Status (chỉ hiện khi status = cpa_review) — mở popup soạn + gửi email
+ * cho CPA qua Gmail SMTP. To/Cc mặc định lấy từ cấu hình chung (Admin sửa ở trang Phân
+ * quyền), Subject/Nội dung tự do chỉnh, đính kèm nhiều file. Gửi là hành động foreground
+ * có thể fail rõ ràng — KHÔNG optimistic, chờ kết quả thật từ server (xem sendCpaEmail
+ * trong app-store.ts) trước khi báo thành công/lỗi. Dialog còn có nút phụ "Đã gửi"
+ * (markAsSent) cạnh nút "Gửi" — dùng khi đã gửi thủ công qua đường khác, chỉ đánh dấu UI
+ * mà KHÔNG gọi onSend thật.
  */
 export function SendCpaEmailDialog({
   disabled,
@@ -122,6 +124,15 @@ export function SendCpaEmailDialog({
 
   function removeFile(idx: number) {
     setFiles((list) => list.filter((_, i) => i !== idx));
+  }
+
+  /** Đánh dấu "Đã gửi" thủ công — dùng khi CPA/Processor đã tự gửi mail qua đường khác
+   * (không qua dialog này) và chỉ muốn UI phản ánh đúng trạng thái, KHÔNG gọi API gửi mail
+   * thật (onSend). Vẫn đi vào đúng vòng lặp xác nhận gửi lại như khi gửi thật (bấm lại lúc
+   * đang xanh -> hỏi "muốn gửi lại?" -> đồng ý mới quay về mặc định). */
+  function markAsSent() {
+    setOpen(false);
+    setJustSent(true);
   }
 
   async function handleSend() {
@@ -288,6 +299,13 @@ export function SendCpaEmailDialog({
                   className="rounded-lg px-3.5 py-2 text-sm text-text-dim hover:bg-surface-hover"
                 >
                   {t("common.cancel")}
+                </button>
+                <button
+                  onClick={markAsSent}
+                  disabled={sending}
+                  className="rounded-lg border border-green-600/50 bg-green-800/20 px-3.5 py-2 text-sm font-medium text-green-300 transition hover:bg-green-800/40 disabled:cursor-default disabled:opacity-60 light:border-green-600 light:bg-green-50 light:text-green-700 light:hover:bg-green-100"
+                >
+                  {t("cpaEmail.markSentBtn")}
                 </button>
                 <button
                   onClick={handleSend}
