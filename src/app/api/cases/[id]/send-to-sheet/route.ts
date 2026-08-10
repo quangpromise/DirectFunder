@@ -11,9 +11,11 @@ import type { ColumnDef, FeaturePermissions, GoogleSheetConfig } from "@/lib/typ
 
 /** Đẩy 1 dòng dữ liệu hồ sơ vào tab tháng hiện tại của Google Sheet chung — chỉ cho hồ sơ
  * đang ở trạng thái "cpa_review" (nút Send ở cột Status chỉ hiện trong trạng thái này).
- * KHÔNG ghi gì vào bảng Case, lịch sử chỉ lưu ở Edit History phía client (giống
- * send-cpa-email). Auth Google Sheets là OAuth2 THEO TỪNG USER (googleRefreshToken trên
- * User), không phải 1 service account chung. */
+ * Lưu `sheetSentAt` xuống bảng Case (gửi thật hoặc "Mark as sent" thủ công đều lưu) để
+ * nút Send giữ đúng trạng thái xanh (đã gửi) qua reload/deploy lại — trước đây chỉ lưu ở
+ * React state nên mất ngay khi F5. `clear: true` (bấm "muốn gửi lại") xoá lại giá trị này.
+ * Auth Google Sheets là OAuth2 THEO TỪNG USER (googleRefreshToken trên User), không phải
+ * 1 service account chung — 2 nhánh manual/clear không đụng gì tới Google cả, chỉ ghi DB. */
 export async function POST(request: Request, ctx: RouteContext<"/api/cases/[id]/send-to-sheet">) {
   const me = await requireUser();
   if (!me) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
@@ -22,8 +24,12 @@ export async function POST(request: Request, ctx: RouteContext<"/api/cases/[id]/
   // NHIỀU NĂM cùng lúc (xem SendToSheetButton) — chỉ dùng cho cột ảo
   // CPA_REVIEW_MONEY_COLUMN_ID (giá trị = TỔNG refund các năm đã chọn), optional vì
   // request cũ/hồ sơ không dùng cột này vẫn gửi được bình thường.
+  // manual: bấm "Mark as sent" (đã gửi qua đường khác, KHÔNG gọi Google Sheets API thật).
+  // clear: bấm xác nhận "muốn gửi lại" (xoá sheetSentAt, không gọi Google Sheets API).
   const body = await request.json().catch(() => ({}));
   const reviewYears = Array.isArray(body?.reviewYears) ? body.reviewYears.filter((y: unknown) => typeof y === "string") : undefined;
+  const manual = body?.manual === true;
+  const clear = body?.clear === true;
 
   const config = await prisma.appConfig.findUnique({ where: { id: "singleton" } });
   const permissions = config?.featurePermissions as unknown as FeaturePermissions | undefined;
@@ -36,6 +42,15 @@ export async function POST(request: Request, ctx: RouteContext<"/api/cases/[id]/
   if (!row) return NextResponse.json({ error: "Không tìm thấy hồ sơ" }, { status: 404 });
   if (row.status !== "cpa_review") {
     return NextResponse.json({ error: "Hồ sơ không còn ở trạng thái Kế toán duyệt" }, { status: 400 });
+  }
+
+  if (clear) {
+    const updated = await prisma.case.update({ where: { id }, data: { sheetSentAt: null } });
+    return NextResponse.json({ ok: true, sheetSentAt: updated.sheetSentAt });
+  }
+  if (manual) {
+    const updated = await prisma.case.update({ where: { id }, data: { sheetSentAt: new Date() } });
+    return NextResponse.json({ ok: true, sheetSentAt: updated.sheetSentAt!.toISOString() });
   }
 
   const sheetConfig = config?.googleSheetConfig as unknown as GoogleSheetConfig | null;
@@ -99,5 +114,6 @@ export async function POST(request: Request, ctx: RouteContext<"/api/cases/[id]/
     return NextResponse.json({ error: message }, { status: 502 });
   }
 
-  return NextResponse.json({ ok: true });
+  const updated = await prisma.case.update({ where: { id }, data: { sheetSentAt: new Date() } });
+  return NextResponse.json({ ok: true, sheetSentAt: updated.sheetSentAt!.toISOString() });
 }

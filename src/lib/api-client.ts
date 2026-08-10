@@ -82,7 +82,9 @@ export const api = {
       body: JSON.stringify({ columns, featurePermissions, cpaEmailDefaults, googleSheetConfig }),
     }),
 
-  /** Gửi email cho CPA từ 1 hồ sơ — xem POST /api/cases/[id]/send-cpa-email. */
+  /** Gửi email cho CPA từ 1 hồ sơ — xem POST /api/cases/[id]/send-cpa-email. Server trả về
+   * cpaEmailSentAt (ISO) đã lưu xuống DB — store dùng giá trị này thay vì tự đặt Date.now()
+   * để khớp đúng giờ server. */
   sendCpaEmail: (
     caseId: string,
     payload: {
@@ -93,15 +95,38 @@ export const api = {
       text: string;
       attachments: { filename: string; contentType: string; contentBase64: string }[];
     }
-  ) => request<{ ok: true }>(`/api/cases/${caseId}/send-cpa-email`, { method: "POST", body: JSON.stringify(payload) }),
+  ) =>
+    request<{ ok: true; cpaEmailSentAt: string }>(`/api/cases/${caseId}/send-cpa-email`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  /** Đánh dấu "Đã gửi" mail CPA thủ công (manual) hoặc xoá đánh dấu đó khi xác nhận "muốn
+   * gửi lại" (clear) — KHÔNG gọi Gmail thật, chỉ ghi/xoá cpaEmailSentAt trong DB. Dùng
+   * chung route POST /api/cases/[id]/send-cpa-email, phân biệt qua body. */
+  markCpaEmailSent: (caseId: string, action: "manual" | "clear") =>
+    request<{ ok: true; cpaEmailSentAt: string | null }>(`/api/cases/${caseId}/send-cpa-email`, {
+      method: "POST",
+      body: JSON.stringify({ [action]: true }),
+    }),
 
   /** Đẩy 1 dòng dữ liệu hồ sơ lên Google Sheet — xem POST /api/cases/[id]/send-to-sheet.
    * Lỗi "GOOGLE_NOT_CONNECTED" (HTTP 428, xem request() ném ApiError với message này) báo
-   * hiệu UI cần mở popup kết nối Google trước khi gọi lại. */
+   * hiệu UI cần mở popup kết nối Google trước khi gọi lại. Server trả về sheetSentAt (ISO)
+   * đã lưu xuống DB. */
   sendCaseRowToSheet: (caseId: string, reviewYears?: string[]) =>
-    request<{ ok: true }>(`/api/cases/${caseId}/send-to-sheet`, {
+    request<{ ok: true; sheetSentAt: string }>(`/api/cases/${caseId}/send-to-sheet`, {
       method: "POST",
       body: JSON.stringify({ reviewYears }),
+    }),
+
+  /** Đánh dấu "Đã gửi" Google Sheet thủ công (manual) hoặc xoá đánh dấu đó khi xác nhận
+   * "muốn gửi lại" (clear) — KHÔNG gọi Google Sheets API thật, chỉ ghi/xoá sheetSentAt
+   * trong DB. Dùng chung route POST /api/cases/[id]/send-to-sheet, phân biệt qua body. */
+  markCaseSheetSent: (caseId: string, action: "manual" | "clear") =>
+    request<{ ok: true; sheetSentAt: string | null }>(`/api/cases/${caseId}/send-to-sheet`, {
+      method: "POST",
+      body: JSON.stringify({ [action]: true }),
     }),
 
   /** Lưu toàn bộ nội dung popup "Edit Hồ sơ" (ClientProfileDialog) trong 1 lần gọi —

@@ -13,8 +13,11 @@ function isNonEmptyEmailArray(v: unknown): v is string[] {
   return Array.isArray(v) && v.length > 0 && v.every((s) => typeof s === "string" && s.trim().length > 0);
 }
 
-/** Gửi email cho CPA từ 1 hồ sơ cụ thể — KHÔNG ghi gì vào bảng Case (không có audit
- * trong DB), lịch sử gửi chỉ lưu ở Edit History phía client (xem sendCpaEmail trong
+/** Gửi email cho CPA từ 1 hồ sơ cụ thể — lưu `cpaEmailSentAt` xuống bảng Case (gửi thật
+ * hoặc "Mark as sent" thủ công đều lưu) để nút giữ đúng trạng thái xanh (đã gửi) qua
+ * reload/deploy lại — trước đây chỉ lưu ở React state nên mất ngay khi F5. `clear: true`
+ * (bấm "muốn gửi lại") xoá lại giá trị này, không gọi Gmail. Lịch sử gửi chi tiết (nội
+ * dung mail...) vẫn chỉ lưu ở Edit History phía client như cũ (xem sendCpaEmail trong
  * app-store.ts, gọi logEdit() sau khi request này trả về thành công). */
 export async function POST(request: NextRequest, ctx: RouteContext<"/api/cases/[id]/send-cpa-email">) {
   const me = await requireUser();
@@ -31,6 +34,18 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/cases/[
   if (!kase) return NextResponse.json({ error: "Không tìm thấy hồ sơ" }, { status: 404 });
 
   const body = await request.json().catch(() => null);
+
+  // manual: bấm "Mark as sent" (đã gửi qua đường khác, KHÔNG gọi Gmail thật).
+  // clear: bấm xác nhận "muốn gửi lại" (xoá cpaEmailSentAt, không gọi Gmail).
+  if (body?.clear === true) {
+    const updated = await prisma.case.update({ where: { id }, data: { cpaEmailSentAt: null } });
+    return NextResponse.json({ ok: true, cpaEmailSentAt: updated.cpaEmailSentAt });
+  }
+  if (body?.manual === true) {
+    const updated = await prisma.case.update({ where: { id }, data: { cpaEmailSentAt: new Date() } });
+    return NextResponse.json({ ok: true, cpaEmailSentAt: updated.cpaEmailSentAt!.toISOString() });
+  }
+
   if (!body || !isNonEmptyEmailArray(body.to)) {
     return NextResponse.json({ error: "Thiếu người nhận (To)" }, { status: 400 });
   }
@@ -63,5 +78,6 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/cases/[
     return NextResponse.json({ error: message }, { status: 502 });
   }
 
-  return NextResponse.json({ ok: true });
+  const updated = await prisma.case.update({ where: { id }, data: { cpaEmailSentAt: new Date() } });
+  return NextResponse.json({ ok: true, cpaEmailSentAt: updated.cpaEmailSentAt!.toISOString() });
 }

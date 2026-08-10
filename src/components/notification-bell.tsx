@@ -26,6 +26,11 @@ function timeAgo(iso: string, language: "vi" | "en"): string {
 export function NotificationBell({ currentUserId }: { currentUserId: string }) {
   const [open, setOpen] = useState(false);
   const notifications = useAppStore((s) => s.notifications);
+  /** Thông báo mới nhất vừa nhận (không phải toàn bộ mine) — hiện 1 banner nhỏ ngay dưới
+   * nút chuông trong ~10s rồi tự tắt (xem useEffect phát âm thanh bên dưới, tái dùng
+   * đúng logic phát hiện id MỚI qua seenIdsRef). null = không hiện banner. */
+  const [toastNotification, setToastNotification] = useState<(typeof notifications)[number] | null>(null);
+  const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const users = useAppStore((s) => s.users);
   const markNotificationRead = useAppStore((s) => s.markNotificationRead);
   const markAllNotificationsRead = useAppStore((s) => s.markAllNotificationsRead);
@@ -56,12 +61,26 @@ export function NotificationBell({ currentUserId }: { currentUserId: string }) {
   useEffect(() => {
     const ids = new Set(mine.map((n) => n.id));
     if (seenIdsRef.current) {
-      const hasNew = [...ids].some((id) => !seenIdsRef.current!.has(id));
-      if (hasNew && !notificationSoundMuted) audioRef.current?.play().catch(() => {});
+      const newIds = mine.filter((n) => !seenIdsRef.current!.has(n.id));
+      if (newIds.length > 0) {
+        if (!notificationSoundMuted) audioRef.current?.play().catch(() => {});
+        // Hiện banner cho thông báo mới nhất trong đợt này (nếu nhiều cái tới cùng lúc) —
+        // tự tắt sau 10s; nếu 1 thông báo mới khác tới trước khi hết 10s, reset lại đồng
+        // hồ đếm cho thông báo mới nhất đó thay vì tắt giữa chừng.
+        setToastNotification(newIds[newIds.length - 1]);
+        if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+        toastTimeoutRef.current = setTimeout(() => setToastNotification(null), 10_000);
+      }
     }
     seenIdsRef.current = ids;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [notifications, currentUserId]);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    };
+  }, []);
 
   return (
     <div className="relative">
@@ -76,6 +95,7 @@ export function NotificationBell({ currentUserId }: { currentUserId: string }) {
           const next = !open;
           setOpen(next);
           if (next && unreadCount > 0) markAllNotificationsRead();
+          if (next) setToastNotification(null);
         }}
         className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-surface text-text-dim transition hover:bg-surface-hover hover:text-text"
         aria-label={t("notif.ariaLabel")}
@@ -87,6 +107,28 @@ export function NotificationBell({ currentUserId }: { currentUserId: string }) {
           </span>
         )}
       </button>
+
+      {/* Banner thông báo mới — bong bóng kiểu tin nhắn NỐI LIỀN từ chân nút chuông (đuôi
+          tam giác xem .notif-toast::before trong globals.css), nền ĐEN cố định + chữ màu
+          xanh dương SÁNG (--accent-from, đầu gradient logo — sáng hơn --accent gốc, xem
+          globals.css/ui-design.md — KHÔNG đổi theo theme). Tự nhấp nháy chậm (tái dùng
+          .greeting-blink đã có — mờ dần rồi rõ lại, chu kỳ 3.5s) để dễ thu hút chú ý hơn.
+          Bấm vào -> đánh dấu đã đọc + tắt banner ngay (đúng như bấm 1 thông báo trong
+          dropdown, kèm nhảy tới đúng hồ sơ). Tự tắt sau 10s nếu không bấm (xem useEffect
+          phát hiện id mới ở trên) hoặc tắt ngay nếu người dùng mở dropdown xem chi tiết. */}
+      {!open && toastNotification && (
+        <button
+          onClick={() => {
+            const n = toastNotification;
+            markNotificationRead(n.id);
+            setToastNotification(null);
+            goToNotification(n.caseId);
+          }}
+          className="notif-toast greeting-blink absolute right-0 top-full z-50 mt-2.5 w-72 max-w-[70vw] rounded-xl bg-black px-3 py-2.5 text-left text-xs font-medium text-accent-from shadow-2xl shadow-black/60 transition hover:bg-neutral-900"
+        >
+          {toastNotification.message}
+        </button>
+      )}
 
       {open && (
         <>

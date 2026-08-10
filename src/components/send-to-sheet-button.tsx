@@ -10,35 +10,44 @@ type SendResult = { ok: true } | { ok: false; error: string; needsGoogleAuth?: b
 
 /**
  * Nút nhỏ ngay sau badge Status — chỉ render khi hồ sơ đang ở trạng thái "cpa_review"
- * (điều kiện lọc ở nơi gọi, xem cases/page.tsx). Bấm vào lúc mặc định: hiện popup "Bạn
- * muốn CPA Review năm nào?" (4 nút năm + số tiền refund tương ứng, lấy từ Edit Hồ sơ —
- * CHỌN ĐƯỢC NHIỀU NĂM CÙNG LÚC, nút đã chọn đổi màu số tiền sang cam đậm) → bấm nút Gửi
- * riêng bên dưới → popup xác nhận gửi → gửi (kèm danh sách năm đã chọn, server dùng để
- * điền cột ảo "Số tiền CPA Review" = TỔNG refund của các năm đã chọn nếu Admin có cấu
- * hình cột này — xem CPA_REVIEW_MONEY_COLUMN_ID) → thành công chuyển xanh lá đậm BỀN VỮNG
- * (không tự tắt). Popup chọn năm còn có nút phụ "Đã gửi" (markAsSent) — dùng khi đã gửi
- * thủ công qua đường khác, chỉ đánh dấu UI mà KHÔNG gọi API thật. Bấm lại lúc đang xanh:
- * hiện popup xác nhận RIÊNG "muốn gửi lại?" — đồng ý mới quay về mặc định (KHÔNG gửi lại
- * ngay, không mở lại popup chọn năm), phải bấm thêm 1 lần nữa (lúc này đã về mặc định)
- * mới thực sự đi lại từ đầu (chọn năm → xác nhận/đã gửi) — 2 lớp xác nhận độc lập cho 2
- * hành động khác nhau, khác useSuccessFlash tự tắt sau 5s của các nút Order.
+ * (điều kiện lọc ở nơi gọi, xem cases/page.tsx). "Đã gửi hay chưa" (`sent`) tính THẲNG từ
+ * `sheetSentAt` (prop, đọc từ CaseRecord — server lưu xuống DB khi gửi thật/Mark as sent
+ * thành công) chứ KHÔNG dùng local useState nữa — nhờ vậy trạng thái xanh giữ nguyên qua
+ * reload/deploy lại (trước đây chỉ ở React state nên F5 là mất).
+ *
+ * Bấm vào lúc mặc định: hiện popup "Bạn muốn CPA Review năm nào?" (4 nút năm + số tiền
+ * refund tương ứng, lấy từ Edit Hồ sơ — CHỌN ĐƯỢC NHIỀU NĂM CÙNG LÚC, nút đã chọn đổi màu
+ * số tiền sang cam đậm) → bấm nút Gửi riêng bên dưới → popup xác nhận gửi → gửi (kèm danh
+ * sách năm đã chọn, server dùng để điền cột ảo "Số tiền CPA Review" = TỔNG refund của các
+ * năm đã chọn nếu Admin có cấu hình cột này — xem CPA_REVIEW_MONEY_COLUMN_ID) → thành công
+ * chuyển xanh lá đậm BỀN VỮNG (không tự tắt). Popup chọn năm còn có nút phụ "Mark as sent"
+ * (markCaseSheetSent) — dùng khi đã gửi thủ công qua đường khác, chỉ lưu sheetSentAt mà
+ * KHÔNG gọi Google Sheets API thật. Bấm lại lúc đang xanh: hiện popup xác nhận RIÊNG "muốn
+ * gửi lại?" — đồng ý mới xoá sheetSentAt + quay về mặc định (KHÔNG gửi lại ngay, không mở
+ * lại popup chọn năm), phải bấm thêm 1 lần nữa (lúc này đã về mặc định) mới thực sự đi
+ * lại từ đầu (chọn năm → xác nhận/Mark as sent) — 2 lớp xác nhận độc lập cho 2 hành động
+ * khác nhau, khác useSuccessFlash tự tắt sau 5s của các nút Order.
  */
 export function SendToSheetButton({
   caseId,
+  sheetSentAt,
   refunds,
   confirm,
   alertWarn,
   sendCaseRowToSheet,
+  markCaseSheetSent,
   connectGoogleAccount,
 }: {
   caseId: string;
+  sheetSentAt: string | null;
   refunds: Record<string, number>;
   confirm: (message: string, opts?: { title?: string; tone?: "default" | "danger" }) => Promise<boolean>;
   alertWarn: (message: string, opts?: { title?: string }) => Promise<void>;
   sendCaseRowToSheet: (caseId: string, reviewYears?: string[]) => Promise<SendResult>;
+  markCaseSheetSent: (caseId: string, action: "manual" | "clear") => Promise<void>;
   connectGoogleAccount: () => Promise<boolean>;
 }) {
-  const [sent, setSent] = useState(false);
+  const sent = Boolean(sheetSentAt);
   const [sending, setSending] = useState(false);
   const [yearPickerOpen, setYearPickerOpen] = useState(false);
   const [selectedYears, setSelectedYears] = useState<string[]>([]);
@@ -53,9 +62,7 @@ export function SendToSheetButton({
         if (!connected) return;
         result = await sendCaseRowToSheet(caseId, reviewYears);
       }
-      if (result.ok) {
-        setSent(true);
-      } else {
+      if (!result.ok) {
         await alertWarn(result.error, { title: t("sheet.sendErrorTitle") });
       }
     } finally {
@@ -67,7 +74,7 @@ export function SendToSheetButton({
     if (sent) {
       const confirmed = await confirm(t("sheet.confirmResend"), { title: t("sheet.confirmResendTitle") });
       if (!confirmed) return;
-      setSent(false);
+      await markCaseSheetSent(caseId, "clear");
       return;
     }
     setSelectedYears([]);
@@ -91,9 +98,9 @@ export function SendToSheetButton({
    * KHÔNG gọi API gửi thật (không kèm reviewYears vì không có ý nghĩa ở đây). Vẫn đi vào
    * đúng vòng lặp xác nhận gửi lại như khi gửi thật (bấm lại lúc đang xanh -> hỏi "muốn
    * gửi lại?" -> đồng ý mới quay về mặc định). */
-  function markAsSent() {
+  async function markAsSent() {
     setYearPickerOpen(false);
-    setSent(true);
+    await markCaseSheetSent(caseId, "manual");
   }
 
   return (

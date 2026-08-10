@@ -25,7 +25,7 @@ import { useAlert } from "@/components/alert-dialog";
 import { isDuplicateSsn, digitsOnly } from "@/lib/ssn";
 import { getFullName } from "@/lib/client-name";
 import { hasWaitingOrderForSsn, missingOrderClientFields } from "@/lib/orders";
-import { greetingPeriodFor, GreetingPeriod } from "@/lib/greeting";
+import { greetingPeriodFor, greetingEmoji, GreetingPeriod } from "@/lib/greeting";
 import { useT, useLanguage, translateColumnLabel, translateOptionLabel } from "@/lib/i18n";
 import { PeriodSelector, ReportPanel, ReportStatCard } from "@/components/report-ui";
 import {
@@ -158,7 +158,9 @@ export default function CasesPage() {
   const cpaEmailDefaults = useAppStore((s) => s.cpaEmailDefaults);
   const cpaSenderEmail = useAppStore((s) => s.cpaSenderEmail);
   const sendCpaEmail = useAppStore((s) => s.sendCpaEmail);
+  const markCpaEmailSent = useAppStore((s) => s.markCpaEmailSent);
   const sendCaseRowToSheet = useAppStore((s) => s.sendCaseRowToSheet);
+  const markCaseSheetSent = useAppStore((s) => s.markCaseSheetSent);
   const connectGoogleAccount = useAppStore((s) => s.connectGoogleAccount);
   const addRow = useAppStore((s) => s.addRow);
   const importCases = useAppStore((s) => s.importCases);
@@ -514,13 +516,32 @@ export default function CasesPage() {
         </div>
       </div>
       {view === "list" && (
-      <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3 sm:px-6">
-        <div>
-          <h1 className="text-sm font-semibold tracking-tight sm:text-lg">
-            {t("cases.greeting")} {user.name.split(" ").slice(-1)[0]}
-            {greetingPeriod && <> - {t(`cases.greetingPeriod.${greetingPeriod}`)}</>}
-          </h1>
-        </div>
+      // flex-col LUÔN (không chỉ mobile) — dòng chào chiếm trọn 1 hàng riêng full-width,
+      // stat chip + nút "Xem thống kê" dồn xuống hàng dưới, mọi kích thước màn hình.
+      <div className="flex flex-col gap-3 border-b border-border px-4 py-3 sm:px-6">
+        {(() => {
+          const greetingText = (
+            <>
+              {t("cases.greeting")} {user.name.split(" ").slice(-1)[0]}
+              {greetingPeriod && (
+                <>
+                  {" "}
+                  - {t(`cases.greetingPeriod.${greetingPeriod}`)} {greetingEmoji(greetingPeriod)}
+                </>
+              )}
+            </>
+          );
+          // Đứng yên, căn giữa cả hàng (w-full + flex justify-center), chỉ nhấp nháy CHẬM
+          // (mờ dần rồi rõ lại — xem .greeting-blink trong globals.css), không chạy ngang
+          // như trước nữa.
+          return (
+            <div className="flex w-full justify-center">
+              <h1 className="greeting-blink whitespace-nowrap text-sm font-semibold tracking-tight sm:text-lg">
+                {greetingText}
+              </h1>
+            </div>
+          );
+        })()}
 
         <div className="hidden flex-wrap items-center gap-2 sm:flex">
           <StatChip label={t("common.total")} value={String(stats.total)} icon={FileText} />
@@ -532,7 +553,7 @@ export default function CasesPage() {
 
         <button
           onClick={() => setStatsPopupOpen(true)}
-          className="flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs text-text-dim transition hover:bg-surface-hover hover:text-text sm:hidden"
+          className="flex items-center gap-1.5 self-start rounded-lg border border-border bg-surface px-3 py-1.5 text-xs text-text-dim transition hover:bg-surface-hover hover:text-text sm:hidden"
         >
           <BarChart3 size={14} />
           {t("cases.viewStats")}
@@ -801,8 +822,10 @@ export default function CasesPage() {
               cpaEmailDefaults={cpaEmailDefaults}
               cpaSenderEmail={cpaSenderEmail}
               sendCpaEmail={sendCpaEmail}
+              markCpaEmailSent={markCpaEmailSent}
               canSendToSheetFeature={canSendToSheetFeature}
               sendCaseRowToSheet={sendCaseRowToSheet}
+              markCaseSheetSent={markCaseSheetSent}
               connectGoogleAccount={connectGoogleAccount}
               confirm={confirm}
               alertWarn={alertWarn}
@@ -989,8 +1012,10 @@ function RowCells({
   cpaEmailDefaults,
   cpaSenderEmail,
   sendCpaEmail,
+  markCpaEmailSent,
   canSendToSheetFeature,
   sendCaseRowToSheet,
+  markCaseSheetSent,
   connectGoogleAccount,
   confirm,
   alertWarn,
@@ -1043,10 +1068,12 @@ function RowCells({
       attachments: { filename: string; contentType: string; contentBase64: string }[];
     }
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
+  markCpaEmailSent: (caseId: string, action: "manual" | "clear") => Promise<void>;
   canSendToSheetFeature: boolean;
   sendCaseRowToSheet: (
     caseId: string
   ) => Promise<{ ok: true } | { ok: false; error: string; needsGoogleAuth?: boolean }>;
+  markCaseSheetSent: (caseId: string, action: "manual" | "clear") => Promise<void>;
   connectGoogleAccount: () => Promise<boolean>;
   confirm: (message: string, opts?: { title?: string; tone?: "default" | "danger" }) => Promise<boolean>;
   alertWarn: (message: string, opts?: { title?: string }) => Promise<void>;
@@ -1111,10 +1138,12 @@ function RowCells({
             {canSendToSheetFeature && (
               <SendToSheetButton
                 caseId={row.id}
+                sheetSentAt={row.sheetSentAt}
                 refunds={row.refunds}
                 confirm={confirm}
                 alertWarn={alertWarn}
                 sendCaseRowToSheet={sendCaseRowToSheet}
+                markCaseSheetSent={markCaseSheetSent}
                 connectGoogleAccount={connectGoogleAccount}
               />
             )}
@@ -1128,6 +1157,7 @@ function RowCells({
                 senderName={user.name}
                 confirm={confirm}
                 onSend={(payload) => sendCpaEmail(row.id, payload)}
+                markCpaEmailSent={markCpaEmailSent}
               />
             )}
           </div>

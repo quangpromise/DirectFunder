@@ -74,6 +74,14 @@ model Case {
   createdBy          String?
   /// Giá trị các cột tuỳ chỉnh (custom columns)
   custom             Json     @default("{}")
+  /// Thời điểm gần nhất đã "Send row to Google Sheet" (gửi thật hoặc bấm "Mark as sent"
+  /// đánh dấu thủ công) — null = chưa gửi/đã bấm "muốn gửi lại". Lưu xuống DB (không chỉ
+  /// React state) để nút Send giữ đúng trạng thái xanh (đã gửi) qua reload/deploy lại,
+  /// xem POST /api/cases/[id]/send-to-sheet.
+  sheetSentAt        DateTime?
+  /// Tương tự sheetSentAt nhưng cho nút "Send mail to CPA" — xem
+  /// POST /api/cases/[id]/send-cpa-email.
+  cpaEmailSentAt     DateTime?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 

@@ -255,6 +255,13 @@ export interface CaseRecord {
   /** Người phụ trách vai trò Processor cho hồ sơ này. */
   assignedProcessor: string | null;
   custom: Record<string, string | number | boolean | null>;
+  /** ISO datetime lần gần nhất đã "Send row to Google Sheet" (gửi thật hoặc bấm "Mark as
+   * sent" đánh dấu thủ công) — null = chưa gửi/vừa xác nhận "muốn gửi lại". Lưu ở server
+   * (không chỉ React state) để nút Send giữ đúng màu xanh qua reload — xem
+   * SendToSheetButton. */
+  sheetSentAt: string | null;
+  /** Tương tự sheetSentAt nhưng cho nút "Send mail to CPA" — xem SendCpaEmailDialog. */
+  cpaEmailSentAt: string | null;
   /** Id người tạo hồ sơ này — dùng để Agent Leader/Processor Leader tự sửa được hồ sơ
    * do chính mình thêm vào, kể cả khi chưa gán cho thành viên nào trong nhóm. */
   createdBy: string | null;

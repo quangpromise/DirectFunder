@@ -42,9 +42,12 @@ function formatBytes(bytes: number): string {
  * cho CPA qua Gmail SMTP. To/Cc mặc định lấy từ cấu hình chung (Admin sửa ở trang Phân
  * quyền), Subject/Nội dung tự do chỉnh, đính kèm nhiều file. Gửi là hành động foreground
  * có thể fail rõ ràng — KHÔNG optimistic, chờ kết quả thật từ server (xem sendCpaEmail
- * trong app-store.ts) trước khi báo thành công/lỗi. Dialog còn có nút phụ "Đã gửi"
- * (markAsSent) cạnh nút "Gửi" — dùng khi đã gửi thủ công qua đường khác, chỉ đánh dấu UI
- * mà KHÔNG gọi onSend thật.
+ * trong app-store.ts) trước khi báo thành công/lỗi. "Đã gửi hay chưa" (`justSent`) tính
+ * THẲNG từ `caseRecord.cpaEmailSentAt` (server lưu xuống DB khi gửi thật/Mark as sent
+ * thành công) chứ KHÔNG dùng local useState nữa — nhờ vậy trạng thái xanh giữ nguyên qua
+ * reload/deploy lại (trước đây chỉ ở React state nên F5 là mất). Dialog còn có nút phụ
+ * "Mark as sent" (markCpaEmailSent) cạnh nút "Gửi" — dùng khi đã gửi thủ công qua đường
+ * khác, chỉ lưu cpaEmailSentAt mà KHÔNG gọi onSend thật.
  */
 export function SendCpaEmailDialog({
   disabled,
@@ -55,6 +58,7 @@ export function SendCpaEmailDialog({
   senderName,
   confirm,
   onSend,
+  markCpaEmailSent,
 }: {
   disabled: boolean;
   caseRecord: CaseRecord;
@@ -64,7 +68,9 @@ export function SendCpaEmailDialog({
   senderName: string;
   confirm: (message: string, opts?: { title?: string; tone?: "default" | "danger" }) => Promise<boolean>;
   onSend: (payload: SendPayload) => Promise<SendResult>;
+  markCpaEmailSent: (caseId: string, action: "manual" | "clear") => Promise<void>;
 }) {
+  const justSent = Boolean(caseRecord.cpaEmailSentAt);
   const [open, setOpen] = useState(false);
   const [editorNonce, setEditorNonce] = useState(0);
   const [to, setTo] = useState("");
@@ -74,12 +80,6 @@ export function SendCpaEmailDialog({
   const [files, setFiles] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
-  /** true sau khi gửi thành công — KHÔNG tự động tắt (khác các nút Order dùng
-   * useSuccessFlash): giữ nguyên màu xanh đậm cho tới khi người dùng bấm lại nút VÀ đồng
-   * ý popup xác nhận "muốn gửi lại?" (xem handleTriggerClick) — đồng ý chỉ quay về mặc
-   * định, KHÔNG tự mở lại dialog soạn mail; phải bấm thêm 1 lần nữa (lúc đã về mặc định)
-   * mới thực sự mở dialog soạn/gửi lại — cùng quy tắc 2 lớp xác nhận với SendToSheetButton. */
-  const [justSent, setJustSent] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const t = useT();
   const { language } = useLanguage();
@@ -90,7 +90,7 @@ export function SendCpaEmailDialog({
     if (justSent) {
       const confirmed = await confirm(t("cpaEmail.confirmResend"), { title: t("cpaEmail.confirmResendTitle") });
       if (!confirmed) return;
-      setJustSent(false);
+      await markCpaEmailSent(caseRecord.id, "clear");
       return;
     }
     openDialog();
@@ -130,9 +130,9 @@ export function SendCpaEmailDialog({
    * (không qua dialog này) và chỉ muốn UI phản ánh đúng trạng thái, KHÔNG gọi API gửi mail
    * thật (onSend). Vẫn đi vào đúng vòng lặp xác nhận gửi lại như khi gửi thật (bấm lại lúc
    * đang xanh -> hỏi "muốn gửi lại?" -> đồng ý mới quay về mặc định). */
-  function markAsSent() {
+  async function markAsSent() {
     setOpen(false);
-    setJustSent(true);
+    await markCpaEmailSent(caseRecord.id, "manual");
   }
 
   async function handleSend() {
@@ -162,7 +162,6 @@ export function SendCpaEmailDialog({
       const text = bodyHtml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
       const result = await onSend({ to: toList, cc: ccList, subject: subject.trim(), html: bodyHtml, text, attachments });
       if (result.ok) {
-        setJustSent(true);
         setOpen(false);
       } else {
         setError(result.error);

@@ -28,6 +28,8 @@ export function toCaseRecord(row: {
   assignedProcessor: string | null;
   createdBy: string | null;
   custom: Prisma.JsonValue;
+  sheetSentAt: Date | null;
+  cpaEmailSentAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }): CaseRecord {
@@ -54,6 +56,8 @@ export function toCaseRecord(row: {
     assignedProcessor: row.assignedProcessor,
     createdBy: row.createdBy,
     custom: row.custom as unknown as CaseRecord["custom"],
+    sheetSentAt: row.sheetSentAt ? row.sheetSentAt.toISOString() : null,
+    cpaEmailSentAt: row.cpaEmailSentAt ? row.cpaEmailSentAt.toISOString() : null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

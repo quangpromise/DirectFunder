@@ -205,3 +205,33 @@ table {
 .row-highlight > div {
   animation: row-highlight-pulse 1s ease-in-out 5;
 }
+
+/* Dòng chào đầu trang Hồ sơ ("Chào X - Chào buổi sáng 🌤️") — đứng yên, căn giữa (xem
+   className ở cases/page.tsx), chỉ nhấp nháy CHẬM (mờ dần rồi rõ lại) để vẫn thu hút mắt
+   nhưng không gây rối mắt/khó đọc như chạy chữ ngang trước đây. */
+@keyframes greeting-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.greeting-blink {
+  animation: greeting-blink 3.5s ease-in-out infinite;
+}
+
+/* Banner thông báo mới (NotificationBell) — bong bóng kiểu tin nhắn, "đuôi" tam giác nhỏ
+   nối liền lên chân nút chuông (::before, cùng màu nền đen với bong bóng, xoay 45deg giả
+   hình thoi để tạo cạnh chéo nối liền mạch, không cần ảnh/SVG riêng). */
+.notif-toast::before {
+  content: "";
+  position: absolute;
+  top: -5px;
+  right: 14px;
+  width: 10px;
+  height: 10px;
+  background: #000;
+  transform: rotate(45deg);
+}

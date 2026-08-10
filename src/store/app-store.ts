@@ -196,6 +196,10 @@ interface AppState {
       attachments: { filename: string; contentType: string; contentBase64: string }[];
     }
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
+  /** Đánh dấu "Đã gửi" mail CPA thủ công (manual) hoặc xoá đánh dấu khi xác nhận "muốn gửi
+   * lại" (clear) — KHÔNG gọi Gmail thật, chỉ lưu/xoá cpaEmailSentAt (xem markCpaEmailSent
+   * trong api-client.ts). Cập nhật local case.cpaEmailSentAt theo giá trị server trả về. */
+  markCpaEmailSent: (caseId: string, action: "manual" | "clear") => Promise<void>;
 
   setGoogleSheetConfig: (config: GoogleSheetConfig) => void;
   /** Foreground action, cùng lý do với sendCpaEmail — gửi có thể fail rõ ràng (chưa cấu
@@ -206,6 +210,11 @@ interface AppState {
     caseId: string,
     reviewYears?: string[]
   ) => Promise<{ ok: true } | { ok: false; error: string; needsGoogleAuth?: boolean }>;
+  /** Đánh dấu "Đã gửi" Google Sheet thủ công (manual) hoặc xoá đánh dấu khi xác nhận "muốn
+   * gửi lại" (clear) — KHÔNG gọi Google Sheets API thật, chỉ lưu/xoá sheetSentAt (xem
+   * markCaseSheetSent trong api-client.ts). Cập nhật local case.sheetSentAt theo giá trị
+   * server trả về. */
+  markCaseSheetSent: (caseId: string, action: "manual" | "clear") => Promise<void>;
   /** Mở popup OAuth Google (window.open), lắng nghe postMessage "google-oauth-done" từ
    * /api/auth/google/callback, resolve true/false theo kết quả — poll popup.closed làm
    * timeout dự phòng nếu user đóng popup tay mà không hoàn tất. */
@@ -553,6 +562,8 @@ export const useAppStore = create<AppState>()(
           // đổi tên thành "Code" và ẩn đi) giờ là số đếm TỰ ĐỘNG năm Refund > 0 (xem
           // rbac.ts + src/lib/refund.ts) — hồ sơ mới chưa có refund nên mặc định 0.
           custom: { caseLabel: 0 },
+          sheetSentAt: null,
+          cpaEmailSentAt: null,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
@@ -616,6 +627,8 @@ export const useAppStore = create<AppState>()(
               descriptionReplies: [],
               descriptionReadBy: [],
               custom: { caseLabel: row.caseLabel || "1" },
+              sheetSentAt: null,
+              cpaEmailSentAt: null,
               createdAt: new Date().toISOString(),
               updatedAt: new Date().toISOString(),
             };
@@ -949,13 +962,24 @@ export const useAppStore = create<AppState>()(
       // vì optimistic-update-rồi-âm-thầm-log-console như các action khác trong file này.
       sendCpaEmail: async (caseId, payload) => {
         try {
-          await api.sendCpaEmail(caseId, payload);
+          const result = await api.sendCpaEmail(caseId, payload);
+          set((state) => ({
+            cases: state.cases.map((c) => (c.id === caseId ? { ...c, cpaEmailSentAt: result.cpaEmailSentAt } : c)),
+          }));
           const recipients = `To: ${payload.to.join(", ")}${payload.cc.length > 0 ? `; Cc: ${payload.cc.join(", ")}` : ""}`;
           logEdit(caseId, "Gửi mail CPA", "", `${recipients} — ${payload.subject}`);
           return { ok: true } as const;
         } catch (err) {
           return { ok: false, error: err instanceof Error ? err.message : "Gửi email thất bại" } as const;
         }
+      },
+
+      markCpaEmailSent: async (caseId, action) => {
+        const result = await api.markCpaEmailSent(caseId, action);
+        set((state) => ({
+          cases: state.cases.map((c) => (c.id === caseId ? { ...c, cpaEmailSentAt: result.cpaEmailSentAt } : c)),
+        }));
+        logEdit(caseId, "Gửi mail CPA", "", action === "manual" ? "Đánh dấu đã gửi (thủ công)" : "Muốn gửi lại");
       },
 
       setGoogleSheetConfig: (config) => {
@@ -968,7 +992,10 @@ export const useAppStore = create<AppState>()(
       // nối Google hoặc refresh_token đã bị server tự xoá do hết hạn/thu hồi).
       sendCaseRowToSheet: async (caseId, reviewYears) => {
         try {
-          await api.sendCaseRowToSheet(caseId, reviewYears);
+          const result = await api.sendCaseRowToSheet(caseId, reviewYears);
+          set((state) => ({
+            cases: state.cases.map((c) => (c.id === caseId ? { ...c, sheetSentAt: result.sheetSentAt } : c)),
+          }));
           logEdit(caseId, "Gửi dòng Google Sheet", "", "Đã gửi");
           return { ok: true } as const;
         } catch (err) {
@@ -978,6 +1005,14 @@ export const useAppStore = create<AppState>()(
           }
           return { ok: false, error: message } as const;
         }
+      },
+
+      markCaseSheetSent: async (caseId, action) => {
+        const result = await api.markCaseSheetSent(caseId, action);
+        set((state) => ({
+          cases: state.cases.map((c) => (c.id === caseId ? { ...c, sheetSentAt: result.sheetSentAt } : c)),
+        }));
+        logEdit(caseId, "Gửi dòng Google Sheet", "", action === "manual" ? "Đánh dấu đã gửi (thủ công)" : "Muốn gửi lại");
       },
 
       connectGoogleAccount: () => {
@@ -1042,7 +1077,7 @@ export const useAppStore = create<AppState>()(
     },
     {
       name: "direct-funder-store-v10",
-      version: 25,
+      version: 26,
       migrate: (persisted, version) => {
         const state = persisted as PersistedShape;
         if (!state) return state as unknown as AppState;
@@ -1517,6 +1552,24 @@ export const useAppStore = create<AppState>()(
                 email: typeof rec.email === "string" ? rec.email : "",
                 dateOfBirth: Array.isArray(rec.dateOfBirth) ? rec.dateOfBirth : [null, null],
                 refunds: rec.refunds && typeof rec.refunds === "object" ? rec.refunds : {},
+              };
+            });
+          }
+        }
+
+        if (version < 26) {
+          // Thêm sheetSentAt/cpaEmailSentAt vào CaseRecord — case cache cũ thiếu 2 field
+          // này chỉ khiến SendToSheetButton/SendCpaEmailDialog coi như "chưa gửi"
+          // (Boolean(undefined) === false, không crash như vụ refunds ở version 25), nhưng
+          // vẫn backfill null tường minh cho nhất quán, tránh field "undefined" lạ trong
+          // state.
+          if (Array.isArray(state.cases)) {
+            state.cases = state.cases.map((c) => {
+              const rec = c as Record<string, unknown>;
+              return {
+                ...rec,
+                sheetSentAt: typeof rec.sheetSentAt === "string" ? rec.sheetSentAt : null,
+                cpaEmailSentAt: typeof rec.cpaEmailSentAt === "string" ? rec.cpaEmailSentAt : null,
               };
             });
           }
