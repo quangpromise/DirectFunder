@@ -106,7 +106,10 @@ function columnIndexToLetter(index: number): string {
 /** Quét cột A-E (bounded tới BLANK_ROW_SCAN_LIMIT dòng để dòng trống NẰM GIỮA bảng vẫn
  * được trả về đầy đủ, không bị Sheets API cắt bớt như khi dùng range không giới hạn) —
  * trả về số dòng (1-based) ĐẦU TIÊN có cả 5 cột A-E trống, hoặc null nếu không tìm thấy
- * (khi đó gọi nơi dùng sẽ tự append dòng mới ở cuối như hành vi cũ). */
+ * (khi đó gọi nơi dùng sẽ tự append dòng mới ở cuối như hành vi cũ). LUÔN BỎ QUA HÀNG 1 —
+ * coi đó là dòng tiêu đề (header) của tab, dù hàng 1 có đủ chữ ở cả 5 cột A-E hay không,
+ * để tránh nguy cơ ghi đè mất tiêu đề nếu header thực tế chỉ có chữ ở vài cột đầu (vd chỉ
+ * A-C có tiêu đề, D-E để trống) khiến hàng 1 bị hiểu nhầm là "dòng trống". */
 async function findFirstBlankLeadingRow(
   sheets: ReturnType<typeof google.sheets>,
   spreadsheetId: string,
@@ -118,7 +121,7 @@ async function findFirstBlankLeadingRow(
     range: `'${tabName}'!A1:${lastCol}${BLANK_ROW_SCAN_LIMIT}`,
   });
   const rows = res.data.values ?? [];
-  for (let i = 0; i < rows.length; i++) {
+  for (let i = 1; i < rows.length; i++) {
     const row = rows[i] ?? [];
     const isBlank = row
       .slice(0, LEADING_BLANK_CHECK_COLS)
