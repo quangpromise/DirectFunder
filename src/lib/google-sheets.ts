@@ -84,13 +84,11 @@ function mapSheetsError(err: unknown): string {
   return "Gửi dữ liệu lên Google Sheet thất bại, thử lại sau.";
 }
 
-/** Số cột đầu tiên (A-E) dùng để xét "dòng còn trống" — CHỈ xét đúng 5 cột này, không
- * quan tâm các cột khác trên cùng dòng có dữ liệu hay không (theo đúng yêu cầu: Sheet có
- * thể đã có sẵn dòng mẫu/placeholder do CPA tự gõ tay trước 1 phần ở cột khác, chỉ cần
- * A-E còn trống là ghi đè được). */
-const LEADING_BLANK_CHECK_COLS = 5;
-/** Giới hạn số dòng quét tìm dòng trống — đủ lớn cho 1 tab theo tháng, tránh quét vô hạn. */
-const BLANK_ROW_SCAN_LIMIT = 2000;
+/** Số cột đầu (A-F) dùng để Sheets xác định "dòng cuối cùng đang có dữ liệu" — CHỈ xét 6
+ * cột này, bỏ qua dữ liệu ở cột G trở đi khi tìm điểm dừng (vd nếu 1 dòng có ghi chú/màu
+ * nền ở cột xa hơn nhưng A-F còn trống, Sheets vẫn coi dòng đó là "trống" và ghi đè vào,
+ * KHÔNG nhảy qua thêm 1 dòng mới). */
+const APPEND_TABLE_COLS = 6;
 
 function columnIndexToLetter(index: number): string {
   let n = index + 1;
@@ -103,66 +101,32 @@ function columnIndexToLetter(index: number): string {
   return letters;
 }
 
-/** Quét cột A-E (bounded tới BLANK_ROW_SCAN_LIMIT dòng để dòng trống NẰM GIỮA bảng vẫn
- * được trả về đầy đủ, không bị Sheets API cắt bớt như khi dùng range không giới hạn) —
- * trả về số dòng (1-based) ĐẦU TIÊN có cả 5 cột A-E trống, hoặc null nếu không tìm thấy
- * (khi đó gọi nơi dùng sẽ tự append dòng mới ở cuối như hành vi cũ). LUÔN BỎ QUA HÀNG 1 —
- * coi đó là dòng tiêu đề (header) của tab, dù hàng 1 có đủ chữ ở cả 5 cột A-E hay không,
- * để tránh nguy cơ ghi đè mất tiêu đề nếu header thực tế chỉ có chữ ở vài cột đầu (vd chỉ
- * A-C có tiêu đề, D-E để trống) khiến hàng 1 bị hiểu nhầm là "dòng trống". */
-async function findFirstBlankLeadingRow(
-  sheets: ReturnType<typeof google.sheets>,
-  spreadsheetId: string,
-  tabName: string
-): Promise<number | null> {
-  const lastCol = columnIndexToLetter(LEADING_BLANK_CHECK_COLS - 1);
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId,
-    range: `'${tabName}'!A1:${lastCol}${BLANK_ROW_SCAN_LIMIT}`,
-  });
-  const rows = res.data.values ?? [];
-  for (let i = 1; i < rows.length; i++) {
-    const row = rows[i] ?? [];
-    const isBlank = row
-      .slice(0, LEADING_BLANK_CHECK_COLS)
-      .every((cell) => cell === undefined || cell === null || String(cell).trim() === "");
-    if (isBlank) return i + 1;
-  }
-  return null;
-}
-
-/** Ghi 1 dòng dữ liệu — ƯU TIÊN tìm dòng đã có sẵn trên Sheet nhưng còn TRỐNG Ở CỘT A-E
- * (vd dòng mẫu/placeholder CPA tự chuẩn bị trước, chỉ điền phần khác) và ghi đè thẳng vào
- * đó (values.update); CHỈ khi không tìm thấy dòng nào như vậy mới thêm dòng mới ở cuối
- * (values.append với insertDataOption "INSERT_ROWS", hành vi cũ). valueInputOption "RAW"
- * cho cả 2 trường hợp: giá trị string (vd ngày "08/10/26") được lưu ĐÚNG NGUYÊN VĂN, không
- * bị Sheets tự "USER_ENTERED" diễn giải lại (vd tự đổi "08/10/26" thành "2026-08-10") —
- * còn giá trị number (cột tiền) vẫn được Sheets lưu đúng kiểu số (RAW chỉ tắt việc PARSE
- * chuỗi thành kiểu khác, không ảnh hưởng input đã là number sẵn), tự động căn phải + hiển
- * thị theo định dạng số/tiền tệ Ô ĐÓ ĐANG CÓ SẴN trên Sheet thật. */
+/** Ghi 1 dòng vào cuối tab — dùng spreadsheets.values.append với insertDataOption
+ * "INSERT_ROWS": Google Sheets API tự tìm "dòng cuối cùng của bảng" rồi thêm dòng mới
+ * ngay sau đó. Phạm vi truyền vào CHỈ giới hạn cột A-F (`APPEND_TABLE_COLS`) — Sheets chỉ
+ * xét dữ liệu trong 6 cột này để xác định "cuối bảng", nên nếu dòng cuối cùng có dữ liệu
+ * A-F đã tồn tại nhưng dòng NGAY SAU nó (dòng "gần nhất") chưa có gì ở A-F, Sheets sẽ điền
+ * thẳng vào đúng dòng trống đó thay vì luôn nhảy xuống dòng mới — không cần tự dò/ghi đè
+ * tay (an toàn hơn: đây là hành vi gốc của Sheets API, không có rủi ro ghi đè nhầm dòng
+ * tiêu đề hay dòng giữa bảng như cách tự quét trước đó). valueInputOption "RAW": giá trị
+ * string (vd ngày "08/10/26") được lưu ĐÚNG NGUYÊN VĂN, không bị Sheets tự "USER_ENTERED"
+ * diễn giải lại (vd tự đổi "08/10/26" thành "2026-08-10") — còn giá trị number (cột tiền)
+ * vẫn được Sheets lưu đúng kiểu số (RAW chỉ tắt việc PARSE chuỗi thành kiểu khác, không
+ * ảnh hưởng input đã là number sẵn), tự động căn phải + hiển thị theo định dạng số/tiền tệ
+ * Ô ĐÓ ĐANG CÓ SẴN trên Sheet thật. */
 export async function appendRowToSheet(input: AppendRowInput): Promise<void> {
   const client = getOAuthClient("");
   client.setCredentials({ refresh_token: input.refreshToken });
   const sheets = google.sheets({ version: "v4", auth: client });
   try {
-    const blankRow = await findFirstBlankLeadingRow(sheets, input.sheetId, input.tabName);
-    if (blankRow) {
-      const lastCol = columnIndexToLetter(input.values.length - 1);
-      await sheets.spreadsheets.values.update({
-        spreadsheetId: input.sheetId,
-        range: `'${input.tabName}'!A${blankRow}:${lastCol}${blankRow}`,
-        valueInputOption: "RAW",
-        requestBody: { values: [input.values] },
-      });
-    } else {
-      await sheets.spreadsheets.values.append({
-        spreadsheetId: input.sheetId,
-        range: `'${input.tabName}'!A1`,
-        valueInputOption: "RAW",
-        insertDataOption: "INSERT_ROWS",
-        requestBody: { values: [input.values] },
-      });
-    }
+    const lastTableCol = columnIndexToLetter(APPEND_TABLE_COLS - 1);
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: input.sheetId,
+      range: `'${input.tabName}'!A1:${lastTableCol}1`,
+      valueInputOption: "RAW",
+      insertDataOption: "INSERT_ROWS",
+      requestBody: { values: [input.values] },
+    });
   } catch (err) {
     if (isInvalidGrantError(err)) {
       throw new GoogleAuthExpiredError("Kết nối Google đã hết hạn hoặc bị thu hồi — cần kết nối lại.");
