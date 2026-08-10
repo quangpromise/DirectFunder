@@ -1092,7 +1092,7 @@ function RowCells({
         <GripVertical size={13} />
       </div>
       <div
-        className="sticky z-10 flex h-full min-w-0 items-center border-b border-r border-border bg-bg transition-colors group-hover:bg-surface-hover"
+        className="sticky z-10 flex h-full min-w-0 items-center justify-center border-b border-r border-border bg-bg transition-colors group-hover:bg-surface-hover"
         style={{ left: statusLeft }}
       >
         {statusColumn && (
@@ -1151,7 +1151,7 @@ function RowCells({
         // editable=false tại đây bất kể quyền editableBy của cột (editableBy vẫn giữ
         // nguyên, dùng làm nguồn phân quyền CHO POPUP, không phải cho ô ngoài bảng này).
         col.id === "ssn" ? (
-          <div key={col.id} className="flex h-full items-center border-b border-r border-border transition-colors group-hover:bg-surface-hover">
+          <div key={col.id} className="flex h-full items-center justify-center border-b border-r border-border transition-colors group-hover:bg-surface-hover">
             <SsnCell
               value={row.ssn}
               editable={false}
@@ -1172,7 +1172,7 @@ function RowCells({
         ) : col.id === "description" ? (
           <div
             key={col.id}
-            className="flex h-full items-center border-b border-r border-border transition-colors group-hover:bg-surface-hover"
+            className="flex h-full items-center justify-center border-b border-r border-border transition-colors group-hover:bg-surface-hover"
           >
             <DescriptionCell
               description={row.description}
@@ -1231,7 +1231,7 @@ function RowCells({
         ) : (
           <div
             key={col.id}
-            className="flex h-full items-center border-b border-r border-border transition-colors group-hover:bg-surface-hover"
+            className="flex h-full items-center justify-center border-b border-r border-border transition-colors group-hover:bg-surface-hover"
           >
             <EditableCell
               value={col.custom ? row.custom[col.key] ?? null : (row as unknown as Record<string, string | number | boolean | null>)[col.key]}

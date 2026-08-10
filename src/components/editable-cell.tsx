@@ -65,7 +65,7 @@ export function EditableCell({
 
   if (!editable) {
     return (
-      <div className="truncate px-2.5 py-1.5 text-center text-xs text-text-dim" title={displayText || undefined}>
+      <div className="w-full truncate px-2.5 py-1.5 text-center text-xs text-text-dim" title={displayText || undefined}>
         {displayText || <span className="text-text-faint">—</span>}
       </div>
     );

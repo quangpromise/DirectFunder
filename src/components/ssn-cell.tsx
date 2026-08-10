@@ -85,7 +85,7 @@ function SsnSlot({
 
   if (!editable) {
     return (
-      <div className="truncate px-2 py-0.5 text-center text-xs text-text-dim">
+      <div className="w-full truncate px-2 py-0.5 text-center text-xs text-text-dim">
         {value || <span className="text-text-faint">—</span>}
       </div>
     );

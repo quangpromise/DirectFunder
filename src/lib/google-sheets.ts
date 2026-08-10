@@ -89,6 +89,9 @@ function mapSheetsError(err: unknown): string {
  * nền ở cột xa hơn nhưng A-F còn trống, Sheets vẫn coi dòng đó là "trống" và ghi đè vào,
  * KHÔNG nhảy qua thêm 1 dòng mới). */
 const APPEND_TABLE_COLS = 6;
+/** Số dòng đầu tiên LUÔN bỏ qua, không xét tới khi tìm "dòng trống"/"cuối bảng" (vd 1-2
+ * dòng tiêu đề + 1 dòng ghi chú của CPA) — mặc định 3, xem cách dùng ở appendRowToSheet. */
+const SKIP_LEADING_ROWS = 3;
 
 function columnIndexToLetter(index: number): string {
   let n = index + 1;
@@ -108,21 +111,24 @@ function columnIndexToLetter(index: number): string {
  * A-F đã tồn tại nhưng dòng NGAY SAU nó (dòng "gần nhất") chưa có gì ở A-F, Sheets sẽ điền
  * thẳng vào đúng dòng trống đó thay vì luôn nhảy xuống dòng mới — không cần tự dò/ghi đè
  * tay (an toàn hơn: đây là hành vi gốc của Sheets API, không có rủi ro ghi đè nhầm dòng
- * tiêu đề hay dòng giữa bảng như cách tự quét trước đó). valueInputOption "RAW": giá trị
- * string (vd ngày "08/10/26") được lưu ĐÚNG NGUYÊN VĂN, không bị Sheets tự "USER_ENTERED"
- * diễn giải lại (vd tự đổi "08/10/26" thành "2026-08-10") — còn giá trị number (cột tiền)
- * vẫn được Sheets lưu đúng kiểu số (RAW chỉ tắt việc PARSE chuỗi thành kiểu khác, không
- * ảnh hưởng input đã là number sẵn), tự động căn phải + hiển thị theo định dạng số/tiền tệ
- * Ô ĐÓ ĐANG CÓ SẴN trên Sheet thật. */
+ * tiêu đề hay dòng giữa bảng như cách tự quét trước đó). Phạm vi bắt đầu ở dòng
+ * `SKIP_LEADING_ROWS + 1` (mặc định dòng 4) — 3 dòng đầu (tiêu đề/ghi chú) LUÔN bị bỏ qua,
+ * không bao giờ được coi là "dòng trống" để ghi đè, kể cả khi A-F ở đó thực sự trống.
+ * valueInputOption "RAW": giá trị string (vd ngày "08/10/26") được lưu ĐÚNG NGUYÊN VĂN,
+ * không bị Sheets tự "USER_ENTERED" diễn giải lại (vd tự đổi "08/10/26" thành
+ * "2026-08-10") — còn giá trị number (cột tiền) vẫn được Sheets lưu đúng kiểu số (RAW chỉ
+ * tắt việc PARSE chuỗi thành kiểu khác, không ảnh hưởng input đã là number sẵn), tự động
+ * căn phải + hiển thị theo định dạng số/tiền tệ Ô ĐÓ ĐANG CÓ SẴN trên Sheet thật. */
 export async function appendRowToSheet(input: AppendRowInput): Promise<void> {
   const client = getOAuthClient("");
   client.setCredentials({ refresh_token: input.refreshToken });
   const sheets = google.sheets({ version: "v4", auth: client });
   try {
     const lastTableCol = columnIndexToLetter(APPEND_TABLE_COLS - 1);
+    const startRow = SKIP_LEADING_ROWS + 1;
     await sheets.spreadsheets.values.append({
       spreadsheetId: input.sheetId,
-      range: `'${input.tabName}'!A1:${lastTableCol}1`,
+      range: `'${input.tabName}'!A${startRow}:${lastTableCol}${startRow}`,
       valueInputOption: "RAW",
       insertDataOption: "INSERT_ROWS",
       requestBody: { values: [input.values] },

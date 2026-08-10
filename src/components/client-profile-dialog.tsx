@@ -7,6 +7,7 @@ import { CaseRecord, ClientNameEntry, ColumnDef, Role } from "@/lib/types";
 import { canEditColumn } from "@/lib/rbac";
 import { computeRefundSummary, REFUND_YEARS } from "@/lib/refund";
 import { formatSsn } from "@/lib/ssn";
+import { parseDobPaste } from "@/lib/date-format";
 import type { ClientProfilePayload } from "@/lib/api-client";
 import { useT } from "@/lib/i18n";
 
@@ -229,6 +230,21 @@ export function ClientProfileDialog({
                               return next;
                             })
                           }
+                          // Input type="date" gốc chỉ nhận paste đúng ISO theo từng segment
+                          // ngày/tháng/năm (rất dễ fail khi dán "mm/dd/yyyy" từ Excel) — tự
+                          // diễn giải thêm các định dạng phổ biến qua parseDobPaste, chỉ
+                          // preventDefault khi nhận diện được để không phá hành vi paste
+                          // mặc định của trình duyệt với các trường hợp khác.
+                          onPaste={(e) => {
+                            const iso = parseDobPaste(e.clipboardData.getData("text"));
+                            if (!iso) return;
+                            e.preventDefault();
+                            setDateOfBirth((prev) => {
+                              const next: [string | null, string | null] = [...prev];
+                              next[slot] = iso;
+                              return next;
+                            });
+                          }}
                           className={inputCls}
                         />
                       </div>
