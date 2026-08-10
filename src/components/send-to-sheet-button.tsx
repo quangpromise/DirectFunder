@@ -133,7 +133,7 @@ export function SendToSheetButton({
                           selected ? "font-semibold text-amber-600 light:text-amber-700" : "text-text-dim"
                         }`}
                       >
-                        ${(refunds[year] ?? 0).toLocaleString("en-US")}
+                        ${(refunds?.[year] ?? 0).toLocaleString("en-US")}
                       </span>
                     </button>
                   );

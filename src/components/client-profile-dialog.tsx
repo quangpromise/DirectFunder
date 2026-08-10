@@ -12,9 +12,9 @@ import { useT } from "@/lib/i18n";
 
 type SaveResult = { ok: true } | { ok: false; error: string };
 
-function refundsToDraft(refunds: Record<string, number>): Record<string, string> {
+function refundsToDraft(refunds: Record<string, number> | undefined): Record<string, string> {
   const draft: Record<string, string> = {};
-  for (const year of REFUND_YEARS) draft[year] = refunds[year] ? String(refunds[year]) : "";
+  for (const year of REFUND_YEARS) draft[year] = refunds?.[year] ? String(refunds[year]) : "";
   return draft;
 }
 

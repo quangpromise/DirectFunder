@@ -1042,7 +1042,7 @@ export const useAppStore = create<AppState>()(
     },
     {
       name: "direct-funder-store-v10",
-      version: 24,
+      version: 25,
       migrate: (persisted, version) => {
         const state = persisted as PersistedShape;
         if (!state) return state as unknown as AppState;
@@ -1497,6 +1497,28 @@ export const useAppStore = create<AppState>()(
               );
               state.columns = [...state.columns, ...(extra as unknown as Record<string, unknown>[])];
             }
+          }
+        }
+
+        if (version < 25) {
+          // Case bị cache cũ (localStorage) từ TRƯỚC khi thêm phone2/email/dateOfBirth/
+          // refunds vào CaseRecord thiếu hẳn các field này -> ClientProfileDialog (render
+          // KHÔNG ĐIỀU KIỆN cho mọi dòng trong bảng, kể cả khi popup đang đóng) gọi
+          // refunds[year] trên `undefined` -> crash TOÀN BỘ trang Hồ sơ ngay từ lần render
+          // đầu, TRƯỚC khi hydrateFromServer() kịp ghi đè bằng dữ liệu thật từ server. Bug
+          // này lộ ra trên production vì user có sẵn cache cũ trong trình duyệt — dev
+          // luôn xoá localStorage/dùng máy sạch nên không tự phát hiện được lúc code.
+          if (Array.isArray(state.cases)) {
+            state.cases = state.cases.map((c) => {
+              const rec = c as Record<string, unknown>;
+              return {
+                ...rec,
+                phone2: typeof rec.phone2 === "string" ? rec.phone2 : "",
+                email: typeof rec.email === "string" ? rec.email : "",
+                dateOfBirth: Array.isArray(rec.dateOfBirth) ? rec.dateOfBirth : [null, null],
+                refunds: rec.refunds && typeof rec.refunds === "object" ? rec.refunds : {},
+              };
+            });
           }
         }
 
