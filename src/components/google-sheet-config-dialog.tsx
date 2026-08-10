@@ -2,19 +2,21 @@
 
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { Sheet, X, GripVertical, Plus, Minus } from "lucide-react";
+import { Sheet, X, Plus, Minus } from "lucide-react";
 import { ColumnDef, DateFormat, GoogleSheetConfig } from "@/lib/types";
 import { useT, useLanguage, translateColumnLabel } from "@/lib/i18n";
 import { extractSheetId } from "@/lib/sheet-id";
-import { BLANK_COLUMN_ID, SEND_DATE_COLUMN_ID, CPA_REVIEW_MONEY_COLUMN_ID, refundYearColumnId } from "@/lib/sheet-row-columns";
+import { SEND_DATE_COLUMN_ID, CPA_REVIEW_MONEY_COLUMN_ID, refundYearColumnId } from "@/lib/sheet-row-columns";
 import { REFUND_YEARS } from "@/lib/refund";
 
-/** 1 dòng trong danh sách "Đã chọn" — `key` chỉ để React/kéo-thả phân biệt từng lần
- * chọn, KHÔNG lưu xuống server; lưu là `colId` lặp lại nhiều lần trong mảng string[]
- * (GoogleSheetConfig.columnIds cho phép trùng id — xem handleSave). */
+/** 1 dòng trong danh sách "Đã chọn" — `key` chỉ để React phân biệt từng lần chọn (1 cột
+ * có thể chọn nhiều lần, vd lặp SSN ở 2 cột Sheet khác nhau), KHÔNG lưu xuống server;
+ * `sheetColumn` là chữ cái cột Sheet đích Admin tự gõ (vd "B", "AA") — lưu xuống server
+ * đúng như vậy, xem GoogleSheetColumnMapping trong types.ts. */
 interface SelectedItem {
   key: string;
   colId: string;
+  sheetColumn: string;
 }
 
 let keySeq = 0;
@@ -23,13 +25,18 @@ function nextKey(colId: string): string {
   return `${colId}-${keySeq}`;
 }
 
+function normalizeSheetColumn(raw: string): string {
+  return raw.toUpperCase().replace(/[^A-Z]/g, "");
+}
+
 /**
- * Dialog Admin cấu hình Google Sheet đích + cột nào/thứ tự nào được đẩy vào dòng mới khi
- * bấm nút "Send" ở cột Status (chỉ hiện khi status = cpa_review) — đặt trên trang Phân
- * quyền cạnh CpaEmailDefaultsDialog, theo đúng khung modal đó. Danh sách cột chia 2 vùng:
- * "Đã chọn" (kéo-thả sắp thứ tự, đúng thứ tự sẽ ghi vào các ô A/B/C... của dòng mới) và
- * "Cột khác" (bấm + để thêm vào cuối danh sách đã chọn — 1 cột có thể bấm thêm NHIỀU
- * LẦN, vd để lặp lại SSN ở 2 vị trí, hoặc thêm nhiều ô "Để trống" liên tiếp).
+ * Dialog Admin cấu hình Google Sheet đích + cột nào được đẩy vào dòng mới khi bấm nút
+ * "Send" ở cột Status (chỉ hiện khi status = cpa_review) — đặt trên trang Phân quyền cạnh
+ * CpaEmailDefaultsDialog, theo đúng khung modal đó. Mỗi cột dữ liệu đã chọn ("Đã chọn")
+ * TỰ GÁN THẲNG chữ cái cột Sheet đích (vd "B", "D") — cột Sheet nào Admin KHÔNG gán thì
+ * KHÔNG BAO GIỜ bị Send động tới, kể cả nằm xen giữa 2 cột có gán — an toàn tuyệt đối cho
+ * dropdown/công thức/định dạng đã cấu hình sẵn ở các cột đó trên Sheet thật (khác thiết
+ * kế cũ dùng "Để trống" giữ chỗ theo vị trí xếp thứ tự, dễ ghi đè nhầm).
  */
 export function GoogleSheetConfigDialog({
   config,
@@ -47,27 +54,16 @@ export function GoogleSheetConfigDialog({
   // hình (xem route.ts), tránh trường hợp Admin bấm Lưu mà chưa đụng dropdown vẫn vô tình
   // lưu "iso" (ISO đầy đủ, khó đọc hơn cho mục đích gửi CPA Review).
   const [dateFormat, setDateFormat] = useState<DateFormat>("mdy2");
-  const [dragKey, setDragKey] = useState<string | null>(null);
   const t = useT();
   const { language } = useLanguage();
 
   // Cột ảo "Ngày gửi" — không tham chiếu dữ liệu hồ sơ, giá trị luôn là ngày hiện tại lúc
   // bấm Send (server tự tính, xem SEND_DATE_COLUMN_ID trong send-to-sheet/route.ts).
-  // "Để trống" — chừa 1 ô trống, dùng khi thứ tự cột trên Sheet thật có khoảng cách so
-  // với dữ liệu app đẩy lên. Cả 2 khai báo như ColumnDef giả để tái dùng nguyên vẹn UI
-  // kéo-thả sẵn có, không cần code riêng.
   const sendDateColumn: ColumnDef = {
     id: SEND_DATE_COLUMN_ID,
     key: SEND_DATE_COLUMN_ID,
     label: t("sheetConfig.sendDateColumnLabel"),
     type: "date",
-    editableBy: [],
-  };
-  const blankColumn: ColumnDef = {
-    id: BLANK_COLUMN_ID,
-    key: BLANK_COLUMN_ID,
-    label: t("sheetConfig.blankColumnLabel"),
-    type: "text",
     editableBy: [],
   };
   // 4 cột ảo theo từng năm refund ("2022".."2025") — lấy đúng 1 năm trong row.refunds
@@ -112,7 +108,6 @@ export function GoogleSheetConfigDialog({
   const dobColumn = columns.find((c) => c.id === "dateOfBirth");
   const visibleColumns = [
     sendDateColumn,
-    blankColumn,
     ...refundYearColumns,
     cpaReviewMoneyColumn,
     ...(dobColumn ? [dobColumn] : []),
@@ -129,34 +124,35 @@ export function GoogleSheetConfigDialog({
 
   function openDialog() {
     setSheetIdInput(config?.sheetId ?? "");
-    setItems((config?.columnIds ?? []).filter((id) => columnById.has(id)).map((id) => ({ key: nextKey(id), colId: id })));
+    setItems(
+      (config?.columnMappings ?? [])
+        .filter((m) => columnById.has(m.colId))
+        .map((m) => ({ key: nextKey(m.colId), colId: m.colId, sheetColumn: m.sheetColumn }))
+    );
     setDateFormat(config?.dateFormat ?? "mdy2");
     setOpen(true);
   }
 
   function addColumn(colId: string) {
-    setItems((prev) => [...prev, { key: nextKey(colId), colId }]);
+    setItems((prev) => [...prev, { key: nextKey(colId), colId, sheetColumn: "" }]);
   }
 
   function removeItem(key: string) {
     setItems((prev) => prev.filter((it) => it.key !== key));
   }
 
-  function reorder(fromKey: string, toKey: string) {
-    if (fromKey === toKey) return;
-    setItems((prev) => {
-      const next = [...prev];
-      const fromIdx = next.findIndex((it) => it.key === fromKey);
-      const toIdx = next.findIndex((it) => it.key === toKey);
-      if (fromIdx === -1 || toIdx === -1) return prev;
-      const [moved] = next.splice(fromIdx, 1);
-      next.splice(toIdx, 0, moved);
-      return next;
-    });
+  function setItemSheetColumn(key: string, raw: string) {
+    const sheetColumn = normalizeSheetColumn(raw);
+    setItems((prev) => prev.map((it) => (it.key === key ? { ...it, sheetColumn } : it)));
   }
 
   function handleSave() {
-    onSave({ sheetId: extractSheetId(sheetIdInput), columnIds: items.map((it) => it.colId), dateFormat });
+    // Bỏ qua mục nào Admin chưa gõ chữ cái cột Sheet — chưa gán thì coi như chưa cấu hình
+    // xong, không chặn lưu các mục còn lại.
+    const columnMappings = items
+      .filter((it) => it.sheetColumn)
+      .map((it) => ({ colId: it.colId, sheetColumn: it.sheetColumn }));
+    onSave({ sheetId: extractSheetId(sheetIdInput), columnMappings, dateFormat });
     setOpen(false);
   }
 
@@ -195,6 +191,7 @@ export function GoogleSheetConfigDialog({
 
                 <div>
                   <label className="mb-1 block text-xs text-text-dim">{t("sheetConfig.selectedLabel")}</label>
+                  <p className="mb-1.5 text-[11px] leading-tight text-text-faint">{t("sheetConfig.sheetColumnHint")}</p>
                   <div className="flex flex-col gap-1 rounded-lg border border-border bg-bg-elevated p-1.5">
                     {items.length === 0 && (
                       <p className="px-2 py-1.5 text-xs text-text-faint">{t("sheetConfig.emptySelected")}</p>
@@ -203,27 +200,15 @@ export function GoogleSheetConfigDialog({
                       const col = columnById.get(it.colId);
                       if (!col) return null;
                       return (
-                        <div
-                          key={it.key}
-                          draggable
-                          onDragStart={() => setDragKey(it.key)}
-                          onDragOver={(e) => e.preventDefault()}
-                          onDrop={(e) => {
-                            e.preventDefault();
-                            if (dragKey) reorder(dragKey, it.key);
-                            setDragKey(null);
-                          }}
-                          onDragEnd={() => setDragKey(null)}
-                          className="flex cursor-grab items-center gap-2 rounded-md bg-surface px-2 py-1.5 text-sm active:cursor-grabbing"
-                        >
-                          <GripVertical size={13} className="shrink-0 text-text-faint" />
-                          <span className="min-w-0 flex-1 truncate">
-                            {col.id === BLANK_COLUMN_ID ? (
-                              <span className="italic text-text-faint">{translateColumnLabel(language, col.id, col.label)}</span>
-                            ) : (
-                              translateColumnLabel(language, col.id, col.label)
-                            )}
-                          </span>
+                        <div key={it.key} className="flex items-center gap-2 rounded-md bg-surface px-2 py-1.5 text-sm">
+                          <span className="min-w-0 flex-1 truncate">{translateColumnLabel(language, col.id, col.label)}</span>
+                          <input
+                            value={it.sheetColumn}
+                            onChange={(e) => setItemSheetColumn(it.key, e.target.value)}
+                            placeholder={t("sheetConfig.sheetColumnPlaceholder")}
+                            maxLength={3}
+                            className="w-14 shrink-0 rounded-md border border-border bg-bg-elevated px-2 py-1 text-center text-xs uppercase outline-none focus:border-accent"
+                          />
                           <button
                             type="button"
                             onClick={() => removeItem(it.key)}

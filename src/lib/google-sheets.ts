@@ -52,16 +52,24 @@ export async function exchangeCodeForRefreshToken(code: string, redirectUri: str
   return tokens.refresh_token;
 }
 
+export interface CellWrite {
+  /** Chữ cái cột Sheet đích, vd "B", "AA" (đã chuẩn hoá viết hoa) — xem
+   * GoogleSheetColumnMapping.sheetColumn trong types.ts. */
+  column: string;
+  value: string | number;
+}
+
 export interface AppendRowInput {
   refreshToken: string;
   sheetId: string;
   /** Tên tab (vd "Aug26") — xem src/lib/month-year.ts. */
   tabName: string;
-  /** Cột tiền truyền vào dạng number (không phải string "$1,234") — Sheets tự nhận diện
-   * là số, tự CĂN PHẢI + hiển thị theo đúng định dạng số/tiền tệ Ô ĐÓ ĐANG CÓ SẴN trên
-   * Sheet thật (vd nếu cột đã format tiền tệ $ có dấu phẩy từ trước, số ghi vào tự động
-   * hiện đúng vậy — không còn ép định dạng riêng từ phía app nữa). */
-  values: (string | number)[];
+  /** Danh sách (cột Sheet, giá trị) CẦN GHI — cột nào KHÔNG có trong danh sách này (kể cả
+   * nằm xen giữa 2 cột có mapping) sẽ KHÔNG BAO GIỜ bị ghi/động tới, dù dòng đích là dòng
+   * mới hay dòng đã có sẵn trên Sheet — an toàn tuyệt đối cho dropdown/công thức/định dạng
+   * Admin đã cấu hình sẵn ở các cột khác. Giá trị number (cột tiền) Sheets tự nhận diện là
+   * số, tự CĂN PHẢI + hiển thị theo đúng định dạng số/tiền tệ Ô ĐÓ ĐANG CÓ SẴN. */
+  cells: CellWrite[];
 }
 
 function isInvalidGrantError(err: unknown): boolean {
@@ -85,13 +93,15 @@ function mapSheetsError(err: unknown): string {
 }
 
 /** Số cột đầu (A-F) dùng để Sheets xác định "dòng cuối cùng đang có dữ liệu" — CHỈ xét 6
- * cột này, bỏ qua dữ liệu ở cột G trở đi khi tìm điểm dừng (vd nếu 1 dòng có ghi chú/màu
- * nền ở cột xa hơn nhưng A-F còn trống, Sheets vẫn coi dòng đó là "trống" và ghi đè vào,
- * KHÔNG nhảy qua thêm 1 dòng mới). */
+ * cột này khi tìm điểm dừng, HOÀN TOÀN ĐỘC LẬP với việc Admin thực tế gán cột nào để ghi
+ * dữ liệu (xem AppendRowInput.cells) — 2 khái niệm tách biệt: A-F chỉ dùng để dò VỊ TRÍ
+ * DÒNG, không liên quan tới cột nào bị ghi. */
 const APPEND_TABLE_COLS = 6;
 /** Số dòng đầu tiên LUÔN bỏ qua, không xét tới khi tìm "dòng trống"/"cuối bảng" (vd 1-2
- * dòng tiêu đề + 1 dòng ghi chú của CPA) — mặc định 3, xem cách dùng ở appendRowToSheet. */
+ * dòng tiêu đề + 1 dòng ghi chú của CPA) — mặc định 3. */
 const SKIP_LEADING_ROWS = 3;
+/** Giới hạn số dòng quét tìm dòng trống — đủ lớn cho 1 tab theo tháng, tránh quét vô hạn. */
+const BLANK_ROW_SCAN_LIMIT = 2000;
 
 function columnIndexToLetter(index: number): string {
   let n = index + 1;
@@ -104,35 +114,109 @@ function columnIndexToLetter(index: number): string {
   return letters;
 }
 
-/** Ghi 1 dòng vào cuối tab — dùng spreadsheets.values.append với insertDataOption
- * "INSERT_ROWS": Google Sheets API tự tìm "dòng cuối cùng của bảng" rồi thêm dòng mới
- * ngay sau đó. Phạm vi truyền vào CHỈ giới hạn cột A-F (`APPEND_TABLE_COLS`) — Sheets chỉ
- * xét dữ liệu trong 6 cột này để xác định "cuối bảng", nên nếu dòng cuối cùng có dữ liệu
- * A-F đã tồn tại nhưng dòng NGAY SAU nó (dòng "gần nhất") chưa có gì ở A-F, Sheets sẽ điền
- * thẳng vào đúng dòng trống đó thay vì luôn nhảy xuống dòng mới — không cần tự dò/ghi đè
- * tay (an toàn hơn: đây là hành vi gốc của Sheets API, không có rủi ro ghi đè nhầm dòng
- * tiêu đề hay dòng giữa bảng như cách tự quét trước đó). Phạm vi bắt đầu ở dòng
- * `SKIP_LEADING_ROWS + 1` (mặc định dòng 4) — 3 dòng đầu (tiêu đề/ghi chú) LUÔN bị bỏ qua,
- * không bao giờ được coi là "dòng trống" để ghi đè, kể cả khi A-F ở đó thực sự trống.
+/** Quét cột A-F (bounded, bắt đầu từ `SKIP_LEADING_ROWS + 1` — luôn bỏ qua các dòng đầu)
+ * — trả về dòng ĐẦU TIÊN có cả 6 cột A-F trống (đã tồn tại sẵn trên Sheet), hoặc nếu
+ * không có dòng nào như vậy, dòng NGAY SAU dòng cuối cùng có dữ liệu trong phạm vi đã
+ * quét (dòng hoàn toàn mới). */
+async function findTargetRow(
+  sheets: ReturnType<typeof google.sheets>,
+  spreadsheetId: string,
+  tabName: string
+): Promise<number> {
+  const lastCol = columnIndexToLetter(APPEND_TABLE_COLS - 1);
+  const startRow = SKIP_LEADING_ROWS + 1;
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `'${tabName}'!A${startRow}:${lastCol}${startRow + BLANK_ROW_SCAN_LIMIT - 1}`,
+  });
+  const rows = res.data.values ?? [];
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i] ?? [];
+    const isBlank = row.every((cell) => cell === undefined || cell === null || String(cell).trim() === "");
+    if (isBlank) return startRow + i;
+  }
+  return startRow + rows.length;
+}
+
+/** Đảm bảo Sheet có đủ số dòng để ghi vào `targetRow` — values.update/batchUpdate KHÔNG
+ * tự mở rộng grid như values.append+INSERT_ROWS, nên phải tự kiểm tra + mở rộng tay bằng
+ * appendDimension nếu `targetRow` vượt quá rowCount hiện tại (trường hợp hiếm, sheet đã
+ * dùng hết số dòng có sẵn). Trả về sheetId dạng số (gid) — batchUpdate cần gid, không nhận
+ * tên tab. */
+async function ensureRowExists(
+  sheets: ReturnType<typeof google.sheets>,
+  spreadsheetId: string,
+  tabName: string,
+  targetRow: number
+): Promise<void> {
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId,
+    fields: "sheets.properties(sheetId,title,gridProperties)",
+  });
+  const sheetMeta = meta.data.sheets?.find((s) => s.properties?.title === tabName);
+  const gid = sheetMeta?.properties?.sheetId;
+  if (gid === undefined || gid === null) {
+    throw new Error(`Không tìm thấy tab "${tabName}" trên Google Sheet.`);
+  }
+  const rowCount = sheetMeta?.properties?.gridProperties?.rowCount ?? 0;
+  if (targetRow <= rowCount) return;
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [{ appendDimension: { sheetId: gid, dimension: "ROWS", length: targetRow - rowCount } }],
+    },
+  });
+}
+
+/** Ghi các ô đã CHỈ ĐỊNH SẴN cột (`cells`) vào đúng `targetRow` — mỗi ô 1 range riêng theo
+ * đúng chữ cái cột Admin đã gán, không gộp/không suy đoán vị trí liền kề, nên cột nào
+ * không có trong `cells` (dù nằm giữa 2 cột khác có ghi) tuyệt đối không bị đụng tới. */
+async function writeCells(
+  sheets: ReturnType<typeof google.sheets>,
+  spreadsheetId: string,
+  tabName: string,
+  targetRow: number,
+  cells: CellWrite[]
+): Promise<void> {
+  if (cells.length === 0) return;
+  if (cells.length === 1) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `'${tabName}'!${cells[0].column}${targetRow}`,
+      valueInputOption: "RAW",
+      requestBody: { values: [[cells[0].value]] },
+    });
+    return;
+  }
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      valueInputOption: "RAW",
+      data: cells.map((c) => ({
+        range: `'${tabName}'!${c.column}${targetRow}`,
+        values: [[c.value]],
+      })),
+    },
+  });
+}
+
+/** Ghi 1 dòng dữ liệu — tự tìm dòng đích qua `findTargetRow` (bỏ qua `SKIP_LEADING_ROWS`
+ * dòng đầu, chỉ xét cột A-F để xác định "trống"), tự mở rộng Sheet nếu cần qua
+ * `ensureRowExists`, rồi ghi TỪNG Ô đúng cột Admin đã gán qua `writeCells` — không bao giờ
+ * đụng tới cột nào ngoài danh sách `cells`, dù dòng đích là dòng mới hay dòng có sẵn.
  * valueInputOption "RAW": giá trị string (vd ngày "08/10/26") được lưu ĐÚNG NGUYÊN VĂN,
  * không bị Sheets tự "USER_ENTERED" diễn giải lại (vd tự đổi "08/10/26" thành
- * "2026-08-10") — còn giá trị number (cột tiền) vẫn được Sheets lưu đúng kiểu số (RAW chỉ
- * tắt việc PARSE chuỗi thành kiểu khác, không ảnh hưởng input đã là number sẵn), tự động
+ * "2026-08-10") — còn giá trị number (cột tiền) vẫn được Sheets lưu đúng kiểu số, tự động
  * căn phải + hiển thị theo định dạng số/tiền tệ Ô ĐÓ ĐANG CÓ SẴN trên Sheet thật. */
 export async function appendRowToSheet(input: AppendRowInput): Promise<void> {
   const client = getOAuthClient("");
   client.setCredentials({ refresh_token: input.refreshToken });
   const sheets = google.sheets({ version: "v4", auth: client });
   try {
-    const lastTableCol = columnIndexToLetter(APPEND_TABLE_COLS - 1);
-    const startRow = SKIP_LEADING_ROWS + 1;
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: input.sheetId,
-      range: `'${input.tabName}'!A${startRow}:${lastTableCol}${startRow}`,
-      valueInputOption: "RAW",
-      insertDataOption: "INSERT_ROWS",
-      requestBody: { values: [input.values] },
-    });
+    if (input.cells.length === 0) return;
+    const targetRow = await findTargetRow(sheets, input.sheetId, input.tabName);
+    await ensureRowExists(sheets, input.sheetId, input.tabName, targetRow);
+    await writeCells(sheets, input.sheetId, input.tabName, targetRow, input.cells);
   } catch (err) {
     if (isInvalidGrantError(err)) {
       throw new GoogleAuthExpiredError("Kết nối Google đã hết hạn hoặc bị thu hồi — cần kết nối lại.");

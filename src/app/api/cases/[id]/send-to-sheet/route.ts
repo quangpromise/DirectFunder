@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
 import { hasFeature } from "@/lib/rbac";
-import { appendRowToSheet, GoogleAuthExpiredError } from "@/lib/google-sheets";
+import { appendRowToSheet, GoogleAuthExpiredError, type CellWrite } from "@/lib/google-sheets";
 import { getColumnValue, SEND_DATE_COLUMN_ID } from "@/lib/sheet-row-columns";
 import { formatDateValue, todayIsoDate } from "@/lib/date-format";
 import { buildMonthYear } from "@/lib/month-year";
@@ -39,7 +39,10 @@ export async function POST(request: Request, ctx: RouteContext<"/api/cases/[id]/
   }
 
   const sheetConfig = config?.googleSheetConfig as unknown as GoogleSheetConfig | null;
-  if (!sheetConfig?.sheetId || sheetConfig.columnIds.length === 0) {
+  // `?? []`: phòng cấu hình cũ còn sót lại từ trước khi đổi sang columnMappings (thiết kế
+  // dùng columnIds trước đây) — tránh crash khi field mới chưa tồn tại trên bản ghi cũ,
+  // coi như chưa cấu hình thay vì lỗi 500.
+  if (!sheetConfig?.sheetId || (sheetConfig.columnMappings ?? []).length === 0) {
     return NextResponse.json({ error: "Admin chưa cấu hình Google Sheet — vào trang Phân quyền để cấu hình" }, { status: 400 });
   }
 
@@ -55,14 +58,22 @@ export async function POST(request: Request, ctx: RouteContext<"/api/cases/[id]/
   // undefined) — CHỈ áp dụng khi thật sự chưa cấu hình, không ghi đè lựa chọn "iso" Admin
   // đã cố tình chọn (xem GoogleSheetConfigDialog, dropdown cũng mặc định "mdy2" cho khớp).
   const dateFormat = sheetConfig.dateFormat ?? "mdy2";
-  const values = sheetConfig.columnIds.map((colId) => {
-    if (colId === SEND_DATE_COLUMN_ID) return formatDateValue(todayIsoDate(), dateFormat);
-    // Cột ảo (năm refund cụ thể / "Số tiền CPA Review" / "Để trống") không nằm trong
-    // AppConfig.columns thật — getColumnValue tự nhận diện qua col.id (xem
-    // sheet-row-columns.ts), chỉ cần id đúng là đủ, không cần label/type/editableBy thật.
-    // BLANK_COLUMN_ID và mọi id lạ khác cũng rơi vào nhánh này, tự trả "" đúng ý muốn.
-    const col = columnById.get(colId) ?? ({ id: colId, key: colId, label: "", type: "text", editableBy: [] } as ColumnDef);
-    return getColumnValue(caseRecord, col, "vi", dateFormat, reviewYears);
+  // Chỉ tạo 1 ô ghi cho ĐÚNG cột Admin đã gán (sheetColumn) — cột nào không có trong
+  // columnMappings (dù nằm giữa 2 cột khác có mapping) tuyệt đối không được đưa vào
+  // `cells`, nên appendRowToSheet không bao giờ động tới, an toàn cho dropdown/công thức
+  // Admin đã cấu hình sẵn ở các cột đó trên Sheet thật.
+  const cells: CellWrite[] = sheetConfig.columnMappings.map(({ colId, sheetColumn }) => {
+    const value =
+      colId === SEND_DATE_COLUMN_ID
+        ? formatDateValue(todayIsoDate(), dateFormat)
+        : getColumnValue(
+            caseRecord,
+            columnById.get(colId) ?? ({ id: colId, key: colId, label: "", type: "text", editableBy: [] } as ColumnDef),
+            "vi",
+            dateFormat,
+            reviewYears
+          );
+    return { column: sheetColumn, value };
   });
 
   try {
@@ -70,7 +81,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/cases/[id]/
       refreshToken: userWithToken.googleRefreshToken,
       sheetId: sheetConfig.sheetId,
       tabName: buildMonthYear(new Date()),
-      values,
+      cells,
     });
   } catch (err) {
     if (err instanceof GoogleAuthExpiredError) {

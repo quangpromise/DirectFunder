@@ -91,14 +91,27 @@ export interface CpaEmailDefaults {
  * Sheet, không đổi cách lưu/hiển thị cột Date trong bảng app. */
 export type DateFormat = "iso" | "mdy2";
 
-/** Sheet đích + cột nào/thứ tự nào được đẩy vào dòng mới khi bấm nút "Send" ở cột
- * Status (chỉ hiện khi status = cpa_review) — cấu hình chung toàn app (Admin sửa qua
- * dialog cài đặt ở trang Phân quyền). columnIds tham chiếu ColumnDef.id trong `columns`
- * state, theo đúng thứ tự sẽ ghi vào các ô của dòng mới trên Sheet. dateFormat áp dụng
- * cho MỌI cột type "date" nằm trong columnIds (không cấu hình riêng từng cột). */
+/** 1 cột dữ liệu app + đúng chữ cái cột Sheet đích (vd "B", "AA") mà nó sẽ ghi vào khi bấm
+ * Send — Admin tự gõ chữ cái, KHÔNG suy ra từ thứ tự danh sách. Cột Sheet nào không xuất
+ * hiện trong danh sách mapping (kể cả nằm giữa 2 cột có mapping) sẽ KHÔNG BAO GIỜ bị động
+ * tới khi ghi — an toàn tuyệt đối cho dropdown/công thức/định dạng Admin đã cấu hình sẵn ở
+ * các cột đó trên Sheet thật (khác thiết kế cũ dùng "Để trống" chèn giữ chỗ theo vị trí,
+ * dễ ghi đè nhầm nếu tính sai thứ tự hoặc Sheet tự mở rộng validation sang dòng mới). */
+export interface GoogleSheetColumnMapping {
+  /** id cột dữ liệu — ColumnDef.id thật, hoặc id ảo (send_date/năm refund cụ thể/CPA
+   * review money) — xem sheet-row-columns.ts. */
+  colId: string;
+  /** Chữ cái cột Sheet đích, luôn viết hoa (vd "B", "AA"). */
+  sheetColumn: string;
+}
+
+/** Sheet đích + cột nào được đẩy vào dòng mới khi bấm nút "Send" ở cột Status (chỉ hiện
+ * khi status = cpa_review) — cấu hình chung toàn app (Admin sửa qua dialog cài đặt ở
+ * trang Phân quyền). dateFormat áp dụng cho MỌI cột type "date" trong columnMappings
+ * (không cấu hình riêng từng cột). */
 export interface GoogleSheetConfig {
   sheetId: string;
-  columnIds: string[];
+  columnMappings: GoogleSheetColumnMapping[];
   dateFormat?: DateFormat;
 }
 

@@ -3,19 +3,12 @@ import { getAllClientNames } from "./client-name";
 import { translateOptionLabel } from "./i18n";
 import { formatDateValue, formatDateOfBirth } from "./date-format";
 
-/** id đặc biệt cho trường "Ngày gửi" ảo trong GoogleSheetConfig.columnIds — không tham
+/** id đặc biệt cho trường "Ngày gửi" ảo trong GoogleSheetConfig.columnMappings — không tham
  * chiếu ColumnDef thật nào, giá trị luôn là ngày hiện tại lúc bấm Send (không phải dữ
  * liệu hồ sơ). Không trùng id cột thật vì không đứng trong `columns` state. */
 export const SEND_DATE_COLUMN_ID = "__send_date__";
 
-/** id đặc biệt cho ô "Để trống" ảo trong GoogleSheetConfig.columnIds — dùng để chừa 1 ô
- * trống giữa các cột khi thứ tự cột trên Sheet thật không khớp liền kề với dữ liệu app
- * đẩy lên. Không cần xử lý riêng ở server: vì id này không tồn tại trong `columns` state,
- * getColumnValue's caller (route send-to-sheet) đã tự trả "" cho mọi id không tìm thấy
- * trong columnById — đúng hành vi mong muốn, chỉ khai báo hằng số ở đây cho rõ ràng. */
-export const BLANK_COLUMN_ID = "__blank__";
-
-/** id đặc biệt cho 4 cột ảo "2022"/"2023"/"2024"/"2025" trong GoogleSheetConfig.columnIds
+/** id đặc biệt cho 4 cột ảo "2022"/"2023"/"2024"/"2025" trong GoogleSheetConfig.columnMappings
  * — mỗi cột lấy đúng 1 năm trong `row.refunds` (object nhiều năm, không có ColumnDef
  * phẳng riêng cho từng năm — xem refund.ts), không trùng id cột thật vì không đứng trong
  * `columns` state. */
@@ -31,16 +24,17 @@ function parseRefundYearColumnId(id: string): string | null {
   return id.slice(REFUND_YEAR_COLUMN_PREFIX.length, -REFUND_YEAR_COLUMN_SUFFIX.length);
 }
 
-/** id đặc biệt cho cột ảo "Số tiền CPA Review" trong GoogleSheetConfig.columnIds — KHÁC
+/** id đặc biệt cho cột ảo "Số tiền CPA Review" trong GoogleSheetConfig.columnMappings — KHÁC
  * 4 cột năm cố định ở trên (mỗi cột đó luôn gắn với đúng 1 năm cụ thể); cột này lấy giá
  * trị theo năm được người dùng CHỌN NGAY LÚC BẤM SEND (popup "Bạn muốn CPA Review năm
  * nào?" ở SendToSheetButton) — không cấu hình sẵn năm nào trong GoogleSheetConfig, giá
  * trị phụ thuộc `reviewYear` truyền vào getColumnValue mỗi lần gửi. */
 export const CPA_REVIEW_MONEY_COLUMN_ID = "__cpa_review_money__";
 
-/** Đọc giá trị của 1 cột bất kỳ trên 1 hồ sơ — dùng để build dòng dữ liệu đẩy lên Google
- * Sheet (nút "Send" ở cột Status), theo đúng thứ tự cột Admin đã chọn trong
- * GoogleSheetConfig.columnIds. Các field đặc biệt không nằm phẳng trên CaseRecord
+/** Đọc giá trị của 1 cột bất kỳ trên 1 hồ sơ — dùng để build dữ liệu đẩy lên Google Sheet
+ * (nút "Send" ở cột Status), ứng với từng mapping trong GoogleSheetConfig.columnMappings
+ * (mỗi mapping tự gán đúng cột Sheet đích, không còn phụ thuộc thứ tự danh sách). Các
+ * field đặc biệt không nằm phẳng trên CaseRecord
  * (clientName gộp 2 client, ssn gộp 2 slot) xử lý riêng theo id; cột custom (kể cả
  * "caseLabel") đọc từ row.custom[col.id]; còn lại fallback rỗng (vd cột "order" dạng
  * object phức tạp, Admin không nên chọn cột này để đẩy lên Sheet). Cột type "date" được
