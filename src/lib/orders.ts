@@ -28,7 +28,7 @@ export function hasWaitingOrderForSsn(allCases: CaseRecord[], type: OrderType, s
 export function missingOrderClientFields(c: CaseRecord, slots: (0 | 1)[]): string[] {
   const missing: string[] = [];
   for (const slot of slots) {
-    const suffix = slot === 0 ? "Client 1" : "Client 2";
+    const suffix = slot === 0 ? "Taxpayer" : "Spouse";
     if (!c.clients[slot].firstName.trim()) missing.push(`First Name (${suffix})`);
     if (!c.clients[slot].lastName.trim()) missing.push(`Last Name (${suffix})`);
     if (!c.ssn[slot]) missing.push(`SSN (${suffix})`);

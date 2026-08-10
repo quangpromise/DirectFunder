@@ -53,7 +53,10 @@ export default function OrderPage({ params }: { params: Promise<{ caseId: string
           </div>
           <div>
             <div className="text-xs text-text-faint">Phone</div>
-            <div className="mt-0.5 font-medium">{kase.phone || "—"}</div>
+            <div className="mt-0.5 flex flex-col gap-0.5 font-medium">
+              <span>{kase.phone || "—"}</span>
+              {kase.phone2 && <span>{kase.phone2}</span>}
+            </div>
           </div>
           <div className="col-span-2">
             <div className="text-xs text-text-faint">SSN</div>

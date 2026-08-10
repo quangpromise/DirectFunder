@@ -46,6 +46,7 @@ export const ASSIGNABLE_FEATURES = [
   "assignSupport",
   "manageUsers",
   "sendCpaEmail",
+  "sendToGoogleSheet",
 ] as const;
 export type FeatureKey = (typeof ASSIGNABLE_FEATURES)[number];
 
@@ -59,6 +60,7 @@ export const FEATURE_LABEL: Record<Language, Record<FeatureKey, string>> = {
     assignSupport: "Sửa cột Assign (giao Support) trong tab Order",
     manageUsers: "Quản lý tài khoản",
     sendCpaEmail: "Gửi email cho CPA",
+    sendToGoogleSheet: "Gửi dòng dữ liệu lên Google Sheet",
   },
   en: {
     addColumn: "Add new column",
@@ -69,6 +71,7 @@ export const FEATURE_LABEL: Record<Language, Record<FeatureKey, string>> = {
     assignSupport: "Edit Assign column (Support) in Order tab",
     manageUsers: "Manage accounts",
     sendCpaEmail: "Send email to CPA",
+    sendToGoogleSheet: "Send row to Google Sheet",
   },
 };
 
@@ -81,6 +84,22 @@ export interface CpaEmailDefaults {
   cc: string[];
   subjectTemplate?: string;
   bodyTemplate?: string;
+}
+
+/** "iso" = giữ nguyên định dạng lưu trữ YYYY-MM-DD. "mdy2" = ghi vào Sheet dạng
+ * Month/Day/Year với năm lấy 2 số cuối, vd "8/10/26". Chỉ ảnh hưởng cách GHI vào Google
+ * Sheet, không đổi cách lưu/hiển thị cột Date trong bảng app. */
+export type DateFormat = "iso" | "mdy2";
+
+/** Sheet đích + cột nào/thứ tự nào được đẩy vào dòng mới khi bấm nút "Send" ở cột
+ * Status (chỉ hiện khi status = cpa_review) — cấu hình chung toàn app (Admin sửa qua
+ * dialog cài đặt ở trang Phân quyền). columnIds tham chiếu ColumnDef.id trong `columns`
+ * state, theo đúng thứ tự sẽ ghi vào các ô của dòng mới trên Sheet. dateFormat áp dụng
+ * cho MỌI cột type "date" nằm trong columnIds (không cấu hình riêng từng cột). */
+export interface GoogleSheetConfig {
+  sheetId: string;
+  columnIds: string[];
+  dateFormat?: DateFormat;
 }
 
 export type FeaturePermissions = Record<FeatureKey, Role[]>;
@@ -164,7 +183,7 @@ export interface OrderRecord {
   /** Ngày chọn tay (yyyy-mm-dd, không phải mốc thời gian hệ thống) — ý nghĩa khác nhau
    * theo type: "Sign Date" cho Order 8821, "Downloaded Date" cho Order TTS & WIT. */
   milestoneDate: string | null;
-  /** CHỈ có ý nghĩa với Order 8821 (đặt qua popup chọn Client 1/Client 2/Cả 2) — order
+  /** CHỈ có ý nghĩa với Order 8821 (đặt qua popup chọn Taxpayer/Spouse/Cả 2) — order
    * này lấy Client Name + SSN của đúng client nào (0 = dòng 1, 1 = dòng 2) — áp dụng cho
    * cả Order 8821 lẫn Order TTS & WIT (cả 2 đều đặt qua popup chọn client). null = order
    * cũ trước khi có tính năng chọn client (vẫn tách hiển thị theo số Client Name đã điền
@@ -189,6 +208,13 @@ export interface CaseRecord {
   clientLink: string | null;
   zipcode: string;
   phone: string;
+  /** Số điện thoại phụ — chỉ sửa được qua popup "Edit Hồ sơ" (ClientProfileDialog). */
+  phone2: string;
+  /** Email liên hệ — chỉ sửa được qua popup "Edit Hồ sơ". */
+  email: string;
+  /** Ngày sinh ISO "YYYY-MM-DD" của 2 khách hàng, cùng thứ tự với `clients`/`ssn`. null =
+   * chưa nhập. Chỉ sửa được qua popup "Edit Hồ sơ". */
+  dateOfBirth: [string | null, string | null];
   address: string;
   /** Nội dung mô tả gốc — không cho sửa trực tiếp, chỉ có thể "reply" thêm nội dung mới. */
   description: string;
@@ -198,7 +224,14 @@ export interface CaseRecord {
    * chỉ chứa người gửi — các tài khoản khác vẫn thấy màu đỏ cho tới khi họ tự mở xem. */
   descriptionReadBy: string[];
   caseNumber: string;
+  /** Tổng tiền hoàn thuế — LUÔN được server tự tính = tổng `refunds`, không nhận sửa
+   * trực tiếp (cột "money" có editableBy rỗng, xem DEFAULT_COLUMNS). Chỉ đổi gián tiếp
+   * qua popup "Edit Hồ sơ" khi lưu refunds. */
   money: number;
+  /** key năm dạng "2022".."2025", value = số tiền hoàn thuế năm đó (0 = chưa nhập).
+   * `money` = tổng mọi giá trị trong đây, tự tính ở server mỗi lần popup "Edit Hồ sơ"
+   * lưu — xem src/lib/refund.ts. */
+  refunds: Record<string, number>;
   /** Lịch sử đầy đủ mọi lần đặt order (cả Order 8821 lẫn Order TTS & WIT), mới nhất
    * KHÔNG tự động lên đầu — hiển thị/sắp xếp do tab Order tự xử lý. */
   orders: OrderRecord[];

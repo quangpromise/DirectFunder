@@ -21,6 +21,11 @@ model User {
   /// Chỉ có ý nghĩa với role agent_leader/processor_leader — id các Agent/Processor mà
   /// leader này được xem hồ sơ. Admin gán qua trang Quản lý tài khoản.
   teamMemberIds String[] @default([])
+  /// Refresh token OAuth2 Google Sheets (tính năng "Send" đẩy dòng hồ sơ lên Google
+  /// Sheet) — null = user chưa kết nối tài khoản Google. Chỉ lưu refresh_token, access
+  /// token luôn xin mới qua refresh_token mỗi lần gọi API (xem src/lib/google-sheets.ts),
+  /// không lưu/đồng bộ access_token + hạn dùng riêng cho đơn giản.
+  googleRefreshToken String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -35,13 +40,29 @@ model Case {
   clientLink         String?
   zipcode            String
   phone              String
+  /// Số điện thoại phụ — chỉ sửa được qua popup "Edit Hồ sơ" (client-profile-dialog),
+  /// không hiển thị như 1 cột riêng trong bảng Hồ sơ.
+  phone2             String   @default("")
+  /// Email liên hệ — chỉ sửa được qua popup "Edit Hồ sơ", tương tự phone2.
+  email              String   @default("")
+  /// [string | null, string | null] — ngày sinh ISO "YYYY-MM-DD" của 2 khách hàng, cùng
+  /// thứ tự với `clients`/`ssn`. null = chưa nhập. Chỉ sửa qua popup "Edit Hồ sơ".
+  dateOfBirth        Json?
   address            String
   description        String
   /// DescriptionReply[]
   descriptionReplies Json     @default("[]")
   descriptionReadBy  String[] @default([])
   caseNumber         String   @unique
+  /// Tổng tiền hoàn thuế — LUÔN được server tự tính = tổng các giá trị trong `refunds`
+  /// mỗi khi popup "Edit Hồ sơ" lưu (xem POST /api/cases/[id]/client-profile), không
+  /// còn nhận sửa trực tiếp qua PATCH thường (cột "money" có editableBy rỗng — xem
+  /// DEFAULT_COLUMNS trong rbac.ts).
   money              Float
+  /// Record<string, number> — key năm dạng "2022".."2025", value = số tiền hoàn thuế
+  /// năm đó (0 = chưa nhập). money = tổng mọi giá trị trong đây, tự tính ở server mỗi
+  /// lần popup "Edit Hồ sơ" lưu. Xem src/lib/refund.ts.
+  refunds            Json     @default("{}")
   /// OrderRecord[]
   orders             Json     @default("[]")
   /// [string | null, string | null]
@@ -70,6 +91,10 @@ model AppConfig {
   featurePermissions Json
   /// CpaEmailDefaults ({ to: string[]; cc: string[] }) — null = Admin chưa cấu hình.
   cpaEmailDefaults   Json?
+  /// GoogleSheetConfig ({ sheetId: string; columnIds: string[] }) — Sheet đích + cột nào/
+  /// thứ tự nào được đẩy vào dòng mới khi bấm nút "Send" ở cột Status. null = Admin chưa
+  /// cấu hình.
+  googleSheetConfig  Json?
   updatedAt          DateTime @updatedAt
 
   @@map("app_config")

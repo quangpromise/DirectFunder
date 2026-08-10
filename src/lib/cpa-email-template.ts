@@ -1,5 +1,6 @@
 import { CaseRecord } from "./types";
 import { getAllClientNames, getClientEntries } from "./client-name";
+import { buildMonthYear } from "./month-year";
 
 /** Biến khả dụng trong subjectTemplate/bodyTemplate — Admin chèn dạng {clientName}. */
 export interface CpaEmailTemplateVars {
@@ -52,12 +53,6 @@ function buildClientRowsHtml(c: CaseRecord): string {
   return `<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:8px 0">${rows}</table>`;
 }
 
-function buildMonthYear(now: Date): string {
-  const month = now.toLocaleString("en-US", { month: "short" });
-  const year = String(now.getFullYear()).slice(-2);
-  return `${month}${year}`;
-}
-
 export function buildTemplateVars(
   c: CaseRecord,
   statusLabel: string,
@@ -67,7 +62,9 @@ export function buildTemplateVars(
   return {
     clientName: getAllClientNames(c) || "—",
     ssn: c.ssn.filter(Boolean).join(" / ") || "—",
-    phone: c.phone || "—",
+    // Kèm thêm Phone 2 (nhập ở popup "Edit Hồ sơ") nếu có — chỉ Phone 1 thì giữ nguyên
+    // như trước, không hiện dấu "/" thừa.
+    phone: [c.phone, c.phone2].filter(Boolean).join(" / ") || "—",
     address: c.address || "—",
     zipcode: c.zipcode || "—",
     money: `$${c.money.toLocaleString("en-US")}`,

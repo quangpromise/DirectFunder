@@ -5,19 +5,23 @@ import { canViewCase, hasFeature } from "@/lib/rbac";
 import type { CaseRecord, ColumnDef, FeaturePermissions } from "@/lib/types";
 import type { Prisma } from "@prisma/client";
 
-function toCaseRecord(row: {
+export function toCaseRecord(row: {
   id: string;
   status: string;
   clients: Prisma.JsonValue;
   clientLink: string | null;
   zipcode: string;
   phone: string;
+  phone2: string;
+  email: string;
+  dateOfBirth: Prisma.JsonValue;
   address: string;
   description: string;
   descriptionReplies: Prisma.JsonValue;
   descriptionReadBy: string[];
   caseNumber: string;
   money: number;
+  refunds: Prisma.JsonValue;
   orders: Prisma.JsonValue;
   ssn: Prisma.JsonValue;
   assignedTo: string | null;
@@ -34,12 +38,16 @@ function toCaseRecord(row: {
     clientLink: row.clientLink,
     zipcode: row.zipcode,
     phone: row.phone,
+    phone2: row.phone2,
+    email: row.email,
+    dateOfBirth: (row.dateOfBirth as unknown as CaseRecord["dateOfBirth"]) ?? [null, null],
     address: row.address,
     description: row.description,
     descriptionReplies: row.descriptionReplies as unknown as CaseRecord["descriptionReplies"],
     descriptionReadBy: row.descriptionReadBy,
     caseNumber: row.caseNumber,
     money: row.money,
+    refunds: (row.refunds as unknown as CaseRecord["refunds"]) ?? {},
     orders: row.orders as unknown as CaseRecord["orders"],
     ssn: row.ssn as unknown as CaseRecord["ssn"],
     assignedTo: row.assignedTo,
@@ -113,12 +121,16 @@ export async function POST(request: NextRequest) {
       clientLink: body.clientLink ?? null,
       zipcode: body.zipcode ?? "",
       phone: body.phone ?? "",
+      phone2: body.phone2 ?? "",
+      email: body.email ?? "",
+      dateOfBirth: (body.dateOfBirth ?? [null, null]) as unknown as Prisma.InputJsonValue,
       address: body.address ?? "",
       description: body.description ?? "",
       descriptionReplies: (body.descriptionReplies ?? []) as unknown as Prisma.InputJsonValue,
       descriptionReadBy: body.descriptionReadBy ?? [],
       caseNumber,
       money: body.money ?? 0,
+      refunds: (body.refunds ?? {}) as unknown as Prisma.InputJsonValue,
       orders: (body.orders ?? []) as unknown as Prisma.InputJsonValue,
       ssn: (body.ssn ?? [null, null]) as unknown as Prisma.InputJsonValue,
       assignedTo: body.assignedTo ?? null,
@@ -138,20 +150,25 @@ export async function POST(request: NextRequest) {
       clientLink: null,
       zipcode: "",
       phone: "",
+      phone2: "",
+      email: "",
+      dateOfBirth: [null, null],
       address: "",
       description: "",
       descriptionReplies: [],
       descriptionReadBy: [],
       caseNumber,
       money: 0,
+      refunds: {},
       orders: [],
       ssn: [null, null],
       assignedTo: me.role === "agent" ? me.id : null,
       assignedProcessor: null,
       createdBy: me.id,
-      // Cột "Case" hiển thị (custom field caseLabel) mặc định "1" — xem ghi chú tương ứng
-      // trong app-store.ts addRow.
-      custom: { caseLabel: "1" },
+      // Cột "Case" hiển thị (custom field caseLabel) giờ là số đếm tự động năm Refund >
+      // 0 (xem rbac.ts) — hồ sơ mới chưa có refund nào nên mặc định 0, không còn "1" như
+      // quy ước cũ (mã hồ sơ nhập tay).
+      custom: { caseLabel: 0 },
     };
   }
 

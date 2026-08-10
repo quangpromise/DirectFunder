@@ -51,6 +51,7 @@ export function SendCpaEmailDialog({
   statusLabel,
   senderEmail,
   senderName,
+  confirm,
   onSend,
 }: {
   disabled: boolean;
@@ -59,6 +60,7 @@ export function SendCpaEmailDialog({
   statusLabel: string;
   senderEmail: string;
   senderName: string;
+  confirm: (message: string, opts?: { title?: string; tone?: "default" | "danger" }) => Promise<boolean>;
   onSend: (payload: SendPayload) => Promise<SendResult>;
 }) {
   const [open, setOpen] = useState(false);
@@ -71,8 +73,10 @@ export function SendCpaEmailDialog({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   /** true sau khi gửi thành công — KHÔNG tự động tắt (khác các nút Order dùng
-   * useSuccessFlash): giữ nguyên màu xanh đậm cho tới khi người dùng bấm lại nút, lúc đó
-   * mới reset về mặc định VÀ mở lại dialog luôn để soạn/gửi tiếp (xem handleTriggerClick). */
+   * useSuccessFlash): giữ nguyên màu xanh đậm cho tới khi người dùng bấm lại nút VÀ đồng
+   * ý popup xác nhận "muốn gửi lại?" (xem handleTriggerClick) — đồng ý chỉ quay về mặc
+   * định, KHÔNG tự mở lại dialog soạn mail; phải bấm thêm 1 lần nữa (lúc đã về mặc định)
+   * mới thực sự mở dialog soạn/gửi lại — cùng quy tắc 2 lớp xác nhận với SendToSheetButton. */
   const [justSent, setJustSent] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const t = useT();
@@ -80,8 +84,13 @@ export function SendCpaEmailDialog({
 
   const totalBytes = files.reduce((sum, f) => sum + f.size, 0);
 
-  function handleTriggerClick() {
-    if (justSent) setJustSent(false);
+  async function handleTriggerClick() {
+    if (justSent) {
+      const confirmed = await confirm(t("cpaEmail.confirmResend"), { title: t("cpaEmail.confirmResendTitle") });
+      if (!confirmed) return;
+      setJustSent(false);
+      return;
+    }
     openDialog();
   }
 
@@ -153,29 +162,20 @@ export function SendCpaEmailDialog({
   }
 
   return (
-    <div className="w-full min-w-0">
+    <div className="shrink-0">
       <button
         type="button"
         disabled={disabled}
         onClick={handleTriggerClick}
-        title={justSent ? t("cpaEmail.sentHint") : undefined}
-        className={`w-full shrink-0 cursor-pointer whitespace-nowrap rounded-md border px-1.5 py-1 text-center text-[10px] font-bold leading-tight transition disabled:cursor-default ${
+        title={justSent ? t("cpaEmail.sentHint") : t("cpaEmail.button")}
+        aria-label={justSent ? t("cpaEmail.sentHint") : t("cpaEmail.button")}
+        className={`ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition disabled:cursor-default disabled:opacity-60 ${
           justSent
             ? "border-green-600/70 bg-green-800/60 text-green-100 hover:bg-green-800/80 light:border-green-700 light:bg-green-600 light:text-white light:hover:bg-green-700"
             : "border-orange-700/60 bg-orange-900/40 text-orange-200 hover:bg-orange-900/60 light:border-orange-400 light:bg-orange-100 light:text-orange-900 light:hover:bg-orange-200"
         }`}
       >
-        {justSent ? (
-          <span className="flex items-center justify-center gap-1">
-            <CheckCircle2 size={12} className="shrink-0" />
-            {t("cpaEmail.sent")}
-          </span>
-        ) : (
-          <span className="flex items-center justify-center gap-1">
-            <Mail size={11} className="shrink-0" />
-            {t("cpaEmail.button")}
-          </span>
-        )}
+        {justSent ? <CheckCircle2 size={11} /> : <Mail size={11} />}
       </button>
 
       {open &&

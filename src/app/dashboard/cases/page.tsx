@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Search, Plus, Trash2, FileText, DollarSign, GripVertical, ShieldAlert, Download, Upload, Layers, CheckCircle2 } from "lucide-react";
+import { Search, Plus, Trash2, FileText, DollarSign, GripVertical, ShieldAlert, Download, Upload, Layers, CheckCircle2, X, BarChart3 } from "lucide-react";
 import { downloadCaseTemplate, parseCaseExcelFile } from "@/lib/excel";
 import { useAppStore, useCurrentUser } from "@/store/app-store";
 import { canEditCase, canEditColumn, canViewCase, hasFeature } from "@/lib/rbac";
 import { CaseRecord, ColumnDef, CpaEmailDefaults, SelectOption, User } from "@/lib/types";
+import type { ClientProfilePayload } from "@/lib/api-client";
 import { EditableCell } from "@/components/editable-cell";
 import { AssignMenu } from "@/components/assign-menu";
 import { AddColumnDialog } from "@/components/add-column-dialog";
@@ -15,6 +17,8 @@ import { ClientNameCell } from "@/components/client-name-cell";
 import { SsnCell } from "@/components/ssn-cell";
 import { DescriptionCell } from "@/components/description-cell";
 import { OrderCell } from "@/components/order-cell";
+import { SendToSheetButton } from "@/components/send-to-sheet-button";
+import { SendCpaEmailDialog } from "@/components/send-cpa-email-dialog";
 import { HistoryDialog } from "@/components/history-dialog";
 import { useConfirm } from "@/components/confirm-dialog";
 import { useAlert } from "@/components/alert-dialog";
@@ -32,6 +36,12 @@ import {
   resolveReportRange,
   toPhoenixDateStr,
 } from "@/lib/report-period";
+
+// Các cột này chỉ sửa được qua popup "Edit Hồ sơ" (ClientProfileDialog) — khoá cứng ô
+// ngoài bảng chính bất kể editableBy (editableBy của các cột này vẫn dùng làm nguồn
+// phân quyền RIÊNG cho popup, xem client-profile-dialog.tsx). Không cần liệt kê
+// money/caseLabel vì 2 cột đó đã tự khoá qua editableBy rỗng trong rbac.ts.
+const LOCKED_OUTSIDE_PROFILE_DIALOG = new Set(["phone", "zipcode", "address"]);
 
 const GRIP_COL_WIDTH = 26;
 const CLIENT_COL_WIDTH = 210;
@@ -148,6 +158,8 @@ export default function CasesPage() {
   const cpaEmailDefaults = useAppStore((s) => s.cpaEmailDefaults);
   const cpaSenderEmail = useAppStore((s) => s.cpaSenderEmail);
   const sendCpaEmail = useAppStore((s) => s.sendCpaEmail);
+  const sendCaseRowToSheet = useAppStore((s) => s.sendCaseRowToSheet);
+  const connectGoogleAccount = useAppStore((s) => s.connectGoogleAccount);
   const addRow = useAppStore((s) => s.addRow);
   const importCases = useAppStore((s) => s.importCases);
   const deleteRow = useAppStore((s) => s.deleteRow);
@@ -165,7 +177,7 @@ export default function CasesPage() {
   const reorderCase = useAppStore((s) => s.reorderCase);
   const updateClientLink = useAppStore((s) => s.updateClientLink);
   const updateSsn = useAppStore((s) => s.updateSsn);
-  const updateClientName = useAppStore((s) => s.updateClientName);
+  const updateClientProfile = useAppStore((s) => s.updateClientProfile);
   const addDescriptionReply = useAppStore((s) => s.addDescriptionReply);
   const markDescriptionRead = useAppStore((s) => s.markDescriptionRead);
 
@@ -196,6 +208,9 @@ export default function CasesPage() {
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [view, setView] = useState<"list" | "dashboard">("list");
+  /** Popup danh sách thống kê (Tổng/theo Status/Giá trị) trên di động — thay cho dãy chip
+   * nằm ngang vốn tràn màn hình nhỏ, gộp vào 1 nút mở popup thay vì hiện tất cả cùng lúc. */
+  const [statsPopupOpen, setStatsPopupOpen] = useState(false);
   const [reportPeriod, setReportPeriod] = useState<ReportPeriod>("today");
   const [reportMonth, setReportMonth] = useState<string>(() => currentPhoenixMonth());
   const [reportYear, setReportYear] = useState<number>(() => currentPhoenixYear());
@@ -420,6 +435,7 @@ export default function CasesPage() {
   const canAssignFeature = hasFeature(permissions, "assignCase", user.role);
   const canDeleteRowFeature = hasFeature(permissions, "deleteRow", user.role);
   const canSendCpaEmailFeature = hasFeature(permissions, "sendCpaEmail", user.role);
+  const canSendToSheetFeature = hasFeature(permissions, "sendToGoogleSheet", user.role);
 
   const tabStatusOptions = tab === "all" ? statusOptions : statusOptions.filter((o) => getCaseTab(o.id) === tab);
 
@@ -500,26 +516,63 @@ export default function CasesPage() {
       {view === "list" && (
       <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3 sm:px-6">
         <div>
-          <h1 className="text-base font-semibold tracking-tight sm:text-lg">
+          <h1 className="text-sm font-semibold tracking-tight sm:text-lg">
             {t("cases.greeting")} {user.name.split(" ").slice(-1)[0]}
             {greetingPeriod && <> - {t(`cases.greetingPeriod.${greetingPeriod}`)}</>}
           </h1>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="hidden flex-wrap items-center gap-2 sm:flex">
           <StatChip label={t("common.total")} value={String(stats.total)} icon={FileText} />
           {statusOptions.map((o) => (
             <StatusStatChip key={o.id} option={o} value={stats.byStatus[o.id] ?? 0} />
           ))}
           <StatChip label={t("common.value")} value={`$${stats.totalMoney.toLocaleString("en-US")}`} icon={DollarSign} />
         </div>
+
+        <button
+          onClick={() => setStatsPopupOpen(true)}
+          className="flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs text-text-dim transition hover:bg-surface-hover hover:text-text sm:hidden"
+        >
+          <BarChart3 size={14} />
+          {t("cases.viewStats")}
+        </button>
+
+        {statsPopupOpen &&
+          typeof document !== "undefined" &&
+          createPortal(
+            <div
+              className="fixed inset-0 z-[100] flex items-end justify-center bg-black/80 px-4 py-8 sm:hidden"
+              onClick={() => setStatsPopupOpen(false)}
+            >
+              <div
+                className="popover w-full max-w-sm rounded-2xl p-4 shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="mb-3 flex items-center justify-between">
+                  <h3 className="text-sm font-semibold">{t("cases.viewStats")}</h3>
+                  <button onClick={() => setStatsPopupOpen(false)} className="text-text-faint hover:text-text">
+                    <X size={16} />
+                  </button>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <StatChip label={t("common.total")} value={String(stats.total)} icon={FileText} />
+                  {statusOptions.map((o) => (
+                    <StatusStatChip key={o.id} option={o} value={stats.byStatus[o.id] ?? 0} />
+                  ))}
+                  <StatChip label={t("common.value")} value={`$${stats.totalMoney.toLocaleString("en-US")}`} icon={DollarSign} />
+                </div>
+              </div>
+            </div>,
+            document.body
+          )}
       </div>
       )}
 
       {view === "list" && (
       <>
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 sm:px-6">
-        <div className="flex items-center gap-1.5">
+        <div className="hidden items-center gap-1.5 sm:flex">
           <button
             onClick={downloadCaseTemplate}
             title={t("cases.downloadTemplate")}
@@ -723,6 +776,7 @@ export default function CasesPage() {
               row={row}
               highlighted={row.id === highlightId}
               allCases={cases}
+              columns={columns}
               otherColumns={otherColumns}
               statusColumn={statusColumn}
               clientColumn={clientColumn}
@@ -738,7 +792,7 @@ export default function CasesPage() {
               assignCase={assignCase}
               updateClientLink={updateClientLink}
               updateSsn={updateSsn}
-              updateClientName={updateClientName}
+              updateClientProfile={updateClientProfile}
               addDescriptionReply={addDescriptionReply}
               markDescriptionRead={markDescriptionRead}
               canAssignFeature={canAssignFeature}
@@ -747,6 +801,9 @@ export default function CasesPage() {
               cpaEmailDefaults={cpaEmailDefaults}
               cpaSenderEmail={cpaSenderEmail}
               sendCpaEmail={sendCpaEmail}
+              canSendToSheetFeature={canSendToSheetFeature}
+              sendCaseRowToSheet={sendCaseRowToSheet}
+              connectGoogleAccount={connectGoogleAccount}
               confirm={confirm}
               alertWarn={alertWarn}
               dragRowId={dragRowId}
@@ -907,6 +964,7 @@ function RowCells({
   row,
   highlighted,
   allCases,
+  columns,
   otherColumns,
   statusColumn,
   clientColumn,
@@ -922,7 +980,7 @@ function RowCells({
   assignCase,
   updateClientLink,
   updateSsn,
-  updateClientName,
+  updateClientProfile,
   addDescriptionReply,
   markDescriptionRead,
   canAssignFeature,
@@ -931,6 +989,9 @@ function RowCells({
   cpaEmailDefaults,
   cpaSenderEmail,
   sendCpaEmail,
+  canSendToSheetFeature,
+  sendCaseRowToSheet,
+  connectGoogleAccount,
   confirm,
   alertWarn,
   dragRowId,
@@ -941,6 +1002,7 @@ function RowCells({
   row: CaseRecord;
   highlighted: boolean;
   allCases: CaseRecord[];
+  columns: ColumnDef[];
   otherColumns: ColumnDef[];
   statusColumn: ColumnDef | undefined;
   clientColumn: ColumnDef | undefined;
@@ -962,7 +1024,7 @@ function RowCells({
   assignCase: (caseId: string, toUserId: string | null, field: "assignedTo" | "assignedProcessor") => void;
   updateClientLink: (caseId: string, link: string | null) => void;
   updateSsn: (caseId: string, slot: 0 | 1, value: string | null) => void;
-  updateClientName: (caseId: string, slot: 0 | 1, field: "firstName" | "lastName", value: string) => void;
+  updateClientProfile: (caseId: string, payload: ClientProfilePayload) => Promise<{ ok: true } | { ok: false; error: string }>;
   addDescriptionReply: (caseId: string, authorId: string, text: string) => void;
   markDescriptionRead: (caseId: string, userId: string) => void;
   canAssignFeature: boolean;
@@ -981,6 +1043,11 @@ function RowCells({
       attachments: { filename: string; contentType: string; contentBase64: string }[];
     }
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
+  canSendToSheetFeature: boolean;
+  sendCaseRowToSheet: (
+    caseId: string
+  ) => Promise<{ ok: true } | { ok: false; error: string; needsGoogleAuth?: boolean }>;
+  connectGoogleAccount: () => Promise<boolean>;
   confirm: (message: string, opts?: { title?: string; tone?: "default" | "danger" }) => Promise<boolean>;
   alertWarn: (message: string, opts?: { title?: string }) => Promise<void>;
   dragRowId: string | null;
@@ -1001,7 +1068,6 @@ function RowCells({
     type: "text",
     editableBy: ["manager", "accounting", "agent", "processor", "support"],
   };
-  const ssnColDef = otherColumns.find((c) => c.id === "ssn");
   // Agent Leader/Processor Leader chỉ sửa được hồ sơ do chính mình thêm vào hoặc đang
   // gán cho thành viên trong nhóm mình — các role khác giữ quyền sửa như cũ (đã lọc
   // đúng phạm vi từ visibleCases nên không cần giới hạn thêm theo dòng).
@@ -1038,28 +1104,70 @@ function RowCells({
             onCommit={(v) => updateCell(row.id, "status", v, false)}
           />
         )}
+        {row.status === "cpa_review" && (canSendToSheetFeature || canSendCpaEmailFeature) && (
+          <div className="flex flex-col gap-0.5">
+            {canSendToSheetFeature && (
+              <SendToSheetButton
+                caseId={row.id}
+                refunds={row.refunds}
+                confirm={confirm}
+                alertWarn={alertWarn}
+                sendCaseRowToSheet={sendCaseRowToSheet}
+                connectGoogleAccount={connectGoogleAccount}
+              />
+            )}
+            {canSendCpaEmailFeature && (
+              <SendCpaEmailDialog
+                disabled={false}
+                caseRecord={row}
+                defaults={cpaEmailDefaults}
+                statusLabel={cpaEmailStatusLabel}
+                senderEmail={cpaSenderEmail}
+                senderName={user.name}
+                confirm={confirm}
+                onSend={(payload) => sendCpaEmail(row.id, payload)}
+              />
+            )}
+          </div>
+        )}
       </div>
       <div
         className="sticky z-10 border-b border-r border-border bg-bg transition-colors group-hover:bg-surface-hover"
         style={{ left: clientLeft }}
       >
         <ClientNameCell
-          clients={row.clients}
-          link={row.clientLink}
-          editable={canEditColumn(user.role, clientColDef) && canEditRow}
-          onCommitName={(slot, field, v) => updateClientName(row.id, slot, field, v)}
+          caseRecord={row}
+          columns={columns}
+          role={user.role}
+          linkEditable={canEditColumn(user.role, clientColDef) && canEditRow}
           onCommitLink={(link) => updateClientLink(row.id, link)}
+          onSaveProfile={(payload) => updateClientProfile(row.id, payload)}
+          isDuplicateSsn={(slot, candidate) => isDuplicateSsn(allCases, candidate, row.id, slot)}
         />
       </div>
       {otherColumns.map((col) =>
+        // First/Last Name, SSN, Phone, Zipcode, Address giờ CHỈ sửa được qua popup "Edit
+        // Hồ sơ" (ClientProfileDialog, nút bút chì trong ô Client Name) — khoá cứng
+        // editable=false tại đây bất kể quyền editableBy của cột (editableBy vẫn giữ
+        // nguyên, dùng làm nguồn phân quyền CHO POPUP, không phải cho ô ngoài bảng này).
         col.id === "ssn" ? (
           <div key={col.id} className="flex h-full items-center border-b border-r border-border transition-colors group-hover:bg-surface-hover">
             <SsnCell
               value={row.ssn}
-              editable={ssnColDef ? canEditColumn(user.role, ssnColDef) && canEditRow : false}
+              editable={false}
               isDuplicate={(slot, candidate) => isDuplicateSsn(allCases, candidate, row.id, slot)}
               onCommit={(slot, v) => updateSsn(row.id, slot, v)}
             />
+          </div>
+        ) : col.id === "phone" ? (
+          // Hiển thị cả Phone 1 lẫn Phone 2 (nhập ở popup Edit Hồ sơ) nếu có — 2 dòng
+          // giống cách SsnCell hiện 2 số SSN, khoá read-only hoàn toàn (sửa qua popup).
+          <div
+            key={col.id}
+            className="flex h-full flex-col items-center justify-center gap-0.5 border-b border-r border-border py-1 text-center text-xs text-text-dim transition-colors group-hover:bg-surface-hover"
+          >
+            <span>{row.phone || <span className="text-text-faint">—</span>}</span>
+            {row.phone2 && <span>{row.phone2}</span>}
           </div>
         ) : col.id === "description" ? (
           <div
@@ -1118,13 +1226,6 @@ function RowCells({
                 }
                 return false;
               }}
-              caseRecord={row}
-              cpaEmailDefaults={cpaEmailDefaults}
-              cpaEmailStatusLabel={cpaEmailStatusLabel}
-              cpaSenderEmail={cpaSenderEmail}
-              cpaSenderName={user.name}
-              canSendCpaEmail={canSendCpaEmailFeature}
-              onSendCpaEmail={(payload) => sendCpaEmail(row.id, payload)}
             />
           </div>
         ) : (
@@ -1136,7 +1237,9 @@ function RowCells({
               value={col.custom ? row.custom[col.key] ?? null : (row as unknown as Record<string, string | number | boolean | null>)[col.key]}
               type={col.type}
               options={col.options}
-              editable={canEditColumn(user.role, col) && canEditRow}
+              editable={
+                !LOCKED_OUTSIDE_PROFILE_DIALOG.has(col.id) && canEditColumn(user.role, col) && canEditRow
+              }
               onCommit={(v) => updateCell(row.id, col.key, v, Boolean(col.custom))}
             />
           </div>

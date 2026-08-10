@@ -85,22 +85,69 @@ export const DEFAULT_COLUMNS: ColumnDef[] = [
     width: 78,
     hidden: true,
   },
+  // "Case" giờ là số đếm TỰ ĐỘNG (bao nhiêu năm trong "refunds" có tiền > 0) — không còn
+  // cho gõ tay mã số tự do như trước, editableBy để rỗng CỐ Ý (server tự set giá trị mỗi
+  // khi popup "Edit Hồ sơ" lưu refunds, xem POST /api/cases/[id]/client-profile +
+  // src/lib/refund.ts). Giữ nguyên type "digits" vì giá trị vẫn là số nguyên hiển thị
+  // bình thường, chỉ khác là không ai sửa tay được nữa.
   {
     id: "caseLabel",
     key: "caseLabel",
     label: "Case",
     type: "digits",
-    editableBy: ["manager", "processor", "agent", "agent_leader", "processor_leader"],
+    editableBy: [],
     custom: true,
     width: 78,
   },
+  // "Money" giờ LUÔN tự tính = tổng "refunds", editableBy để rỗng CỐ Ý để khoá sửa trực
+  // tiếp trong bảng — chỉ đổi được gián tiếp qua popup "Edit Hồ sơ" (xem comment cột
+  // "caseLabel" ở trên, cùng cơ chế).
   {
     id: "money",
     key: "money",
     label: "Money",
     type: "currency",
-    editableBy: ["manager", "accounting", "agent", "processor", "agent_leader", "processor_leader"],
+    editableBy: [],
     width: 94,
+  },
+  // 4 cột dưới đây KHÔNG hiển thị trong bảng Hồ sơ (hidden: true, giống "caseNumber") —
+  // chỉ tồn tại để lưu editableBy làm nguồn phân quyền DUY NHẤT cho popup "Edit Hồ sơ"
+  // (ClientProfileDialog tự đọc editableBy của từng cột này để bật/tắt input tương ứng,
+  // KHÔNG có ô nào trong bảng chính tham chiếu tới các cột này). Admin không cấu hình lại
+  // được qua nút ⚙ (không có gear icon cho cột hidden, đúng quy ước caseNumber) — cần
+  // sửa trực tiếp DEFAULT_COLUMNS nếu muốn đổi.
+  {
+    id: "dateOfBirth",
+    key: "dateOfBirth",
+    label: "Date of Birth",
+    type: "date",
+    // Cùng nhóm với SSN (thông tin định danh khách hàng) — dùng chung danh sách role.
+    editableBy: ["manager", "agent", "processor", "accounting", "agent_leader", "processor_leader"],
+    hidden: true,
+  },
+  {
+    id: "phone2",
+    key: "phone2",
+    label: "Phone 2",
+    type: "phone",
+    editableBy: ["manager", "agent", "processor", "support", "agent_leader", "processor_leader"],
+    hidden: true,
+  },
+  {
+    id: "email",
+    key: "email",
+    label: "Email",
+    type: "text",
+    editableBy: ["manager", "accounting", "agent", "processor", "support", "agent_leader", "processor_leader"],
+    hidden: true,
+  },
+  {
+    id: "refunds",
+    key: "refunds",
+    label: "Refund",
+    type: "currency",
+    editableBy: ["manager", "accounting", "agent", "processor", "agent_leader", "processor_leader"],
+    hidden: true,
   },
   {
     id: "order",
@@ -108,7 +155,7 @@ export const DEFAULT_COLUMNS: ColumnDef[] = [
     label: "Order",
     type: "order",
     editableBy: ["manager", "support", "agent", "processor", "agent_leader", "processor_leader"],
-    width: 122,
+    width: 92,
   },
   // Cột Status RIÊNG của tab Order (khác với Status ở bảng Hồ sơ) — không hiển thị
   // trong bảng Hồ sơ (bị lọc bỏ khỏi otherColumns), chỉ dùng trong tab Order. Tách
@@ -166,6 +213,8 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermissions = {
   // (xem trên), liệt kê thêm chỉ để rõ ý định lúc đọc code là thừa/dễ hiểu lầm là cấu
   // hình được (Kế toán/Agent/Support KHÔNG được cấp — chỉ Processor + Manager thấy nút).
   sendCpaEmail: ["processor"],
+  // Tương tự sendCpaEmail — chỉ Processor cần liệt kê, Manager mặc định qua hasFeature().
+  sendToGoogleSheet: ["processor"],
 };
 
 /** Quyền sửa từng cột hoàn toàn theo cấu hình editableBy — kể cả với Admin. */

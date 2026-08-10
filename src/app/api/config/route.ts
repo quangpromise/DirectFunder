@@ -17,6 +17,7 @@ export async function GET() {
     // của mọi mail đã gửi nên không phải bí mật, dùng làm fallback nếu {senderName}
     // (tên người dùng đang đăng nhập — xem cases/page.tsx) không có sẵn.
     cpaSenderEmail: process.env.GMAIL_USER ?? null,
+    googleSheetConfig: config.googleSheetConfig,
   });
 }
 
@@ -92,6 +93,9 @@ export async function PUT(request: NextRequest) {
   if (me.role === "manager" && "cpaEmailDefaults" in body) {
     data.cpaEmailDefaults = body.cpaEmailDefaults;
   }
+  if (me.role === "manager" && "googleSheetConfig" in body) {
+    data.googleSheetConfig = body.googleSheetConfig;
+  }
 
   const config = await prisma.appConfig.update({
     where: { id: "singleton" },
@@ -101,5 +105,6 @@ export async function PUT(request: NextRequest) {
     columns: config.columns,
     featurePermissions: config.featurePermissions,
     cpaEmailDefaults: config.cpaEmailDefaults,
+    googleSheetConfig: config.googleSheetConfig,
   });
 }

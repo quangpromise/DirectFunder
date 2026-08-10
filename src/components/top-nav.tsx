@@ -52,7 +52,24 @@ export function TopNav() {
   return (
     <header className="sticky top-0 z-40 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-bg-elevated px-4 sm:px-6">
       <div className="flex shrink-0 items-center">
-        <Image src="/df-logo.png" alt="Direct Funder" width={273} height={35} priority className="h-6 w-auto" />
+        {/* Wordmark rộng chỉ vừa mắt trên desktop — trên di động màn hẹp đổi sang icon tròn
+            gọn hơn (df-logo.png 273x35 quá rộng, chiếm gần hết header trên màn nhỏ). */}
+        <Image
+          src="/df-logo.png"
+          alt="Direct Funder"
+          width={273}
+          height={35}
+          priority
+          className="hidden h-6 w-auto sm:block"
+        />
+        <Image
+          src="/icon.jpg"
+          alt="Direct Funder"
+          width={32}
+          height={32}
+          priority
+          className="block h-8 w-8 rounded-full sm:hidden"
+        />
       </div>
 
       <nav className="ml-2 hidden items-center gap-1 md:flex">
@@ -84,8 +101,12 @@ export function TopNav() {
       </button>
 
       <div className="ml-auto flex items-center gap-2">
-        <ThemeSwitcher compact />
-        <LanguageSwitcher compact />
+        {/* Darkmode/Ngôn ngữ chỉ hiện trực tiếp trên header ở desktop (md+) — trên mobile
+            dồn vào menu hamburger (xem khối mobileOpen bên dưới) để header đỡ chật. */}
+        <div className="hidden items-center gap-2 md:flex">
+          <ThemeSwitcher compact />
+          <LanguageSwitcher compact />
+        </div>
         <PhoenixClock />
         <NotificationBell currentUserId={user.id} />
 

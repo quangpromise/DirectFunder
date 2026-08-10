@@ -6,6 +6,7 @@ import { ASSIGNABLE_FEATURES, FEATURE_LABEL, ROLE_LABEL } from "@/lib/types";
 import { ASSIGNABLE_ROLES } from "@/lib/rbac";
 import { useT, useLanguage } from "@/lib/i18n";
 import { CpaEmailDefaultsDialog } from "@/components/cpa-email-defaults-dialog";
+import { GoogleSheetConfigDialog } from "@/components/google-sheet-config-dialog";
 
 export default function PermissionsPage() {
   const user = useCurrentUser();
@@ -13,6 +14,9 @@ export default function PermissionsPage() {
   const setFeaturePermission = useAppStore((s) => s.setFeaturePermission);
   const cpaEmailDefaults = useAppStore((s) => s.cpaEmailDefaults);
   const setCpaEmailDefaults = useAppStore((s) => s.setCpaEmailDefaults);
+  const googleSheetConfig = useAppStore((s) => s.googleSheetConfig);
+  const setGoogleSheetConfig = useAppStore((s) => s.setGoogleSheetConfig);
+  const columns = useAppStore((s) => s.columns);
   const t = useT();
   const { language } = useLanguage();
 
@@ -34,7 +38,10 @@ export default function PermissionsPage() {
           <h1 className="text-lg font-semibold tracking-tight">{t("permissions.title")}</h1>
           <p className="mt-0.5 text-xs text-text-faint">{t("permissions.desc")}</p>
         </div>
-        <CpaEmailDefaultsDialog defaults={cpaEmailDefaults} onSave={setCpaEmailDefaults} />
+        <div className="flex flex-wrap items-center gap-2">
+          <CpaEmailDefaultsDialog defaults={cpaEmailDefaults} onSave={setCpaEmailDefaults} />
+          <GoogleSheetConfigDialog config={googleSheetConfig} columns={columns} onSave={setGoogleSheetConfig} />
+        </div>
       </div>
 
       {/* Bỏ giới hạn max-w-3xl + max-h-[65vh] cũ (chỉ chiếm 1 khối nhỏ giữa màn hình) —

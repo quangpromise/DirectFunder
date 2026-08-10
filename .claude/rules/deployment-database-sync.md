@@ -37,6 +37,29 @@ Tính năng mới thêm `cpaEmailDefaults` (cột Json nullable, additive) + fea
 4. Đăng nhập bằng tài khoản **processor** thật trên production để verify nút hiện đúng (Admin luôn full quyền nên không lộ được lỗi featurePermissions thiếu).
 5. Vào trang Phân quyền (Admin), mở dialog "Cấu hình email CPA mặc định", nhập To/Cc thật lần đầu (mặc định rỗng sau migration).
 
+### 4.10 [CHỜ XỬ LÝ] Đồng bộ production cho tính năng "Send" đẩy dòng lên Google Sheet (thêm 2026-08-10)
+
+Tính năng mới thêm `User.googleRefreshToken` + `AppConfig.googleSheetConfig` (additive) + feature key `sendToGoogleSheet` vào `DEFAULT_FEATURE_PERMISSIONS` — đúng loại thay đổi mô tả ở mục 4.8, nên **sau khi deploy code này lên production PHẢI làm đủ các bước sau** (xoá mục này khỏi file khi đã làm xong):
+1. `prisma migrate deploy` nhắm production (thêm 2 cột trên, an toàn/additive).
+2. Chạy script merge cộng dồn thêm `sendToGoogleSheet: ["processor"]` vào `AppConfig.featurePermissions` production nếu key đó chưa có.
+3. Tạo OAuth Client trên Google Cloud Console (nếu chưa có từ bước dev), đăng ký thêm redirect URI production `https://<production-domain>/api/auth/google/callback`, thêm các Processor/Manager thật làm Test user trong OAuth consent screen.
+4. Thêm `GOOGLE_OAUTH_CLIENT_ID`/`GOOGLE_OAUTH_CLIENT_SECRET` vào Vercel Environment Variables (Production).
+5. Share quyền Editor Google Sheet "2026 RA-EC Client list" cho từng tài khoản Google của Processor/Manager sẽ dùng tính năng này (OAuth2 theo từng user, không phải 1 service account chung).
+6. Đăng nhập bằng tài khoản **processor** thật trên production, thử bấm nút Send ở 1 hồ sơ đang "Kế toán duyệt" → xác nhận popup OAuth mở đúng, kết nối xong tự gửi tiếp.
+7. Vào trang Phân quyền (Admin), mở dialog "Cấu hình Google Sheet", nhập Sheet ID + chọn cột thật lần đầu (mặc định rỗng sau migration).
+
+### 4.11 [CHỜ XỬ LÝ] Đồng bộ production cho tính năng "Edit Hồ sơ" (First/Last Name, SSN, DOB, Phone 1/2, Zipcode, Address, Email, Refund) (thêm 2026-08-10)
+
+Thêm `Case.phone2`/`Case.email`/`Case.dateOfBirth`/`Case.refunds` (additive) + 4 cột ẩn mới (`dateOfBirth`/`phone2`/`email`/`refunds`, `hidden: true`) vào `DEFAULT_COLUMNS`, đồng thời **đổi `editableBy` của 2 cột có sẵn `money`/`caseLabel` (Case) thành rỗng `[]`** (khoá sửa trực tiếp ngoài bảng — giờ chỉ sửa được qua popup "Edit Hồ sơ", `money` tự tính = tổng `refunds`, `caseLabel` tự tính = số năm refund > 0). Đây là 2 loại thay đổi khác nhau cùng lúc, **cả 2 đều RẤT DỄ bị bỏ sót triệu chứng giống mô tả ở mục 4.8**:
+- Nếu quên đồng bộ AppConfig.columns production: 4 field mới (dateOfBirth/phone2/email/refunds) sẽ luôn hiện **disabled/khoá** trong popup Edit Hồ sơ ở MỌI role kể cả Manager (vì `canEditColumn` không tìm thấy cột trong config production nên coi như không ai có quyền) — đã tự gặp đúng lỗi này ở local lúc test, xem cách vá bên dưới.
+- Nếu quên đổi `editableBy` của `money`/`caseLabel` thành `[]` trên production: 2 cột này ở production vẫn cho sửa tay trực tiếp ngoài bảng như cũ (không lỗi gì hiện ra, chỉ là tính năng khoá không có hiệu lực, user vẫn sửa tay được, dữ liệu dễ lệch với tổng refunds thật).
+
+**Sau khi deploy code này lên production PHẢI làm đủ các bước sau** (xoá mục này khỏi file khi đã làm xong):
+1. `prisma migrate deploy` nhắm production (4 cột mới trên `Case`, an toàn/additive).
+2. Chạy script merge cộng dồn nhắm `AppConfig.columns` production: thêm 4 cột `dateOfBirth`/`phone2`/`email`/`refunds` (copy nguyên `DEFAULT_COLUMNS` tương ứng trong `rbac.ts`) NẾU production chưa có id đó; đồng thời tìm cột `money`/`caseLabel` production hiện có, set `editableBy: []` (ghi đè đúng 2 field này, KHÔNG đụng `label`/`options`/các field khác nếu Admin đã tuỳ biến).
+3. Đăng nhập bằng tài khoản **không phải Manager** (vd Processor) thật trên production, bấm nút bút chì "Edit Hồ sơ" ở 1 hồ sơ bất kỳ → xác nhận 4 field mới (Date of Birth, Phone 2, Email, Refund) hiện **enable được** (không bị khoá xám) đúng theo `editableBy` đã cấu hình — nếu vẫn khoá dù đã chạy bước 2, kiểm tra lại script merge có đúng target `AppConfig.id: "singleton"` production không.
+4. Thử sửa + Lưu 1 hồ sơ test → xác nhận cột "Case"/"Money" trên bảng chính production cập nhật đúng và **không còn bấm sửa tay trực tiếp được** (click vào ô không hiện input).
+
 Mục 2–5 bên dưới là kiến trúc/quy trình đề xuất (phần lớn đã áp dụng đúng như mô tả, trừ Auth đã nêu ở trên). Mục 6 là checklist hành động cụ thể để đưa app này lên cloud thật.
 
 ## 2. Kiến trúc đề xuất

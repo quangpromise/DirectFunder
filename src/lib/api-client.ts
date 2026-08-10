@@ -1,4 +1,4 @@
-import type { CaseRecord, ColumnDef, CpaEmailDefaults, FeaturePermissions, Role, User } from "./types";
+import type { CaseRecord, ColumnDef, CpaEmailDefaults, FeaturePermissions, GoogleSheetConfig, Role, User } from "./types";
 
 class ApiError extends Error {}
 
@@ -64,16 +64,22 @@ export const api = {
       featurePermissions: FeaturePermissions;
       cpaEmailDefaults: CpaEmailDefaults | null;
       cpaSenderEmail: string | null;
+      googleSheetConfig: GoogleSheetConfig | null;
     }>("/api/config"),
-  putConfig: (columns: ColumnDef[], featurePermissions: FeaturePermissions, cpaEmailDefaults?: CpaEmailDefaults) =>
+  putConfig: (
+    columns: ColumnDef[],
+    featurePermissions: FeaturePermissions,
+    cpaEmailDefaults?: CpaEmailDefaults,
+    googleSheetConfig?: GoogleSheetConfig
+  ) =>
     request<{
       columns: ColumnDef[];
       featurePermissions: FeaturePermissions;
       cpaEmailDefaults: CpaEmailDefaults | null;
-      cpaSenderEmail: string | null;
+      googleSheetConfig: GoogleSheetConfig | null;
     }>("/api/config", {
       method: "PUT",
-      body: JSON.stringify({ columns, featurePermissions, cpaEmailDefaults }),
+      body: JSON.stringify({ columns, featurePermissions, cpaEmailDefaults, googleSheetConfig }),
     }),
 
   /** Gửi email cho CPA từ 1 hồ sơ — xem POST /api/cases/[id]/send-cpa-email. */
@@ -88,7 +94,37 @@ export const api = {
       attachments: { filename: string; contentType: string; contentBase64: string }[];
     }
   ) => request<{ ok: true }>(`/api/cases/${caseId}/send-cpa-email`, { method: "POST", body: JSON.stringify(payload) }),
+
+  /** Đẩy 1 dòng dữ liệu hồ sơ lên Google Sheet — xem POST /api/cases/[id]/send-to-sheet.
+   * Lỗi "GOOGLE_NOT_CONNECTED" (HTTP 428, xem request() ném ApiError với message này) báo
+   * hiệu UI cần mở popup kết nối Google trước khi gọi lại. */
+  sendCaseRowToSheet: (caseId: string, reviewYears?: string[]) =>
+    request<{ ok: true }>(`/api/cases/${caseId}/send-to-sheet`, {
+      method: "POST",
+      body: JSON.stringify({ reviewYears }),
+    }),
+
+  /** Lưu toàn bộ nội dung popup "Edit Hồ sơ" (ClientProfileDialog) trong 1 lần gọi —
+   * server tự tính lại `money`/`custom.caseLabel` từ `refunds`, trả về giá trị đã tính
+   * để store cập nhật local state khớp đúng server (không tin giá trị optimistic). */
+  updateClientProfile: (caseId: string, payload: ClientProfilePayload) =>
+    request<{ id: string; money: number; custom: Record<string, unknown>; updatedAt: string }>(
+      `/api/cases/${caseId}/client-profile`,
+      { method: "POST", body: JSON.stringify(payload) }
+    ),
 };
+
+export interface ClientProfilePayload {
+  clients?: [{ firstName: string; lastName: string }, { firstName: string; lastName: string }];
+  ssn?: [string | null, string | null];
+  dateOfBirth?: [string | null, string | null];
+  phone?: string;
+  phone2?: string;
+  zipcode?: string;
+  address?: string;
+  email?: string;
+  refunds?: Record<string, number>;
+}
 
 /** Gọi API nền, không chặn UI (các action Zustand vẫn cập nhật local state ngay lập
  * tức cho mượt) — lỗi chỉ log ra console, không làm crash thao tác của người dùng.

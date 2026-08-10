@@ -676,7 +676,7 @@ export default function OrdersPage() {
           ) : (
             <div />
           )}
-          <div className="flex items-center gap-1.5">
+          <div className="hidden items-center gap-1.5 sm:flex">
           <button
             onClick={downloadOrderCaseTemplate}
             title={t("cases.downloadTemplate")}
@@ -711,7 +711,7 @@ export default function OrdersPage() {
             gridTemplateColumns:
               tab === "order8821"
                 ? "110px minmax(180px,1fr) 110px 110px 220px 110px 110px 110px 110px 100px 36px"
-                : "100px 140px 95px 95px minmax(150px,1fr) 95px 90px 90px 160px 100px 95px 90px 34px",
+                : "100px 140px 95px 95px minmax(150px,1fr) 95px 90px 90px 160px 64px 95px 90px 34px",
           }}
         >
           <div className="flex items-center justify-center sticky top-0 z-20 whitespace-nowrap border-b-2 border-r border-border-strong border-b-accent bg-table-head-bg px-2 py-2.5 text-center text-[10px] font-semibold uppercase tracking-normal text-table-head-text">
@@ -751,8 +751,8 @@ export default function OrdersPage() {
             </div>
           )}
           {showOrder8821Col && (
-            <div className="flex items-center justify-center sticky top-0 z-20 whitespace-nowrap border-b-2 border-r border-border-strong border-b-accent bg-table-head-bg px-2 py-2.5 text-center text-[10px] font-semibold uppercase tracking-normal text-table-head-text">
-              Order 8821
+            <div className="flex items-center justify-center sticky top-0 z-20 whitespace-nowrap border-b-2 border-r border-border-strong border-b-accent bg-table-head-bg px-1 py-2.5 text-center text-[10px] font-semibold uppercase tracking-normal text-table-head-text">
+              8821
             </div>
           )}
           <div className="group/head sticky top-0 z-20 flex items-center justify-center gap-1 border-b-2 border-r border-border-strong border-b-accent bg-table-head-bg px-2 py-2.5 text-[10px] font-semibold uppercase tracking-normal text-table-head-text">
@@ -801,13 +801,13 @@ export default function OrdersPage() {
                   </span>
                   <ClientLinkButton
                     link={c.clientLink}
-                    visible={canEditClientLink}
                     editable={canEditClientLink}
                     onCommitLink={(link) => updateClientLink(c.id, link)}
                   />
                 </div>
-                <div className={`flex items-center justify-center border-r border-border px-3 py-2.5 text-center text-xs text-text-dim transition ${cellBg} ${isLast ? "" : "border-b"}`}>
-                  {c.phone || "—"}
+                <div className={`flex flex-col items-center justify-center gap-0.5 border-r border-border px-3 py-2.5 text-center text-xs text-text-dim transition ${cellBg} ${isLast ? "" : "border-b"}`}>
+                  <span>{c.phone || "—"}</span>
+                  {c.phone2 && <span>{c.phone2}</span>}
                 </div>
                 <div className={`flex items-center justify-center border-r border-border px-3 py-2.5 text-center text-xs text-text-dim transition ${cellBg} ${isLast ? "" : "border-b"}`}>
                   {row.ssn ? formatSsn(row.ssn) : "—"}
@@ -845,7 +845,7 @@ export default function OrdersPage() {
                   </div>
                 )}
                 {showOrder8821Col && (
-                  <div className={`flex min-w-0 items-center justify-center border-r border-border px-1.5 py-1.5 transition ${cellBg} ${isLast ? "" : "border-b"}`}>
+                  <div className={`flex min-w-0 items-center justify-center border-r border-border px-1 py-1.5 transition ${cellBg} ${isLast ? "" : "border-b"}`}>
                     <OrderPlaceButton
                       label={t("order8821.button")}
                       placedLabel={t("order8821.placed")}

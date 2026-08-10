@@ -2,10 +2,11 @@
 
 import { useLanguage } from "@/lib/i18n";
 import { Language } from "@/lib/types";
+import { FlagVN, FlagGB } from "@/components/flag-icon";
 
-const LANG_OPTIONS: { id: Language; flag: string; labelKey: "lang.vietnamese" | "lang.english" }[] = [
-  { id: "vi", flag: "🇻🇳", labelKey: "lang.vietnamese" },
-  { id: "en", flag: "🇬🇧", labelKey: "lang.english" },
+const LANG_OPTIONS: { id: Language; Flag: typeof FlagVN }[] = [
+  { id: "vi", Flag: FlagVN },
+  { id: "en", Flag: FlagGB },
 ];
 
 /** Chuyển đổi ngôn ngữ hiển thị toàn app (Tiếng Việt / English), kèm icon lá cờ —
@@ -15,18 +16,18 @@ export function LanguageSwitcher({ compact = false }: { compact?: boolean }) {
 
   return (
     <div className="flex items-center gap-1 rounded-lg border border-border bg-surface p-0.5">
-      {LANG_OPTIONS.map((opt) => (
+      {LANG_OPTIONS.map(({ id, Flag }) => (
         <button
-          key={opt.id}
-          onClick={() => setLanguage(opt.id)}
-          title={opt.id === "vi" ? "Tiếng Việt" : "English"}
-          aria-label={opt.id === "vi" ? "Tiếng Việt" : "English"}
+          key={id}
+          onClick={() => setLanguage(id)}
+          title={id === "vi" ? "Tiếng Việt" : "English"}
+          aria-label={id === "vi" ? "Tiếng Việt" : "English"}
           className={`flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition ${
-            language === opt.id ? "bg-accent-soft text-accent" : "text-text-faint hover:text-text-dim"
+            language === id ? "bg-accent-soft text-accent" : "text-text-faint hover:text-text-dim"
           }`}
         >
-          <span className="text-sm leading-none">{opt.flag}</span>
-          {!compact && <span className="hidden sm:inline">{opt.id === "vi" ? "VI" : "EN"}</span>}
+          <Flag className="h-3.5 w-5 shrink-0 rounded-[2px]" />
+          {!compact && <span className="hidden sm:inline">{id === "vi" ? "VI" : "EN"}</span>}
         </button>
       ))}
     </div>

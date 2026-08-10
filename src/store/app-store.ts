@@ -3,12 +3,11 @@ import { persist } from "zustand/middleware";
 import { DEFAULT_COLUMNS, DEFAULT_FEATURE_PERMISSIONS } from "@/lib/rbac";
 import { INITIAL_CASES, INITIAL_NOTIFICATIONS, INITIAL_USERS } from "@/lib/mock-data";
 import { getFullName, primarySsn } from "@/lib/client-name";
-import { api, syncInBackground } from "@/lib/api-client";
+import { api, syncInBackground, type ClientProfilePayload } from "@/lib/api-client";
 import type { ParsedCaseRow } from "@/lib/excel";
 import {
   AppNotification,
   CaseRecord,
-  ClientNameEntry,
   ColumnDef,
   ColumnType,
   CpaEmailDefaults,
@@ -16,6 +15,7 @@ import {
   EditHistoryRecord,
   FeatureKey,
   FeaturePermissions,
+  GoogleSheetConfig,
   Language,
   OrderRecord,
   OrderType,
@@ -101,6 +101,9 @@ interface AppState {
    * action set riêng, không sửa được qua UI). Chữ ký chính lấy tên user hiện tại — xem
    * cases/page.tsx (RowCells truyền user.name làm cpaSenderName cho SendCpaEmailDialog). */
   cpaSenderEmail: string;
+  /** Sheet đích + cột nào/thứ tự nào được đẩy khi bấm nút "Send" ở cột Status (chỉ hiện
+   * khi status = cpa_review) — null = Admin chưa cấu hình, nút Send báo lỗi rõ ràng. */
+  googleSheetConfig: GoogleSheetConfig | null;
   deletionHistory: DeletedRowRecord[];
   editHistory: EditHistoryRecord[];
 
@@ -135,7 +138,10 @@ interface AppState {
   deleteRow: (caseId: string, deletedByUserId: string) => void;
   updateClientLink: (caseId: string, link: string | null) => void;
   updateSsn: (caseId: string, slot: 0 | 1, value: string | null) => void;
-  updateClientName: (caseId: string, slot: 0 | 1, field: "firstName" | "lastName", value: string) => void;
+  /** Foreground action (giống sendCpaEmail) — lưu toàn bộ nội dung popup "Edit Hồ sơ"
+   * (ClientProfileDialog) trong 1 lần gọi, server tự tính lại money/caseLabel từ
+   * refunds và trả về giá trị đã tính để đồng bộ local state chính xác. */
+  updateClientProfile: (caseId: string, payload: ClientProfilePayload) => Promise<{ ok: true } | { ok: false; error: string }>;
   /** clientSlots: [0], [1], hoặc [0,1] (chọn "Cả 2") từ popup chọn client (Order 8821
    * lẫn Order TTS & WIT) — tạo 1 bản ghi order RIÊNG cho mỗi slot trong danh sách.
    * description: CHỈ áp dụng cho type "orderTtsWit" (bắt buộc nhập ở popup). */
@@ -191,6 +197,20 @@ interface AppState {
     }
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
 
+  setGoogleSheetConfig: (config: GoogleSheetConfig) => void;
+  /** Foreground action, cùng lý do với sendCpaEmail — gửi có thể fail rõ ràng (chưa cấu
+   * hình Sheet, token Google hết hạn, không có quyền Editor...). needsGoogleAuth:true khi
+   * user chưa/không còn kết nối Google — UI (SendToSheetButton) sẽ tự mở popup
+   * connectGoogleAccount() rồi gọi lại action này, không cần user bấm nút 2 lần. */
+  sendCaseRowToSheet: (
+    caseId: string,
+    reviewYears?: string[]
+  ) => Promise<{ ok: true } | { ok: false; error: string; needsGoogleAuth?: boolean }>;
+  /** Mở popup OAuth Google (window.open), lắng nghe postMessage "google-oauth-done" từ
+   * /api/auth/google/callback, resolve true/false theo kết quả — poll popup.closed làm
+   * timeout dự phòng nếu user đóng popup tay mà không hoàn tất. */
+  connectGoogleAccount: () => Promise<boolean>;
+
   reorderColumn: (fromId: string, toId: string) => void;
   reorderCase: (fromId: string, toId: string) => void;
 }
@@ -230,7 +250,10 @@ export const useAppStore = create<AppState>()(
        * trang cài đặt cột/phân quyền vốn chỉ hiện cho manager). */
       function syncConfig() {
         const state = get();
-        syncInBackground("config", api.putConfig(state.columns, state.featurePermissions, state.cpaEmailDefaults));
+        syncInBackground(
+          "config",
+          api.putConfig(state.columns, state.featurePermissions, state.cpaEmailDefaults, state.googleSheetConfig ?? undefined)
+        );
       }
 
       return {
@@ -247,6 +270,7 @@ export const useAppStore = create<AppState>()(
       featurePermissions: DEFAULT_FEATURE_PERMISSIONS,
       cpaEmailDefaults: { to: [], cc: [] },
       cpaSenderEmail: "",
+      googleSheetConfig: null,
       deletionHistory: [],
       editHistory: [],
 
@@ -276,6 +300,7 @@ export const useAppStore = create<AppState>()(
           featurePermissions: config.featurePermissions,
           cpaEmailDefaults: config.cpaEmailDefaults ?? { to: [], cc: [] },
           cpaSenderEmail: config.cpaSenderEmail ?? "",
+          googleSheetConfig: config.googleSheetConfig ?? null,
           hydrated: true,
         });
       },
@@ -505,9 +530,13 @@ export const useAppStore = create<AppState>()(
           zipcode: "",
           address: "",
           phone: "",
+          phone2: "",
+          email: "",
+          dateOfBirth: [null, null],
           description: "",
           caseNumber: `${maxCaseNum + 1}`,
           money: 0,
+          refunds: {},
           orders: [],
           // Tự gán cho người tạo nếu là Agent/Processor, để hồ sơ mới không biến mất
           // khỏi danh sách hồ sơ họ được thấy (đã lọc theo canViewCase). Agent Leader/
@@ -521,9 +550,9 @@ export const useAppStore = create<AppState>()(
           descriptionReplies: [],
           descriptionReadBy: [],
           // Cột "Case" hiển thị (cột tuỳ chỉnh caseLabel, khác với "caseNumber" nội bộ đã
-          // đổi tên thành "Code" và ẩn đi) mặc định "1" mỗi hồ sơ mới, người dùng tự sửa
-          // tay — không cần duy nhất nên không phải tính toán như caseNumber.
-          custom: { caseLabel: "1" },
+          // đổi tên thành "Code" và ẩn đi) giờ là số đếm TỰ ĐỘNG năm Refund > 0 (xem
+          // rbac.ts + src/lib/refund.ts) — hồ sơ mới chưa có refund nên mặc định 0.
+          custom: { caseLabel: 0 },
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
@@ -572,9 +601,13 @@ export const useAppStore = create<AppState>()(
               zipcode: row.zip,
               address: row.address,
               phone: row.phone,
+              phone2: "",
+              email: "",
+              dateOfBirth: [null, null],
               description: "",
               caseNumber: "0",
               money: row.money,
+              refunds: {},
               orders: [],
               assignedTo: agent?.id ?? (creatorRole === "agent" ? creatorId : null),
               assignedProcessor: processor?.id ?? (creatorRole === "processor" ? creatorId : null),
@@ -647,23 +680,30 @@ export const useAppStore = create<AppState>()(
         syncInBackground("ssn", api.patchCase(caseId, { ssn: nextSsn }));
       },
 
-      updateClientName: (caseId, slot, field, value) => {
-        const kase = get().cases.find((c) => c.id === caseId);
-        if (kase) {
-          const fieldLabel = `Client Name #${slot + 1} - ${field === "firstName" ? "First Name" : "Last Name"}`;
-          logEdit(caseId, fieldLabel, formatHistoryValue(kase.clients[slot][field]), formatHistoryValue(value));
+      // Foreground (giống sendCpaEmail/sendCaseRowToSheet) — server tự tính money/
+      // caseLabel từ refunds nên PHẢI await để lấy giá trị thật trả về, không optimistic-
+      // update rồi âm thầm log console như các action patch-1-field khác trong file này.
+      updateClientProfile: async (caseId, payload) => {
+        try {
+          const result = await api.updateClientProfile(caseId, payload);
+          set((state) => ({
+            cases: state.cases.map((c) =>
+              c.id === caseId
+                ? {
+                    ...c,
+                    ...payload,
+                    money: result.money,
+                    custom: { ...c.custom, ...(result.custom as Record<string, string | number | boolean | null>) },
+                    updatedAt: result.updatedAt,
+                  }
+                : c
+            ),
+          }));
+          logEdit(caseId, "Edit Hồ sơ", "", "Đã cập nhật thông tin khách hàng / refund");
+          return { ok: true } as const;
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Lưu hồ sơ thất bại" } as const;
         }
-        let nextClients: [ClientNameEntry, ClientNameEntry] | null = null;
-        set((state) => ({
-          cases: state.cases.map((c) => {
-            if (c.id !== caseId) return c;
-            const clients: [ClientNameEntry, ClientNameEntry] = [...c.clients];
-            clients[slot] = { ...clients[slot], [field]: value };
-            nextClients = clients;
-            return { ...c, clients, updatedAt: new Date().toISOString() };
-          }),
-        }));
-        if (nextClients) syncInBackground("clients", api.patchCase(caseId, { clients: nextClients }));
       },
 
       addDescriptionReply: (caseId, authorId, text) => {
@@ -916,6 +956,59 @@ export const useAppStore = create<AppState>()(
         } catch (err) {
           return { ok: false, error: err instanceof Error ? err.message : "Gửi email thất bại" } as const;
         }
+      },
+
+      setGoogleSheetConfig: (config) => {
+        set({ googleSheetConfig: config });
+        syncConfig();
+      },
+
+      // Foreground, cùng lý do sendCpaEmail — gửi có thể fail rõ ràng, cần await + báo
+      // lỗi ngay. needsGoogleAuth:true khi server trả "GOOGLE_NOT_CONNECTED" (chưa kết
+      // nối Google hoặc refresh_token đã bị server tự xoá do hết hạn/thu hồi).
+      sendCaseRowToSheet: async (caseId, reviewYears) => {
+        try {
+          await api.sendCaseRowToSheet(caseId, reviewYears);
+          logEdit(caseId, "Gửi dòng Google Sheet", "", "Đã gửi");
+          return { ok: true } as const;
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Gửi dữ liệu lên Google Sheet thất bại";
+          if (message === "GOOGLE_NOT_CONNECTED") {
+            return { ok: false, error: message, needsGoogleAuth: true } as const;
+          }
+          return { ok: false, error: message } as const;
+        }
+      },
+
+      connectGoogleAccount: () => {
+        return new Promise<boolean>((resolve) => {
+          if (typeof window === "undefined") {
+            resolve(false);
+            return;
+          }
+          const popup = window.open("/api/auth/google/start", "google-oauth", "width=500,height=650");
+          if (!popup) {
+            resolve(false);
+            return;
+          }
+          let settled = false;
+          function finish(ok: boolean) {
+            if (settled) return;
+            settled = true;
+            window.removeEventListener("message", onMessage);
+            clearInterval(pollClosed);
+            resolve(ok);
+          }
+          function onMessage(event: MessageEvent) {
+            if (event.origin !== window.location.origin) return;
+            if (event.data?.type === "google-oauth-done") finish(Boolean(event.data.ok));
+          }
+          window.addEventListener("message", onMessage);
+          // Dự phòng nếu user tự đóng popup tay mà không hoàn tất (không có postMessage nào bắn ra).
+          const pollClosed = setInterval(() => {
+            if (popup.closed) finish(false);
+          }, 500);
+        });
       },
 
       // Ghi chú: reorderColumn/reorderCase chỉ đổi thứ tự hiển thị cục bộ, AppConfig/Case

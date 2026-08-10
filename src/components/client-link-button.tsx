@@ -21,12 +21,10 @@ function normalizeUrl(url: string): string {
  */
 export function ClientLinkButton({
   link,
-  visible,
   editable = true,
   onCommitLink,
 }: {
   link: string | null;
-  visible: boolean;
   /** Khi false: chỉ xem/mở liên kết (nếu có), ẩn hoàn toàn tính năng chèn/sửa/xóa. */
   editable?: boolean;
   onCommitLink: (link: string | null) => void;
@@ -53,11 +51,15 @@ export function ClientLinkButton({
     }
   }
 
+  // Ưu tiên hiện preview (Mở link + Sửa) nếu đã có link — kể cả khi editable, vì bấm
+  // thẳng vào "sửa" mà không xem trước link hiện tại trước sẽ dễ nhầm trên di động (nơi
+  // không có hover để xem trước như desktop). Chỉ nhảy thẳng vào form chèn link khi CHƯA
+  // có link nào (không có gì để xem trước).
   function handleIconClick() {
-    if (editable) {
-      openEdit();
-    } else if (link) {
+    if (link) {
       handleEnter();
+    } else if (editable) {
+      openEdit();
     }
   }
 
@@ -81,7 +83,9 @@ export function ClientLinkButton({
     setEditing((v) => !v);
   }
 
-  const showIcon = editable ? visible || link : Boolean(link);
+  // Luôn hiện icon khi editable (không còn phụ thuộc hover — hover không tồn tại trên
+  // di động nên icon "chèn link" trước đây bị ẩn vĩnh viễn/không bấm được trên mobile).
+  const showIcon = editable || Boolean(link);
   if (!showIcon) return null;
 
   const iconTitle = editable ? (link ? t("link.edit") : t("link.insert")) : t("link.view");
