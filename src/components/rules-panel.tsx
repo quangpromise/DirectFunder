@@ -148,8 +148,14 @@ function RuleCard({
  * đây là 1 route /dashboard/rules riêng, đã bỏ để khỏi phải rời màn hình đang làm việc chỉ
  * để xem bảng tin). Badge số trên icon đếm rule mới thêm hôm nay (newRuleCountToday, tự hết
  * khi qua ngày) — LUÔN hiện (khác badge cũ trên nav link trước đây phải ẩn khi đang ở trang
- * Rules, giờ không còn khái niệm "đang ở trang Rules" nữa vì đây là dropdown). */
-export function RulesPanel() {
+ * Rules, giờ không còn khái niệm "đang ở trang Rules" nữa vì đây là dropdown).
+ *
+ * `variant`: "icon" = nút vuông chỉ icon + badge góc (dùng khi đặt riêng lẻ trong icon row).
+ * "tab" = nút dạng pill icon+nhãn+badge inline, GIỐNG hệt style Link điều hướng khác (Hồ sơ/
+ * Order) — dùng khi đặt Rules NGAY TRONG hàng tab điều hướng theo đúng thứ tự Cases -> Orders
+ * -> Rules (yêu cầu 2026-08-11), để đồng bộ hình thức dù vẫn là dropdown chứ không phải Link
+ * điều hướng thật (không đổi URL/route). */
+export function RulesPanel({ variant = "icon" }: { variant?: "icon" | "tab" }) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const user = useCurrentUser();
@@ -186,81 +192,125 @@ export function RulesPanel() {
     <div className="relative">
       {ConfirmDialogUI}
       {AlertDialogUI}
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-surface text-text-dim transition hover:bg-surface-hover hover:text-text active:scale-95"
-        aria-label={t("rules.title")}
-        title={t("rules.title")}
-      >
-        <ScrollText size={16} />
-        {newCount > 0 && (
-          <span className="animate-pulse absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-400 px-1 text-[10px] font-bold text-amber-950">
-            {newCount}
-          </span>
-        )}
-      </button>
+      {variant === "tab" ? (
+        <button
+          onClick={() => setOpen((o) => !o)}
+          className="flex items-center gap-1.5 rounded-lg border border-transparent px-3 py-1.5 text-sm text-text-dim transition hover:bg-surface-hover hover:text-text"
+          aria-label={t("rules.title")}
+        >
+          <ScrollText size={15} />
+          {t("rules.title")}
+          {newCount > 0 && (
+            <span className="animate-pulse rounded-full bg-amber-400 px-1.5 py-0.5 text-[10px] font-bold leading-none text-amber-950">
+              {newCount}
+            </span>
+          )}
+        </button>
+      ) : (
+        <button
+          onClick={() => setOpen((o) => !o)}
+          className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-surface text-text-dim transition hover:bg-surface-hover hover:text-text active:scale-95"
+          aria-label={t("rules.title")}
+          title={t("rules.title")}
+        >
+          <ScrollText size={16} />
+          {newCount > 0 && (
+            <span className="animate-pulse absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-400 px-1 text-[10px] font-bold text-amber-950">
+              {newCount}
+            </span>
+          )}
+        </button>
+      )}
 
-      {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="popover absolute right-0 z-50 mt-2 flex w-96 max-w-[92vw] flex-col rounded-2xl p-0 shadow-2xl shadow-black/60">
-            <div className="flex items-center gap-2 px-3.5 pb-2 pt-3">
-              <ScrollText size={15} className="text-accent" />
-              <span className="text-[15px] font-bold tracking-tight text-text">{t("rules.title")}</span>
-            </div>
+      {open &&
+        (() => {
+          const panelBody = (
+            <>
+              <div className="flex items-center gap-2 px-3.5 pb-2 pt-3">
+                <ScrollText size={15} className="text-accent" />
+                <span className="text-[15px] font-bold tracking-tight text-text">{t("rules.title")}</span>
+              </div>
 
-            {canManage && (
-              <div className="mx-3 mb-2 shrink-0 rounded-xl border border-border bg-bg-elevated p-2">
-                <RichTextEditor value={newContent} onChange={setNewContent} placeholder={t("rules.addPlaceholder")} />
-                <div className="mt-1.5 flex justify-end">
-                  <button
-                    onClick={post}
-                    disabled={posting || stripHtmlTags(newContent) === ""}
-                    className="gradient-btn flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
-                  >
-                    <Send size={12} />
-                    {t("rules.addBtn")}
-                  </button>
+              {canManage && (
+                <div className="mx-3 mb-2 shrink-0 rounded-xl border border-border bg-bg-elevated p-2">
+                  <RichTextEditor value={newContent} onChange={setNewContent} placeholder={t("rules.addPlaceholder")} />
+                  <div className="mt-1.5 flex justify-end">
+                    <button
+                      onClick={post}
+                      disabled={posting || stripHtmlTags(newContent) === ""}
+                      className="gradient-btn flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                    >
+                      <Send size={12} />
+                      {t("rules.addBtn")}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {ordered.length === 0 ? (
+                <div className="px-3 pb-4 pt-2 text-center text-xs text-text-faint">{t("rules.empty")}</div>
+              ) : (
+                <div className="flex max-h-[60vh] flex-col gap-1.5 overflow-y-auto px-3 pb-3">
+                  {ordered.map((rule) => {
+                    const author = users.find((u) => u.id === rule.createdBy);
+                    return (
+                      <RuleCard
+                        key={rule.id}
+                        rule={rule}
+                        authorName={author?.name ?? "—"}
+                        authorColor={author?.avatarColor ?? "#3b8fd1"}
+                        authorUrl={author?.avatarUrl ?? null}
+                        canManage={canManage}
+                        onEdit={async (content) => {
+                          const res = await editRule(rule.id, content);
+                          if (!res.ok) {
+                            await alertWarn(res.error || t("rules.editError"));
+                            return false;
+                          }
+                          return true;
+                        }}
+                        onDelete={async () => {
+                          const ok = await confirm(t("rules.deleteConfirm"), { title: t("rules.deleteTitle"), tone: "danger" });
+                          if (!ok) return;
+                          const res = await deleteRule(rule.id);
+                          if (!res.ok) await alertWarn(res.error || t("rules.deleteError"));
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          );
+
+          return (
+            <>
+              {/* Desktop (sm+): dropdown neo theo trigger như cũ. */}
+              <div className="fixed inset-0 z-40 hidden sm:block" onClick={() => setOpen(false)} />
+              <div className="popover absolute right-0 z-50 mt-2 hidden w-96 max-w-[92vw] flex-col rounded-2xl p-0 shadow-2xl shadow-black/60 sm:flex">
+                {panelBody}
+              </div>
+
+              {/* Mobile: neo theo trigger (right-0) dễ tràn ra ngoài màn hình vì trigger có
+                  thể nằm gần mép trái/giữa (vd trong menu hamburger, trigger hẹp) chứ không
+                  chắc luôn ở sát mép phải màn hình — đổi hẳn sang overlay CĂN GIỮA màn hình
+                  (kiểu modal, giống popup "Xem thống kê" ở cases/page.tsx) thay vì cố neo
+                  theo vị trí trigger, đảm bảo luôn nằm gọn trong khung nhìn bất kể trigger ở
+                  đâu. */}
+              <div
+                className="fixed inset-0 z-50 flex items-center justify-center px-4 sm:hidden"
+                onClick={() => setOpen(false)}
+              >
+                <div
+                  className="popover flex max-h-[85vh] w-full max-w-sm flex-col overflow-y-auto rounded-2xl p-0 shadow-2xl shadow-black/60"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {panelBody}
                 </div>
               </div>
-            )}
-
-            {ordered.length === 0 ? (
-              <div className="px-3 pb-4 pt-2 text-center text-xs text-text-faint">{t("rules.empty")}</div>
-            ) : (
-              <div className="flex max-h-[60vh] flex-col gap-1.5 overflow-y-auto px-3 pb-3">
-                {ordered.map((rule) => {
-                  const author = users.find((u) => u.id === rule.createdBy);
-                  return (
-                    <RuleCard
-                      key={rule.id}
-                      rule={rule}
-                      authorName={author?.name ?? "—"}
-                      authorColor={author?.avatarColor ?? "#3b8fd1"}
-                      authorUrl={author?.avatarUrl ?? null}
-                      canManage={canManage}
-                      onEdit={async (content) => {
-                        const res = await editRule(rule.id, content);
-                        if (!res.ok) {
-                          await alertWarn(res.error || t("rules.editError"));
-                          return false;
-                        }
-                        return true;
-                      }}
-                      onDelete={async () => {
-                        const ok = await confirm(t("rules.deleteConfirm"), { title: t("rules.deleteTitle"), tone: "danger" });
-                        if (!ok) return;
-                        const res = await deleteRule(rule.id);
-                        if (!res.ok) await alertWarn(res.error || t("rules.deleteError"));
-                      }}
-                    />
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </>
-      )}
+            </>
+          );
+        })()}
     </div>
   );
 }

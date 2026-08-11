@@ -20,8 +20,11 @@ import { useT } from "@/lib/i18n";
 
 // "Rules" KHÔNG còn là 1 route riêng trong danh sách này nữa — đã đổi thành dropdown
 // (RulesPanel, kiểu bảng thông báo giống NotificationBell) mở ngay tại chỗ, không điều
-// hướng rời màn hình đang làm việc. Xem RulesPanel trong icon row bên dưới.
-const NAV: { href: string; labelKey: string; icon: typeof Table2; roles: Role[] | "all" }[] = [
+// hướng rời màn hình đang làm việc. Tách NAV thành 2 nhóm PRIMARY_NAV/ADMIN_NAV (thay vì 1
+// mảng phẳng) để chèn <RulesPanel variant="tab"/> vào GIỮA 2 nhóm khi render (xem TopNav bên
+// dưới) — đảm bảo thứ tự luôn đúng "Cases -> Orders -> Rules -> (Tài khoản/Phân quyền nếu
+// có)" theo yêu cầu 2026-08-11, bất kể role đang đăng nhập thấy bao nhiêu tab trong mỗi nhóm.
+const PRIMARY_NAV: { href: string; labelKey: string; icon: typeof Table2; roles: Role[] | "all" }[] = [
   // Support chỉ làm việc trên tab Order — không hiện tab Hồ sơ với nhóm này.
   {
     href: "/dashboard/cases",
@@ -35,6 +38,8 @@ const NAV: { href: string; labelKey: string; icon: typeof Table2; roles: Role[] 
     icon: ClipboardList,
     roles: ["agent", "processor", "support", "agent_leader", "processor_leader"],
   },
+];
+const ADMIN_NAV: { href: string; labelKey: string; icon: typeof Table2; roles: Role[] | "all" }[] = [
   { href: "/dashboard/users", labelKey: "nav.users", icon: Users, roles: ["manager"] },
   { href: "/dashboard/permissions", labelKey: "nav.permissions", icon: ShieldCheck, roles: ["manager"] },
 ];
@@ -51,7 +56,31 @@ export function TopNav() {
 
   if (!user) return null;
 
-  const items = NAV.filter((item) => item.roles === "all" || item.roles.includes(user.role));
+  const primaryItems = PRIMARY_NAV.filter((item) => item.roles === "all" || item.roles.includes(user.role));
+  const adminItems = ADMIN_NAV.filter((item) => item.roles === "all" || item.roles.includes(user.role));
+
+  // Dùng chung cho cả hàng tab desktop lẫn danh sách trong menu hamburger mobile (2 nơi gọi
+  // bên dưới) — tránh lặp lại JSX Link 4 lần khi giờ NAV tách 2 nhóm để chèn RulesPanel vào
+  // giữa (xem PRIMARY_NAV/ADMIN_NAV phía trên).
+  function renderNavLink(item: (typeof PRIMARY_NAV)[number], mobile: boolean) {
+    const { href, labelKey, icon: Icon } = item;
+    const active = pathname.startsWith(href);
+    return (
+      <Link
+        key={href}
+        href={href}
+        onClick={mobile ? () => setMobileOpen(false) : undefined}
+        className={`flex items-center gap-1.5 rounded-lg text-sm transition ${mobile ? "gap-2.5 px-3 py-2" : "px-3 py-1.5"} ${
+          active
+            ? "border border-border-strong bg-accent-soft text-text"
+            : "border border-transparent text-text-dim hover:bg-surface-hover hover:text-text"
+        }`}
+      >
+        <Icon size={mobile ? 16 : 15} />
+        {t(labelKey)}
+      </Link>
+    );
+  }
 
   return (
     <header className="sticky top-0 z-40 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-bg-elevated px-4 sm:px-6">
@@ -77,23 +106,12 @@ export function TopNav() {
       </div>
 
       <nav className="ml-2 hidden items-center gap-1 md:flex">
-        {items.map(({ href, labelKey, icon: Icon }) => {
-          const active = pathname.startsWith(href);
-          return (
-            <Link
-              key={href}
-              href={href}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm transition ${
-                active
-                  ? "border border-border-strong bg-accent-soft text-text"
-                  : "border border-transparent text-text-dim hover:bg-surface-hover hover:text-text"
-              }`}
-            >
-              <Icon size={15} />
-              {t(labelKey)}
-            </Link>
-          );
-        })}
+        {primaryItems.map((item) => renderNavLink(item, false))}
+        {/* Rules đặt NGAY SAU Cases/Orders (yêu cầu 2026-08-11: thứ tự Cases -> Orders ->
+            Rules) — vẫn là dropdown (variant="tab" chỉ đổi hình thức hiển thị cho khớp style
+            Link, KHÔNG điều hướng route). */}
+        <RulesPanel variant="tab" />
+        {adminItems.map((item) => renderNavLink(item, false))}
       </nav>
 
       <button
@@ -106,17 +124,12 @@ export function TopNav() {
 
       <div className="ml-auto flex items-center gap-2">
         {/* Darkmode/Ngôn ngữ chỉ hiện trực tiếp trên header ở desktop (md+) — trên mobile
-            dồn vào menu hamburger (xem khối mobileOpen bên dưới) để header đỡ chật. Rules đặt
-            ngay cạnh Dark Mode ở đây cho dễ nhìn (yêu cầu 2026-08-11) — trên mobile không có
-            khối Dark Mode này nên giữ 1 bản Rules riêng luôn hiện ở icon row (md:hidden bên
-            dưới), tránh mất hẳn quyền truy cập trên màn hình nhỏ. */}
+            dồn vào menu hamburger (xem khối mobileOpen bên dưới) để header đỡ chật. Rules đã
+            chuyển vào hàng tab điều hướng chính (Cases -> Orders -> Rules, xem <nav> phía
+            trên/menu mobile bên dưới) — không còn đặt riêng ở đây nữa. */}
         <div className="hidden items-center gap-2 md:flex">
           <ThemeSwitcher compact />
-          <RulesPanel />
           <LanguageSwitcher compact />
-        </div>
-        <div className="md:hidden">
-          <RulesPanel />
         </div>
         <PhoenixClock />
         <NotificationBell currentUserId={user.id} />
@@ -169,24 +182,9 @@ export function TopNav() {
       {mobileOpen && (
         <div className="absolute left-0 right-0 top-14 z-50 border-b border-border bg-bg-elevated p-3 shadow-2xl md:hidden">
           <nav className="flex flex-col gap-1">
-            {items.map(({ href, labelKey, icon: Icon }) => {
-              const active = pathname.startsWith(href);
-              return (
-                <Link
-                  key={href}
-                  href={href}
-                  onClick={() => setMobileOpen(false)}
-                  className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition ${
-                    active
-                      ? "border border-border-strong bg-accent-soft text-text"
-                      : "border border-transparent text-text-dim hover:bg-surface-hover hover:text-text"
-                  }`}
-                >
-                  <Icon size={16} />
-                  {t(labelKey)}
-                </Link>
-              );
-            })}
+            {primaryItems.map((item) => renderNavLink(item, true))}
+            <RulesPanel variant="tab" />
+            {adminItems.map((item) => renderNavLink(item, true))}
             <div className="mt-1 flex items-center gap-2 px-1">
               <LanguageSwitcher />
               <ThemeSwitcher />

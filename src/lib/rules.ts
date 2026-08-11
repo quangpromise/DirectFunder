@@ -9,11 +9,12 @@ export function ruleIsNewToday(rule: RuleRecord, now: Date = new Date()): boolea
   return toPhoenixDateStr(new Date(rule.createdAt)) === toPhoenixDateStr(now);
 }
 
-/** Số rule được thêm mới trong hôm nay — dùng cho badge "X New Rules" cạnh nút điều hướng
- * Rules ở các màn hình khác. Tính trên MỌI rule tạo hôm nay kể cả rule đã bị xoá sau đó
- * (vẫn tính là "vừa thêm hôm nay", đúng nghĩa "mới thêm vào" của yêu cầu). */
+/** Số rule ACTIVE (chưa xoá) được thêm mới trong hôm nay — dùng cho badge số trên nút Rules
+ * (RulesPanel). Loại rule đã xoá (deletedAt != null) ra khỏi phép đếm — khớp đúng hành vi
+ * badge "New" trên từng rule card (isNew = !deleted && ruleIsNewToday), để nếu xoá hết rule
+ * active hôm nay thì badge tắt hẳn thay vì vẫn đếm rule đã xoá. */
 export function newRuleCountToday(rules: RuleRecord[], now: Date = new Date()): number {
-  return rules.filter((r) => ruleIsNewToday(r, now)).length;
+  return rules.filter((r) => !r.deletedAt && ruleIsNewToday(r, now)).length;
 }
 
 /** Sắp xếp hiển thị: rule còn hiệu lực (chưa xoá) theo mới nhất lên đầu, rule đã xoá dồn

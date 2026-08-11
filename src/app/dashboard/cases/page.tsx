@@ -582,7 +582,7 @@ export default function CasesPage() {
           typeof document !== "undefined" &&
           createPortal(
             <div
-              className="fixed inset-0 z-[100] flex items-end justify-center bg-black/80 px-4 py-8 sm:hidden"
+              className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 px-4 sm:hidden"
               onClick={() => setStatsPopupOpen(false)}
             >
               <div

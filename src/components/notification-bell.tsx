@@ -185,91 +185,117 @@ export function NotificationBell({ currentUserId }: { currentUserId: string }) {
           );
         })()}
 
-      {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          {/* Kiểu Facebook: panel rộng hơn, tiêu đề đậm cỡ lớn, 2 pill lọc Tất cả/Chưa đọc,
-              mỗi dòng có avatar tròn lớn + icon-badge nhỏ đè góc dưới-phải theo loại thông
-              báo (assigned/status_change/mention — xem NOTIF_TYPE_STYLE), dòng chưa đọc có
-              nền xanh nhạt + chữ đậm + chấm tròn xanh bên phải. */}
-          <div className="popover absolute right-0 z-50 mt-2 flex w-96 max-w-[90vw] flex-col rounded-2xl p-0 shadow-2xl shadow-black/60">
-            <div className="flex items-center justify-between px-4 pb-1 pt-3.5">
-              <span className="text-[17px] font-bold tracking-tight text-text">{t("notif.title")}</span>
-              <button
-                onClick={() => setNotificationSoundMuted(!notificationSoundMuted)}
-                title={notificationSoundMuted ? t("notif.unmute") : t("notif.mute")}
-                aria-label={notificationSoundMuted ? t("notif.unmute") : t("notif.mute")}
-                className="flex h-9 w-9 items-center justify-center rounded-full text-text-dim transition hover:bg-surface-hover hover:text-text"
-              >
-                {notificationSoundMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
-              </button>
-            </div>
-
-            <div className="flex items-center gap-1.5 px-3.5 pb-2.5 pt-1">
-              {(["all", "unread"] as const).map((key) => (
+      {open &&
+        (() => {
+          // Kiểu Facebook: panel rộng hơn, tiêu đề đậm cỡ lớn, 2 pill lọc Tất cả/Chưa đọc,
+          // mỗi dòng có avatar tròn lớn + icon-badge nhỏ đè góc dưới-phải theo loại thông
+          // báo (assigned/status_change/mention — xem NOTIF_TYPE_STYLE), dòng chưa đọc có
+          // nền xanh nhạt + chữ đậm + chấm tròn xanh bên phải.
+          const panelBody = (
+            <>
+              <div className="flex items-center justify-between px-4 pb-1 pt-3.5">
+                <span className="text-[17px] font-bold tracking-tight text-text">{t("notif.title")}</span>
                 <button
-                  key={key}
-                  onClick={() => setFilter(key)}
-                  className={`rounded-full px-3.5 py-1.5 text-[13px] font-semibold transition ${
-                    filter === key
-                      ? "bg-accent-soft text-accent-from"
-                      : "text-text-dim hover:bg-surface-hover hover:text-text"
-                  }`}
+                  onClick={() => setNotificationSoundMuted(!notificationSoundMuted)}
+                  title={notificationSoundMuted ? t("notif.unmute") : t("notif.mute")}
+                  aria-label={notificationSoundMuted ? t("notif.unmute") : t("notif.mute")}
+                  className="flex h-9 w-9 items-center justify-center rounded-full text-text-dim transition hover:bg-surface-hover hover:text-text"
                 >
-                  {key === "all" ? t("notif.all") : t("notif.unread")}
+                  {notificationSoundMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
                 </button>
-              ))}
-            </div>
+              </div>
 
-            <div className="max-h-96 overflow-y-auto px-2 pb-2">
-              {visibleList.length === 0 && (
-                <div className="flex flex-col items-center gap-2 px-2 py-10 text-center">
-                  <Bell size={26} className="text-text-faint" strokeWidth={1.5} />
-                  <span className="text-xs text-text-faint">
-                    {filter === "unread" ? t("notif.emptyUnread") : t("notif.empty")}
-                  </span>
-                </div>
-              )}
-              {visibleList.map((n) => {
-                const from = users.find((u) => u.id === n.fromUserId);
-                const unread = unreadSnapshot.has(n.id);
-                const { icon: TypeIcon, className: badgeClassName } = NOTIF_TYPE_STYLE[n.type];
-                return (
+              <div className="flex items-center gap-1.5 px-3.5 pb-2.5 pt-1">
+                {(["all", "unread"] as const).map((key) => (
                   <button
-                    key={n.id}
-                    onClick={() => {
-                      markNotificationRead(n.id);
-                      setOpen(false);
-                      goToNotification(n.caseId);
-                    }}
-                    className={`group flex w-full items-start gap-3 rounded-xl px-2.5 py-2.5 text-left transition ${
-                      unread ? "bg-accent-soft hover:brightness-[1.08]" : "hover:bg-surface-hover"
+                    key={key}
+                    onClick={() => setFilter(key)}
+                    className={`rounded-full px-3.5 py-1.5 text-[13px] font-semibold transition ${
+                      filter === key
+                        ? "bg-accent-soft text-accent-from"
+                        : "text-text-dim hover:bg-surface-hover hover:text-text"
                     }`}
                   >
-                    <div className="relative shrink-0">
-                      <Avatar name={from?.name ?? "?"} color={from?.avatarColor ?? "#6b7280"} url={from?.avatarUrl} size={44} />
-                      <span
-                        className={`absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full ring-2 ring-bg-elevated ${badgeClassName}`}
-                      >
-                        <TypeIcon size={11} strokeWidth={2.5} className="text-white" />
-                      </span>
-                    </div>
-                    <div className="min-w-0 flex-1 pt-0.5">
-                      <p className={`text-[13px] leading-snug ${unread ? "font-semibold text-text" : "text-text-dim"}`}>
-                        {n.message}
-                      </p>
-                      <p className={`mt-0.5 text-[12px] ${unread ? "font-semibold text-accent-from" : "text-text-faint"}`}>
-                        {from?.name} · {timeAgo(n.createdAt, language)}
-                      </p>
-                    </div>
-                    {unread && <span className="mt-2 h-2.5 w-2.5 shrink-0 rounded-full bg-accent-from" />}
+                    {key === "all" ? t("notif.all") : t("notif.unread")}
                   </button>
-                );
-              })}
-            </div>
-          </div>
-        </>
-      )}
+                ))}
+              </div>
+
+              <div className="max-h-96 overflow-y-auto px-2 pb-2">
+                {visibleList.length === 0 && (
+                  <div className="flex flex-col items-center gap-2 px-2 py-10 text-center">
+                    <Bell size={26} className="text-text-faint" strokeWidth={1.5} />
+                    <span className="text-xs text-text-faint">
+                      {filter === "unread" ? t("notif.emptyUnread") : t("notif.empty")}
+                    </span>
+                  </div>
+                )}
+                {visibleList.map((n) => {
+                  const from = users.find((u) => u.id === n.fromUserId);
+                  const unread = unreadSnapshot.has(n.id);
+                  const { icon: TypeIcon, className: badgeClassName } = NOTIF_TYPE_STYLE[n.type];
+                  return (
+                    <button
+                      key={n.id}
+                      onClick={() => {
+                        markNotificationRead(n.id);
+                        setOpen(false);
+                        goToNotification(n.caseId);
+                      }}
+                      className={`group flex w-full items-start gap-3 rounded-xl px-2.5 py-2.5 text-left transition ${
+                        unread ? "bg-accent-soft hover:brightness-[1.08]" : "hover:bg-surface-hover"
+                      }`}
+                    >
+                      <div className="relative shrink-0">
+                        <Avatar name={from?.name ?? "?"} color={from?.avatarColor ?? "#6b7280"} url={from?.avatarUrl} size={44} />
+                        <span
+                          className={`absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full ring-2 ring-bg-elevated ${badgeClassName}`}
+                        >
+                          <TypeIcon size={11} strokeWidth={2.5} className="text-white" />
+                        </span>
+                      </div>
+                      <div className="min-w-0 flex-1 pt-0.5">
+                        <p className={`text-[13px] leading-snug ${unread ? "font-semibold text-text" : "text-text-dim"}`}>
+                          {n.message}
+                        </p>
+                        <p className={`mt-0.5 text-[12px] ${unread ? "font-semibold text-accent-from" : "text-text-faint"}`}>
+                          {from?.name} · {timeAgo(n.createdAt, language)}
+                        </p>
+                      </div>
+                      {unread && <span className="mt-2 h-2.5 w-2.5 shrink-0 rounded-full bg-accent-from" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          );
+
+          return (
+            <>
+              {/* Desktop (sm+): dropdown neo theo trigger như cũ. */}
+              <div className="fixed inset-0 z-40 hidden sm:block" onClick={() => setOpen(false)} />
+              <div className="popover absolute right-0 z-50 mt-2 hidden w-96 max-w-[90vw] flex-col rounded-2xl p-0 shadow-2xl shadow-black/60 sm:flex">
+                {panelBody}
+              </div>
+
+              {/* Mobile: neo theo trigger (right-0) dễ tràn ra ngoài màn hình vì chuông không
+                  chắc luôn ở sát mép phải màn hình (còn avatar/menu tài khoản đứng sau nó) —
+                  đổi hẳn sang overlay CĂN GIỮA màn hình (kiểu modal, giống popup "Xem thống
+                  kê" ở cases/page.tsx) để luôn nằm gọn trong khung nhìn. */}
+              <div
+                className="fixed inset-0 z-50 flex items-center justify-center px-4 sm:hidden"
+                onClick={() => setOpen(false)}
+              >
+                <div
+                  className="popover flex max-h-[85vh] w-full max-w-sm flex-col overflow-y-auto rounded-2xl p-0 shadow-2xl shadow-black/60"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {panelBody}
+                </div>
+              </div>
+            </>
+          );
+        })()}
     </div>
   );
 }
