@@ -122,6 +122,13 @@ export function TopNav() {
         {mobileOpen ? <X size={17} /> : <Menu size={17} />}
       </button>
 
+      {/* Rules trên mobile đặt NGAY CẠNH nút menu (yêu cầu 2026-08-11) thay vì nằm trong danh
+          sách bên trong menu hamburger — dropdown của nó tự neo trái ngay dưới nút này (xem
+          rules-panel.tsx). */}
+      <div className="md:hidden">
+        <RulesPanel variant="icon" />
+      </div>
+
       <div className="ml-auto flex items-center gap-2">
         {/* Darkmode/Ngôn ngữ chỉ hiện trực tiếp trên header ở desktop (md+) — trên mobile
             dồn vào menu hamburger (xem khối mobileOpen bên dưới) để header đỡ chật. Rules đã
@@ -183,7 +190,6 @@ export function TopNav() {
         <div className="absolute left-0 right-0 top-14 z-50 border-b border-border bg-bg-elevated p-3 shadow-2xl md:hidden">
           <nav className="flex flex-col gap-1">
             {primaryItems.map((item) => renderNavLink(item, true))}
-            <RulesPanel variant="tab" />
             {adminItems.map((item) => renderNavLink(item, true))}
             <div className="mt-1 flex items-center gap-2 px-1">
               <LanguageSwitcher />

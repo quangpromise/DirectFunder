@@ -291,22 +291,17 @@ export function RulesPanel({ variant = "icon" }: { variant?: "icon" | "tab" }) {
                 {panelBody}
               </div>
 
-              {/* Mobile: neo theo trigger (right-0) dễ tràn ra ngoài màn hình vì trigger có
-                  thể nằm gần mép trái/giữa (vd trong menu hamburger, trigger hẹp) chứ không
-                  chắc luôn ở sát mép phải màn hình — đổi hẳn sang overlay CĂN GIỮA màn hình
-                  (kiểu modal, giống popup "Xem thống kê" ở cases/page.tsx) thay vì cố neo
-                  theo vị trí trigger, đảm bảo luôn nằm gọn trong khung nhìn bất kể trigger ở
-                  đâu. */}
+              {/* Mobile: hiện NGAY DƯỚI nút Rules (yêu cầu 2026-08-11, thay cho overlay căn
+                  giữa màn hình trước đó) — nút Rules trên mobile giờ đặt cạnh nút menu (gần
+                  mép trái header, xem top-nav.tsx) nên neo trái (left-0) để dropdown mở rộng
+                  sang phải, không tràn mép trái; width tự co theo viewport để không tràn mép
+                  phải. */}
+              <div className="fixed inset-0 z-40 sm:hidden" onClick={() => setOpen(false)} />
               <div
-                className="fixed inset-0 z-50 flex items-center justify-center px-4 sm:hidden"
-                onClick={() => setOpen(false)}
+                className="popover absolute left-0 z-50 mt-2 flex max-h-[75vh] w-[min(22rem,calc(100vw-2rem))] flex-col overflow-y-auto rounded-2xl p-0 shadow-2xl shadow-black/60 sm:hidden"
+                onClick={(e) => e.stopPropagation()}
               >
-                <div
-                  className="popover flex max-h-[85vh] w-full max-w-sm flex-col overflow-y-auto rounded-2xl p-0 shadow-2xl shadow-black/60"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {panelBody}
-                </div>
+                {panelBody}
               </div>
             </>
           );
