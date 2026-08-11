@@ -7,7 +7,10 @@ import { Search, Plus, Trash2, FileText, DollarSign, GripVertical, ShieldAlert, 
 import { downloadCaseTemplate, parseCaseExcelFile } from "@/lib/excel";
 import { useAppStore, useCurrentUser } from "@/store/app-store";
 import { canEditCase, canEditColumn, canViewCase, hasFeature } from "@/lib/rbac";
-import { CaseRecord, ColumnDef, CpaEmailDefaults, SelectOption, User } from "@/lib/types";
+import { CaseRecord, CheckInitialValue, ColumnDef, CpaEmailDefaults, RefundYearStatus, SelectOption, User } from "@/lib/types";
+import { CHECK_INITIAL_COLUMN_ID } from "@/lib/check-initial";
+import { CheckInitialCell } from "@/components/check-initial-cell";
+import { CaseRefundStatusButton } from "@/components/case-refund-status-button";
 import type { ClientProfilePayload } from "@/lib/api-client";
 import { EditableCell } from "@/components/editable-cell";
 import { AssignMenu } from "@/components/assign-menu";
@@ -42,6 +45,13 @@ import {
 // phân quyền RIÊNG cho popup, xem client-profile-dialog.tsx). Không cần liệt kê
 // money/caseLabel vì 2 cột đó đã tự khoá qua editableBy rỗng trong rbac.ts.
 const LOCKED_OUTSIDE_PROFILE_DIALOG = new Set(["phone", "zipcode", "address"]);
+
+// Nội dung ngắn (5 số zip, 1-2 chữ số Case, số tiền) từng bị dư khoảng trắng do dùng
+// chung padding/màu chữ mờ (text-text-dim) với các cột dài hơn — đổi sang chữ đậm +
+// tương phản cao (xem prop `dense` của EditableCell) + padding hẹp hơn, ĐỒNG BỘ với
+// SSN/Phone/Client Name (đã tự đổi riêng ở ssn-cell.tsx/client-name-cell.tsx vì không
+// dùng EditableCell).
+const DENSE_BOLD_COLUMNS = new Set(["zipcode", "caseLabel", "money"]);
 
 const GRIP_COL_WIDTH = 26;
 const CLIENT_COL_WIDTH = 210;
@@ -162,6 +172,8 @@ export default function CasesPage() {
   const sendCaseRowToSheet = useAppStore((s) => s.sendCaseRowToSheet);
   const markCaseSheetSent = useAppStore((s) => s.markCaseSheetSent);
   const connectGoogleAccount = useAppStore((s) => s.connectGoogleAccount);
+  const sendClientEmail = useAppStore((s) => s.sendClientEmail);
+  const connectMicrosoftAccount = useAppStore((s) => s.connectMicrosoftAccount);
   const addRow = useAppStore((s) => s.addRow);
   const importCases = useAppStore((s) => s.importCases);
   const deleteRow = useAppStore((s) => s.deleteRow);
@@ -179,6 +191,8 @@ export default function CasesPage() {
   const reorderCase = useAppStore((s) => s.reorderCase);
   const updateClientLink = useAppStore((s) => s.updateClientLink);
   const updateSsn = useAppStore((s) => s.updateSsn);
+  const updateRefundYearStatus = useAppStore((s) => s.updateRefundYearStatus);
+  const updateRefundYearPendingReason = useAppStore((s) => s.updateRefundYearPendingReason);
   const updateClientProfile = useAppStore((s) => s.updateClientProfile);
   const addDescriptionReply = useAppStore((s) => s.addDescriptionReply);
   const markDescriptionRead = useAppStore((s) => s.markDescriptionRead);
@@ -438,6 +452,7 @@ export default function CasesPage() {
   const canDeleteRowFeature = hasFeature(permissions, "deleteRow", user.role);
   const canSendCpaEmailFeature = hasFeature(permissions, "sendCpaEmail", user.role);
   const canSendToSheetFeature = hasFeature(permissions, "sendToGoogleSheet", user.role);
+  const canSendClientEmailFeature = hasFeature(permissions, "sendClientEmail", user.role);
 
   const tabStatusOptions = tab === "all" ? statusOptions : statusOptions.filter((o) => getCaseTab(o.id) === tab);
 
@@ -472,7 +487,11 @@ export default function CasesPage() {
     <div className="flex h-full flex-col">
       {ConfirmDialogUI}
       {AlertDialogUI}
-      <div className="flex items-center gap-1.5 border-b border-border px-4 pt-3 sm:px-6">
+      {/* flex-wrap — trên màn hình hẹp (mobile), nhóm nút List/Dashboard (ml-auto) không đủ
+          chỗ cùng hàng với các tab sẽ tự xuống dòng thay vì tràn ra ngoài khung nhìn (bug đã
+          gặp: 2 nút bị đẩy lệch hẳn ra ngoài màn hình, không cuộn ngang tới được vì body
+          không có scrollbar ngang). */}
+      <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-4 pt-3 sm:px-6">
         {view === "list" &&
           CASE_TABS.map((ct) => {
             const colors = TAB_COLORS[ct.id];
@@ -813,6 +832,8 @@ export default function CasesPage() {
               assignCase={assignCase}
               updateClientLink={updateClientLink}
               updateSsn={updateSsn}
+              updateRefundYearStatus={updateRefundYearStatus}
+              updateRefundYearPendingReason={updateRefundYearPendingReason}
               updateClientProfile={updateClientProfile}
               addDescriptionReply={addDescriptionReply}
               markDescriptionRead={markDescriptionRead}
@@ -827,6 +848,9 @@ export default function CasesPage() {
               sendCaseRowToSheet={sendCaseRowToSheet}
               markCaseSheetSent={markCaseSheetSent}
               connectGoogleAccount={connectGoogleAccount}
+              canSendClientEmailFeature={canSendClientEmailFeature}
+              sendClientEmail={sendClientEmail}
+              connectMicrosoftAccount={connectMicrosoftAccount}
               confirm={confirm}
               alertWarn={alertWarn}
               dragRowId={dragRowId}
@@ -1003,6 +1027,8 @@ function RowCells({
   assignCase,
   updateClientLink,
   updateSsn,
+  updateRefundYearStatus,
+  updateRefundYearPendingReason,
   updateClientProfile,
   addDescriptionReply,
   markDescriptionRead,
@@ -1017,6 +1043,9 @@ function RowCells({
   sendCaseRowToSheet,
   markCaseSheetSent,
   connectGoogleAccount,
+  canSendClientEmailFeature,
+  sendClientEmail,
+  connectMicrosoftAccount,
   confirm,
   alertWarn,
   dragRowId,
@@ -1037,7 +1066,12 @@ function RowCells({
   users: User[];
   agentUsers: User[];
   processorUsers: User[];
-  updateCell: (caseId: string, columnKey: string, value: string | number | boolean | null, isCustom: boolean) => void;
+  updateCell: (
+    caseId: string,
+    columnKey: string,
+    value: string | number | boolean | null | CheckInitialValue,
+    isCustom: boolean
+  ) => void;
   placeOrder: (
     caseId: string,
     field: "order8821" | "orderTtsWit",
@@ -1049,6 +1083,8 @@ function RowCells({
   assignCase: (caseId: string, toUserId: string | null, field: "assignedTo" | "assignedProcessor") => void;
   updateClientLink: (caseId: string, link: string | null) => void;
   updateSsn: (caseId: string, slot: 0 | 1, value: string | null) => void;
+  updateRefundYearStatus: (caseId: string, year: string, status: RefundYearStatus) => void;
+  updateRefundYearPendingReason: (caseId: string, year: string, reason: string) => void;
   updateClientProfile: (caseId: string, payload: ClientProfilePayload) => Promise<{ ok: true } | { ok: false; error: string }>;
   addDescriptionReply: (caseId: string, authorId: string, text: string) => void;
   markDescriptionRead: (caseId: string, userId: string) => void;
@@ -1075,6 +1111,11 @@ function RowCells({
   ) => Promise<{ ok: true } | { ok: false; error: string; needsGoogleAuth?: boolean }>;
   markCaseSheetSent: (caseId: string, action: "manual" | "clear") => Promise<void>;
   connectGoogleAccount: () => Promise<boolean>;
+  canSendClientEmailFeature: boolean;
+  sendClientEmail: (
+    caseId: string
+  ) => Promise<{ ok: true } | { ok: false; error: string; needsMicrosoftAuth?: boolean }>;
+  connectMicrosoftAccount: () => Promise<boolean>;
   confirm: (message: string, opts?: { title?: string; tone?: "default" | "danger" }) => Promise<boolean>;
   alertWarn: (message: string, opts?: { title?: string }) => Promise<void>;
   dragRowId: string | null;
@@ -1099,6 +1140,11 @@ function RowCells({
   // gán cho thành viên trong nhóm mình — các role khác giữ quyền sửa như cũ (đã lọc
   // đúng phạm vi từ visibleCases nên không cần giới hạn thêm theo dòng).
   const canEditRow = canEditCase(user.role, user.id, row, user.teamMemberIds);
+  // Nút mắt cạnh cột "Case" dùng CHUNG nguồn phân quyền với cột ẩn "refunds" (đúng cách
+  // server đã map ở FIELD_TO_COLUMN_KEY trong PATCH /api/cases/[id]) — hợp lý vì trạng
+  // thái này gắn liền với dữ liệu refund.
+  const refundsColumn = columns.find((c) => c.id === "refunds");
+  const canEditRefundStatus = Boolean(refundsColumn) && canEditColumn(user.role, refundsColumn!) && canEditRow;
   return (
     <div
       data-row-id={row.id}
@@ -1175,6 +1221,11 @@ function RowCells({
           onCommitLink={(link) => updateClientLink(row.id, link)}
           onSaveProfile={(payload) => updateClientProfile(row.id, payload)}
           isDuplicateSsn={(slot, candidate) => isDuplicateSsn(allCases, candidate, row.id, slot)}
+          canSendClientEmail={canSendClientEmailFeature}
+          confirm={confirm}
+          alertWarn={alertWarn}
+          sendClientEmail={sendClientEmail}
+          connectMicrosoftAccount={connectMicrosoftAccount}
         />
       </div>
       {otherColumns.map((col) =>
@@ -1196,9 +1247,9 @@ function RowCells({
           // giống cách SsnCell hiện 2 số SSN, khoá read-only hoàn toàn (sửa qua popup).
           <div
             key={col.id}
-            className="flex h-full flex-col items-center justify-center gap-0.5 border-b border-r border-border py-1 text-center text-xs text-text-dim transition-colors group-hover:bg-surface-hover"
+            className="flex h-full flex-col items-center justify-center gap-0.5 border-b border-r border-border py-1 text-center text-[11px] font-semibold text-text transition-colors group-hover:bg-surface-hover"
           >
-            <span>{row.phone || <span className="text-text-faint">—</span>}</span>
+            <span>{row.phone || <span className="font-normal text-text-faint">—</span>}</span>
             {row.phone2 && <span>{row.phone2}</span>}
           </div>
         ) : col.id === "description" ? (
@@ -1260,19 +1311,56 @@ function RowCells({
               }}
             />
           </div>
+        ) : col.id === "caseLabel" ? (
+          <div
+            key={col.id}
+            className="flex h-full items-center justify-center gap-1 border-b border-r border-border px-1 transition-colors group-hover:bg-surface-hover"
+          >
+            <span className="text-[11px] font-semibold text-text">
+              {typeof row.custom[col.key] === "number" || typeof row.custom[col.key] === "string"
+                ? String(row.custom[col.key])
+                : "0"}
+            </span>
+            <CaseRefundStatusButton
+              refunds={row.refunds}
+              refundYearStatus={row.refundYearStatus}
+              refundYearPendingReason={row.refundYearPendingReason}
+              editable={canEditRefundStatus}
+              onChangeStatus={(year, status) => updateRefundYearStatus(row.id, year, status)}
+              onChangeReason={(year, reason) => updateRefundYearPendingReason(row.id, year, reason)}
+            />
+          </div>
+        ) : col.id === CHECK_INITIAL_COLUMN_ID ? (
+          <div key={col.id} className="flex h-full items-center border-b border-r border-border transition-colors group-hover:bg-surface-hover">
+            <CheckInitialCell
+              value={row.custom[col.key] as CheckInitialValue | undefined}
+              editable={canEditColumn(user.role, col) && canEditRow}
+              onCommit={(next) => updateCell(row.id, col.key, next, true)}
+            />
+          </div>
         ) : (
           <div
             key={col.id}
             className="flex h-full items-center justify-center border-b border-r border-border transition-colors group-hover:bg-surface-hover"
           >
             <EditableCell
-              value={col.custom ? row.custom[col.key] ?? null : (row as unknown as Record<string, string | number | boolean | null>)[col.key]}
+              value={
+                // Nhánh này không bao giờ chạy cho cột "checkInitial" (đã chặn ở ternary
+                // riêng phía trên) nên custom[col.key] thực tế luôn là string/number/
+                // boolean/null ở đây — ép kiểu bỏ CheckInitialValue cho khớp Value của
+                // EditableCell (union chỉ rộng ra vì CaseRecord.custom giờ dùng chung cho
+                // cả object value của checkInitial).
+                col.custom
+                  ? ((row.custom[col.key] ?? null) as string | number | boolean | null)
+                  : (row as unknown as Record<string, string | number | boolean | null>)[col.key]
+              }
               type={col.type}
               options={col.options}
               editable={
                 !LOCKED_OUTSIDE_PROFILE_DIALOG.has(col.id) && canEditColumn(user.role, col) && canEditRow
               }
               onCommit={(v) => updateCell(row.id, col.key, v, Boolean(col.custom))}
+              dense={DENSE_BOLD_COLUMNS.has(col.id)}
             />
           </div>
         )

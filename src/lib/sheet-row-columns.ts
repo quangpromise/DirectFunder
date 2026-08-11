@@ -2,6 +2,7 @@ import { CaseRecord, ColumnDef, DateFormat, Language } from "./types";
 import { getAllClientNames } from "./client-name";
 import { translateOptionLabel } from "./i18n";
 import { formatDateValue, formatDateOfBirth } from "./date-format";
+import { CHECK_INITIAL_COLUMN_ID, summarizeCheckInitial } from "./check-initial";
 
 /** id đặc biệt cho trường "Ngày gửi" ảo trong GoogleSheetConfig.columnMappings — không tham
  * chiếu ColumnDef thật nào, giá trị luôn là ngày hiện tại lúc bấm Send (không phải dữ
@@ -106,6 +107,7 @@ export function getColumnValue(
   if (col.custom) {
     const value = row.custom[col.id];
     if (value === null || value === undefined) return "";
+    if (col.id === CHECK_INITIAL_COLUMN_ID) return summarizeCheckInitial(value);
     if (col.type === "date" && typeof value === "string") return formatDateValue(value, dateFormat);
     if (col.type === "currency" && typeof value === "number") return value;
     return String(value);

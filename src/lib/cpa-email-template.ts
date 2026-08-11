@@ -1,6 +1,7 @@
 import { CaseRecord } from "./types";
 import { getAllClientNames, getClientEntries } from "./client-name";
 import { buildMonthYear } from "./month-year";
+import { renderTemplate } from "./email-template-render";
 
 /** Biến khả dụng trong subjectTemplate/bodyTemplate — Admin chèn dạng {clientName}. */
 export interface CpaEmailTemplateVars {
@@ -77,11 +78,10 @@ export function buildTemplateVars(
   };
 }
 
-/** Thay {clientName}, {ssn}... bằng dữ liệu thật của hồ sơ; token không nhận diện được giữ nguyên. */
+/** Thay {clientName}, {ssn}... bằng dữ liệu thật của hồ sơ; token không nhận diện được giữ
+ * nguyên. Chỉ còn là 1 wrapper mỏng gọi renderTemplate dùng chung (email-template-render.ts). */
 export function renderCpaEmailTemplate(template: string, vars: CpaEmailTemplateVars): string {
-  return template.replace(/\{(\w+)\}/g, (match, key: string) =>
-    key in vars ? vars[key as keyof CpaEmailTemplateVars] : match
-  );
+  return renderTemplate(template, vars as unknown as Record<string, string>);
 }
 
 /** Mẫu Subject mặc định khi Admin chưa cấu hình — {clientName} tự gộp Client trên + Client

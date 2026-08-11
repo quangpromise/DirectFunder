@@ -26,6 +26,11 @@ model User {
   /// token luôn xin mới qua refresh_token mỗi lần gọi API (xem src/lib/google-sheets.ts),
   /// không lưu/đồng bộ access_token + hạn dùng riêng cho đơn giản.
   googleRefreshToken String?
+  /// Refresh token OAuth2 Microsoft Graph (tính năng "Gửi email cho khách hàng" qua mailbox
+  /// Outlook @directfunder.com riêng của từng user) — null = chưa kết nối. Chỉ lưu
+  /// refresh_token, access token luôn xin mới qua refresh_token mỗi lần gọi API (xem
+  /// src/lib/microsoft-graph.ts), cùng cơ chế với googleRefreshToken ở trên.
+  microsoftRefreshToken String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -74,6 +79,16 @@ model Case {
   createdBy          String?
   /// Giá trị các cột tuỳ chỉnh (custom columns)
   custom             Json     @default("{}")
+  /// Record<năm, "processing"|"pending"|"cpaReview"> — trạng thái xử lý riêng cho từng
+  /// năm refund, chọn qua popup nút mắt cạnh cột "Case" (xem CaseRefundStatusButton).
+  /// Năm có refund > 0 nhưng chưa có key ở đây mặc định coi là "processing" (xem
+  /// DEFAULT_REFUND_YEAR_STATUS trong src/lib/refund-status.ts).
+  refundYearStatus   Json     @default("{}")
+  /// Record<năm, string> — lý do Pending nhập tay, chỉ có ý nghĩa khi năm đó đang ở trạng
+  /// thái "pending" (refundYearStatus). KHÔNG giới hạn quyền sửa theo role như
+  /// refundYearStatus — mọi user đăng nhập đều sửa được (xem PATCH /api/cases/[id], field
+  /// này không map qua FIELD_TO_COLUMN_KEY nên không bị chặn theo editableBy).
+  refundYearPendingReason Json @default("{}")
   /// Thời điểm gần nhất đã "Send row to Google Sheet" (gửi thật hoặc bấm "Mark as sent"
   /// đánh dấu thủ công) — null = chưa gửi/đã bấm "muốn gửi lại". Lưu xuống DB (không chỉ
   /// React state) để nút Send giữ đúng trạng thái xanh (đã gửi) qua reload/deploy lại,
@@ -82,6 +97,12 @@ model Case {
   /// Tương tự sheetSentAt nhưng cho nút "Send mail to CPA" — xem
   /// POST /api/cases/[id]/send-cpa-email.
   cpaEmailSentAt     DateTime?
+  /// Thứ tự hiển thị dòng trên bảng Hồ sơ (kéo-thả) — số càng nhỏ hiển thị càng lên trên.
+  /// Dùng fractional indexing (giá trị mới = trung bình 2 hàng xóm khi kéo-thả) để không
+  /// phải ghi lại toàn bộ bảng mỗi lần đổi vị trí 1 dòng. Hồ sơ mới luôn nhận giá trị âm
+  /// theo epoch-ms hiện tại (-Date.now()) nên tự động lên đầu, giữ đúng hành vi "mới nhất
+  /// lên đầu" đã có trước khi field này tồn tại (xem migration backfill dữ liệu cũ).
+  sortOrder          Float    @default(0)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -103,7 +124,27 @@ model AppConfig {
   /// thứ tự nào được đẩy vào dòng mới khi bấm nút "Send" ở cột Status. null = Admin chưa
   /// cấu hình.
   googleSheetConfig  Json?
+  /// ClientEmailTemplate ({ subjectTemplate?: string; bodyTemplate?: string }) — mẫu email
+  /// cố định cho tính năng "Gửi email cho khách hàng" (popup Edit Hồ sơ). null/thiếu field
+  /// = dùng DEFAULT_CLIENT_EMAIL_SUBJECT/BODY trong src/lib/client-email-template.ts.
+  clientEmailTemplate Json?
   updatedAt          DateTime @updatedAt
 
   @@map("app_config")
+}
+
+/// Bảng tin "Rules" (tab điều hướng riêng, sau Orders) — Quản lý thêm/sửa/xoá thông báo
+/// quy định nội bộ. Xoá KHÔNG xoá hẳn (soft-delete qua deletedAt/deletedBy) — rule bị xoá
+/// vẫn hiện trong danh sách, bị đẩy xuống cuối + gạch ngang chữ (xem GET /api/rules cho
+/// thứ tự sắp xếp, src/components/rule-card.tsx cho UI gạch ngang).
+model Rule {
+  id        String    @id @default(cuid())
+  content   String
+  createdAt DateTime  @default(now())
+  createdBy String?
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  deletedBy String?
+
+  @@map("rules")
 }

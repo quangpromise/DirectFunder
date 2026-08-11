@@ -7,6 +7,7 @@ import { ASSIGNABLE_ROLES } from "@/lib/rbac";
 import { useT, useLanguage } from "@/lib/i18n";
 import { CpaEmailDefaultsDialog } from "@/components/cpa-email-defaults-dialog";
 import { GoogleSheetConfigDialog } from "@/components/google-sheet-config-dialog";
+import { ClientEmailTemplateDialog } from "@/components/client-email-template-dialog";
 
 export default function PermissionsPage() {
   const user = useCurrentUser();
@@ -16,6 +17,8 @@ export default function PermissionsPage() {
   const setCpaEmailDefaults = useAppStore((s) => s.setCpaEmailDefaults);
   const googleSheetConfig = useAppStore((s) => s.googleSheetConfig);
   const setGoogleSheetConfig = useAppStore((s) => s.setGoogleSheetConfig);
+  const clientEmailTemplate = useAppStore((s) => s.clientEmailTemplate);
+  const setClientEmailTemplate = useAppStore((s) => s.setClientEmailTemplate);
   const columns = useAppStore((s) => s.columns);
   const t = useT();
   const { language } = useLanguage();
@@ -41,6 +44,7 @@ export default function PermissionsPage() {
         <div className="flex flex-wrap items-center gap-2">
           <CpaEmailDefaultsDialog defaults={cpaEmailDefaults} onSave={setCpaEmailDefaults} />
           <GoogleSheetConfigDialog config={googleSheetConfig} columns={columns} onSave={setGoogleSheetConfig} />
+          <ClientEmailTemplateDialog value={clientEmailTemplate ?? {}} onSave={setClientEmailTemplate} />
         </div>
       </div>
 

@@ -47,6 +47,8 @@ export const ASSIGNABLE_FEATURES = [
   "manageUsers",
   "sendCpaEmail",
   "sendToGoogleSheet",
+  "sendClientEmail",
+  "manageRules",
 ] as const;
 export type FeatureKey = (typeof ASSIGNABLE_FEATURES)[number];
 
@@ -61,6 +63,8 @@ export const FEATURE_LABEL: Record<Language, Record<FeatureKey, string>> = {
     manageUsers: "Quản lý tài khoản",
     sendCpaEmail: "Gửi email cho CPA",
     sendToGoogleSheet: "Gửi dòng dữ liệu lên Google Sheet",
+    sendClientEmail: "Gửi email cho khách hàng",
+    manageRules: "Thêm / sửa / xóa Rules",
   },
   en: {
     addColumn: "Add new column",
@@ -72,6 +76,8 @@ export const FEATURE_LABEL: Record<Language, Record<FeatureKey, string>> = {
     manageUsers: "Manage accounts",
     sendCpaEmail: "Send email to CPA",
     sendToGoogleSheet: "Send row to Google Sheet",
+    sendClientEmail: "Send email to client",
+    manageRules: "Add / edit / delete Rules",
   },
 };
 
@@ -82,6 +88,16 @@ export const FEATURE_LABEL: Record<Language, Record<FeatureKey, string>> = {
 export interface CpaEmailDefaults {
   to: string[];
   cc: string[];
+  subjectTemplate?: string;
+  bodyTemplate?: string;
+}
+
+/** Mẫu Subject/Body cố định cho tính năng "Gửi email cho khách hàng" (popup Edit Hồ sơ,
+ * nút cạnh ô Email) — Admin cấu hình chung toàn app qua dialog cài đặt ở trang Phân quyền.
+ * Không có to/cc: người nhận LUÔN là email khách hàng của hồ sơ đang mở. Biến hỗ trợ khác
+ * CpaEmailDefaults (xem client-email-template.ts) — không có {ssn}/{money}/{status}. Rỗng/
+ * undefined = dùng mẫu mặc định trong code. */
+export interface ClientEmailTemplate {
   subjectTemplate?: string;
   bodyTemplate?: string;
 }
@@ -137,7 +153,38 @@ export interface User {
   teamMemberIds?: string[];
 }
 
-export type ColumnType = "text" | "number" | "currency" | "boolean" | "date" | "select" | "phone" | "order" | "zipcode" | "digits";
+export type ColumnType =
+  | "text"
+  | "number"
+  | "currency"
+  | "boolean"
+  | "date"
+  | "select"
+  | "phone"
+  | "order"
+  | "zipcode"
+  | "digits"
+  // Cột hệ thống cố định "Check Initial" (4 checkbox độc lập: EL/Security Check/Agent
+  // guarantees SC/Bank Information) — giống "order", KHÔNG nằm trong TYPE_OPTIONS của
+  // AddColumnDialog nên Admin không tự thêm cột kiểu này được, chỉ có đúng 1 cột cố định
+  // trong DEFAULT_COLUMNS (xem CHECK_INITIAL_COLUMN_ID trong check-initial.ts).
+  | "checklist";
+
+/** Giá trị của cột "Check Initial" — lưu trong CaseRecord.custom[CHECK_INITIAL_COLUMN_ID]
+ * dạng object (khác mọi cột custom khác vốn chỉ string/number/boolean/null). */
+export interface CheckInitialValue {
+  /** Trước đây là "el" — đổi tên 2026-08-11 để tách 2 mốc EL trước/sau 07/16 (loại trừ
+   * lẫn nhau, xem check-initial-cell.tsx). */
+  elBefore0716: boolean;
+  elAfter0716: boolean;
+  securityCheck: boolean;
+  agentGuaranteesSc: boolean;
+  bankInfo: boolean;
+}
+
+/** Trạng thái xử lý của 1 năm refund — chọn qua dropdown trong popup nút mắt cạnh cột
+ * "Case" (CaseRefundStatusButton). Xem src/lib/refund-status.ts cho màu sắc/nhãn/mặc định. */
+export type RefundYearStatus = "preProcessing" | "processing" | "pending" | "cpaReview";
 
 export interface SelectOption {
   id: string;
@@ -254,7 +301,7 @@ export interface CaseRecord {
   assignedTo: string | null;
   /** Người phụ trách vai trò Processor cho hồ sơ này. */
   assignedProcessor: string | null;
-  custom: Record<string, string | number | boolean | null>;
+  custom: Record<string, string | number | boolean | null | CheckInitialValue>;
   /** ISO datetime lần gần nhất đã "Send row to Google Sheet" (gửi thật hoặc bấm "Mark as
    * sent" đánh dấu thủ công) — null = chưa gửi/vừa xác nhận "muốn gửi lại". Lưu ở server
    * (không chỉ React state) để nút Send giữ đúng màu xanh qua reload — xem
@@ -262,6 +309,18 @@ export interface CaseRecord {
   sheetSentAt: string | null;
   /** Tương tự sheetSentAt nhưng cho nút "Send mail to CPA" — xem SendCpaEmailDialog. */
   cpaEmailSentAt: string | null;
+  /** Thứ tự hiển thị dòng trên bảng Hồ sơ (kéo-thả) — số càng nhỏ hiển thị càng lên trên.
+   * Xem ghi chú fractional indexing ở reorderCase (app-store.ts) và Case.sortOrder
+   * (schema.prisma). */
+  sortOrder: number;
+  /** Trạng thái xử lý riêng cho từng năm refund (key = năm "2022".."2025") — chọn qua
+   * popup nút mắt cạnh cột "Case" (CaseRefundStatusButton). Năm có refund > 0 nhưng chưa
+   * có key ở đây mặc định coi là "processing" — xem src/lib/refund-status.ts. */
+  refundYearStatus: Record<string, RefundYearStatus>;
+  /** Lý do Pending nhập tay (key = năm) — chỉ hiển thị/có ý nghĩa khi năm đó đang
+   * "pending". Khác refundYearStatus: KHÔNG giới hạn theo role, mọi user đăng nhập đều
+   * sửa được (xem PATCH /api/cases/[id]). */
+  refundYearPendingReason: Record<string, string>;
   /** Id người tạo hồ sơ này — dùng để Agent Leader/Processor Leader tự sửa được hồ sơ
    * do chính mình thêm vào, kể cả khi chưa gán cho thành viên nào trong nhóm. */
   createdBy: string | null;
@@ -292,6 +351,19 @@ export interface EditHistoryRecord {
   newValue: string;
   editedByUserId: string;
   editedAt: string;
+}
+
+/** 1 mục trong bảng tin "Rules" (quy định nội bộ, tab riêng sau Orders). `deletedAt` !=
+ * null nghĩa là đã "xoá" nhưng vẫn hiển thị (đẩy xuống cuối, gạch ngang chữ) — xem
+ * GET /api/rules cho thứ tự sắp xếp, ruleIsNewToday() trong lib/rules.ts cho badge "New". */
+export interface RuleRecord {
+  id: string;
+  content: string;
+  createdAt: string;
+  createdBy: string | null;
+  updatedAt: string;
+  deletedAt: string | null;
+  deletedBy: string | null;
 }
 
 export type NotificationType = "assigned" | "status_change" | "mention";

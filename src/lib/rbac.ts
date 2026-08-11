@@ -1,4 +1,5 @@
 import { CaseRecord, ColumnDef, FeatureKey, FeaturePermissions, Role } from "./types";
+import { CHECK_INITIAL_COLUMN_ID } from "./check-initial";
 
 /**
  * Ma trận phân quyền cột: mỗi cột định nghĩa sẵn danh sách role được phép sửa,
@@ -37,7 +38,7 @@ export const DEFAULT_COLUMNS: ColumnDef[] = [
     label: "SSN",
     type: "text",
     editableBy: ["manager", "agent", "processor", "accounting", "agent_leader", "processor_leader"],
-    width: 112,
+    width: 100,
   },
   {
     id: "phone",
@@ -45,7 +46,7 @@ export const DEFAULT_COLUMNS: ColumnDef[] = [
     label: "Phone",
     type: "phone",
     editableBy: ["manager", "agent", "processor", "support", "agent_leader", "processor_leader"],
-    width: 140,
+    width: 128,
   },
   {
     id: "zipcode",
@@ -53,8 +54,12 @@ export const DEFAULT_COLUMNS: ColumnDef[] = [
     label: "Zip",
     type: "zipcode",
     editableBy: ["manager", "agent", "processor", "agent_leader", "processor_leader"],
-    width: 88,
+    width: 86,
   },
+  // Ẩn khỏi bảng Hồ sơ theo yêu cầu (2026-08-11) — vẫn sửa được qua popup "Edit Hồ sơ"
+  // (editableBy ở đây vẫn là nguồn phân quyền cho ClientProfileDialog), chỉ không còn
+  // hiển thị cột riêng ngoài bảng chính nữa. Cùng cơ chế "hidden: true" với
+  // dateOfBirth/phone2/email/refunds bên dưới.
   {
     id: "address",
     key: "address",
@@ -62,6 +67,7 @@ export const DEFAULT_COLUMNS: ColumnDef[] = [
     type: "text",
     editableBy: ["manager", "accounting", "agent", "processor", "support", "agent_leader", "processor_leader"],
     width: 90,
+    hidden: true,
   },
   {
     id: "description",
@@ -97,7 +103,7 @@ export const DEFAULT_COLUMNS: ColumnDef[] = [
     type: "digits",
     editableBy: [],
     custom: true,
-    width: 78,
+    width: 80,
   },
   // "Money" giờ LUÔN tự tính = tổng "refunds", editableBy để rỗng CỐ Ý để khoá sửa trực
   // tiếp trong bảng — chỉ đổi được gián tiếp qua popup "Edit Hồ sơ" (xem comment cột
@@ -108,7 +114,7 @@ export const DEFAULT_COLUMNS: ColumnDef[] = [
     label: "Money",
     type: "currency",
     editableBy: [],
-    width: 94,
+    width: 92,
   },
   // 4 cột dưới đây KHÔNG hiển thị trong bảng Hồ sơ (hidden: true, giống "caseNumber") —
   // chỉ tồn tại để lưu editableBy làm nguồn phân quyền DUY NHẤT cho popup "Edit Hồ sơ"
@@ -148,6 +154,19 @@ export const DEFAULT_COLUMNS: ColumnDef[] = [
     type: "currency",
     editableBy: ["manager", "accounting", "agent", "processor", "agent_leader", "processor_leader"],
     hidden: true,
+  },
+  // 4 checkbox độc lập (EL/Security Check/Agent guarantees SC/Bank Information) — cột hệ
+  // thống cố định (type "checklist", KHÔNG có trong TYPE_OPTIONS của AddColumnDialog nên
+  // Admin không tự thêm thêm cột kiểu này được), giá trị lưu dạng object trong
+  // custom[checkInitial] (xem CheckInitialValue trong types.ts, CheckInitialCell render).
+  {
+    id: CHECK_INITIAL_COLUMN_ID,
+    key: CHECK_INITIAL_COLUMN_ID,
+    label: "Check Initial",
+    type: "checklist",
+    editableBy: ["manager", "processor"],
+    custom: true,
+    width: 150,
   },
   {
     id: "order",
@@ -215,6 +234,12 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermissions = {
   sendCpaEmail: ["processor"],
   // Tương tự sendCpaEmail — chỉ Processor cần liệt kê, Manager mặc định qua hasFeature().
   sendToGoogleSheet: ["processor"],
+  // Tương tự sendCpaEmail — chỉ Processor cần liệt kê, Manager mặc định qua hasFeature().
+  sendClientEmail: ["processor"],
+  // Thêm/sửa/xoá rule ở tab Rules — mặc định CHỈ Quản lý (mảng rỗng, Manager luôn được qua
+  // hasFeature() không cần liệt kê), Admin có thể cấp thêm cho role khác qua trang Phân
+  // quyền. Mọi user đã đăng nhập đều XEM được tab Rules bất kể quyền này (không giới hạn xem).
+  manageRules: [],
 };
 
 /** Quyền sửa từng cột hoàn toàn theo cấu hình editableBy — kể cả với Admin. */

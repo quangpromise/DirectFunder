@@ -796,7 +796,10 @@ export default function OrdersPage() {
                   {formatOrderDate(o.placedAt)}
                 </div>
                 <div className={`flex min-w-0 items-center justify-center gap-1 border-r border-border px-3 py-2.5 transition ${cellBg} ${isLast ? "" : "border-b"}`}>
-                  <span className="min-w-0 flex-1 truncate text-center text-xs font-medium" title={row.name || undefined}>
+                  <span
+                    className={`min-w-0 flex-1 truncate text-center text-[11px] font-semibold ${c.clientLink ? "text-blue-400" : "text-text"}`}
+                    title={row.name || undefined}
+                  >
                     {row.name || "—"}
                   </span>
                   <ClientLinkButton
@@ -805,12 +808,12 @@ export default function OrdersPage() {
                     onCommitLink={(link) => updateClientLink(c.id, link)}
                   />
                 </div>
-                <div className={`flex flex-col items-center justify-center gap-0.5 border-r border-border px-3 py-2.5 text-center text-xs text-text-dim transition ${cellBg} ${isLast ? "" : "border-b"}`}>
-                  <span>{c.phone || "—"}</span>
+                <div className={`flex flex-col items-center justify-center gap-0.5 border-r border-border px-3 py-2.5 text-center text-[11px] font-semibold text-text transition ${cellBg} ${isLast ? "" : "border-b"}`}>
+                  <span>{c.phone || <span className="font-normal text-text-faint">—</span>}</span>
                   {c.phone2 && <span>{c.phone2}</span>}
                 </div>
-                <div className={`flex items-center justify-center border-r border-border px-3 py-2.5 text-center text-xs text-text-dim transition ${cellBg} ${isLast ? "" : "border-b"}`}>
-                  {row.ssn ? formatSsn(row.ssn) : "—"}
+                <div className={`flex items-center justify-center border-r border-border px-3 py-2.5 text-center text-[11px] font-semibold text-text transition ${cellBg} ${isLast ? "" : "border-b"}`}>
+                  {row.ssn ? formatSsn(row.ssn) : <span className="font-normal text-text-faint">—</span>}
                 </div>
                 {showFormatNameCol && (
                   <div className={`flex items-center justify-center border-r border-border px-3 py-2.5 text-xs text-text-dim transition ${cellBg} ${isLast ? "" : "border-b"}`}>

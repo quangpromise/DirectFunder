@@ -18,6 +18,7 @@ export async function GET() {
     // (tên người dùng đang đăng nhập — xem cases/page.tsx) không có sẵn.
     cpaSenderEmail: process.env.GMAIL_USER ?? null,
     googleSheetConfig: config.googleSheetConfig,
+    clientEmailTemplate: config.clientEmailTemplate,
   });
 }
 
@@ -96,6 +97,9 @@ export async function PUT(request: NextRequest) {
   if (me.role === "manager" && "googleSheetConfig" in body) {
     data.googleSheetConfig = body.googleSheetConfig;
   }
+  if (me.role === "manager" && "clientEmailTemplate" in body) {
+    data.clientEmailTemplate = body.clientEmailTemplate;
+  }
 
   const config = await prisma.appConfig.update({
     where: { id: "singleton" },
@@ -106,5 +110,6 @@ export async function PUT(request: NextRequest) {
     featurePermissions: config.featurePermissions,
     cpaEmailDefaults: config.cpaEmailDefaults,
     googleSheetConfig: config.googleSheetConfig,
+    clientEmailTemplate: config.clientEmailTemplate,
   });
 }

@@ -1,4 +1,5 @@
 import { DateFormat } from "@/lib/types";
+import { toPhoenixDateStr } from "@/lib/report-period";
 
 /** Định dạng giá trị cột type "date" (luôn lưu ISO "YYYY-MM-DD") để HIỂN THỊ theo cấu
  * hình Admin chọn — không đổi giá trị lưu trữ, chỉ đổi chuỗi hiển thị (readonly text,
@@ -50,11 +51,11 @@ export function parseDobPaste(raw: string): string | null {
   return null;
 }
 
-/** Ngày hiện tại (giờ server) dạng ISO "YYYY-MM-DD" — dùng làm giá trị gốc cho trường
- * "Ngày gửi" ảo (SEND_DATE_COLUMN_ID) trước khi format theo dateFormat đã chọn. */
+/** Ngày hiện tại theo giờ Phoenix (múi giờ nghiệp vụ của công ty — thống nhất với mọi chỗ
+ * khác trong app dùng toPhoenixDateStr, KHÔNG dùng giờ hệ điều hành server vì server chạy
+ * trên Vercel là UTC, lệch hẳn so với "hôm nay" thực tế của công ty) dạng ISO "YYYY-MM-DD"
+ * — dùng làm giá trị gốc cho trường "Ngày gửi" ảo (SEND_DATE_COLUMN_ID) trước khi format
+ * theo dateFormat đã chọn. */
 export function todayIsoDate(now: Date = new Date()): string {
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+  return toPhoenixDateStr(now);
 }

@@ -30,6 +30,9 @@ export function toCaseRecord(row: {
   custom: Prisma.JsonValue;
   sheetSentAt: Date | null;
   cpaEmailSentAt: Date | null;
+  sortOrder: number;
+  refundYearStatus: Prisma.JsonValue;
+  refundYearPendingReason: Prisma.JsonValue;
   createdAt: Date;
   updatedAt: Date;
 }): CaseRecord {
@@ -58,6 +61,9 @@ export function toCaseRecord(row: {
     custom: row.custom as unknown as CaseRecord["custom"],
     sheetSentAt: row.sheetSentAt ? row.sheetSentAt.toISOString() : null,
     cpaEmailSentAt: row.cpaEmailSentAt ? row.cpaEmailSentAt.toISOString() : null,
+    sortOrder: row.sortOrder,
+    refundYearStatus: (row.refundYearStatus as unknown as CaseRecord["refundYearStatus"]) ?? {},
+    refundYearPendingReason: (row.refundYearPendingReason as unknown as CaseRecord["refundYearPendingReason"]) ?? {},
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -67,7 +73,7 @@ export async function GET() {
   const me = await requireUser();
   if (!me) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
 
-  const rows = await prisma.case.findMany({ orderBy: { createdAt: "desc" } });
+  const rows = await prisma.case.findMany({ orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }] });
   const visible = rows
     .map(toCaseRecord)
     .filter((c) =>
@@ -141,6 +147,11 @@ export async function POST(request: NextRequest) {
       assignedProcessor: body.assignedProcessor ?? null,
       createdBy: body.createdBy ?? me.id,
       custom: (body.custom ?? {}) as unknown as Prisma.InputJsonValue,
+      // Client (app-store.ts addRow) đã tự tính sẵn -Date.now() cho dòng tạm hiển thị
+      // ngay ở đầu bảng — giữ nguyên giá trị đó nếu có, fallback tự tính lại nếu thiếu.
+      sortOrder: body.sortOrder ?? -Date.now(),
+      refundYearStatus: (body.refundYearStatus ?? {}) as unknown as Prisma.InputJsonValue,
+      refundYearPendingReason: (body.refundYearPendingReason ?? {}) as unknown as Prisma.InputJsonValue,
     };
   } else {
     const columns = (config?.columns as ColumnDef[] | undefined) ?? [];
@@ -173,6 +184,9 @@ export async function POST(request: NextRequest) {
       // 0 (xem rbac.ts) — hồ sơ mới chưa có refund nào nên mặc định 0, không còn "1" như
       // quy ước cũ (mã hồ sơ nhập tay).
       custom: { caseLabel: 0 },
+      sortOrder: -Date.now(),
+      refundYearStatus: {},
+      refundYearPendingReason: {},
     };
   }
 

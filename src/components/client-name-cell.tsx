@@ -9,14 +9,16 @@ import type { ClientProfilePayload } from "@/lib/api-client";
  * chỉ hiển thị read-only. Sửa được duy nhất qua popup "Edit Hồ sơ" (nút bút chì). */
 function NameDisplay({ value, hasLink }: { value: string; hasLink: boolean }) {
   // Có link đính kèm (kiểu hyperlink Excel) -> đổi màu chữ tên khách sang xanh dương
-  // sáng để nhận biết ngay trên bảng, không cần hover vào icon link.
-  const linkColorClass = hasLink && value ? "text-blue-400" : "";
+  // sáng để nhận biết ngay trên bảng, không cần hover vào icon link. Không có link -> chữ
+  // đậm + tương phản cao (trắng sáng Dark Mode/đen đậm Light Mode, xem --text trong
+  // globals.css) thay vì text-text-dim mờ trước đây, ĐỒNG BỘ với SSN/Phone/Zip/Case/Money.
+  const linkColorClass = hasLink && value ? "text-blue-400" : "text-text";
   return (
     <div
-      className={`min-w-0 flex-1 truncate px-1.5 py-0.5 text-center text-xs ${linkColorClass || "text-text-dim"}`}
+      className={`min-w-0 flex-1 truncate px-1.5 py-0.5 text-center text-[11px] font-semibold ${linkColorClass}`}
       title={value || undefined}
     >
-      {value || <span className="text-text-faint">—</span>}
+      {value || <span className="font-normal text-text-faint">—</span>}
     </div>
   );
 }
@@ -29,6 +31,11 @@ export function ClientNameCell({
   onCommitLink,
   onSaveProfile,
   isDuplicateSsn,
+  canSendClientEmail,
+  confirm,
+  alertWarn,
+  sendClientEmail,
+  connectMicrosoftAccount,
 }: {
   caseRecord: CaseRecord;
   columns: ColumnDef[];
@@ -39,6 +46,13 @@ export function ClientNameCell({
   onCommitLink: (link: string | null) => void;
   onSaveProfile: (payload: ClientProfilePayload) => Promise<{ ok: true } | { ok: false; error: string }>;
   isDuplicateSsn: (slot: 0 | 1, candidate: string) => boolean;
+  canSendClientEmail: boolean;
+  confirm: (message: string, opts?: { title?: string; tone?: "default" | "danger" }) => Promise<boolean>;
+  alertWarn: (message: string, opts?: { title?: string }) => Promise<void>;
+  sendClientEmail: (
+    caseId: string
+  ) => Promise<{ ok: true } | { ok: false; error: string; needsMicrosoftAuth?: boolean }>;
+  connectMicrosoftAccount: () => Promise<boolean>;
 }) {
   const hasLink = Boolean(caseRecord.clientLink);
   return (
@@ -52,6 +66,11 @@ export function ClientNameCell({
           role={role}
           onSave={onSaveProfile}
           isDuplicateSsn={isDuplicateSsn}
+          canSendClientEmail={canSendClientEmail}
+          confirm={confirm}
+          alertWarn={alertWarn}
+          sendClientEmail={sendClientEmail}
+          connectMicrosoftAccount={connectMicrosoftAccount}
         />
       </div>
       <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5 py-1">

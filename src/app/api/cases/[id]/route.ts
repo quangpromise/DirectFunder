@@ -18,6 +18,9 @@ const FIELD_TO_COLUMN_KEY: Record<string, string> = {
   description: "description",
   caseNumber: "caseNumber",
   money: "money",
+  // Dùng chung nguồn phân quyền với cột ẩn "refunds" (ClientProfileDialog) — trạng thái
+  // xử lý từng năm gắn liền với refund nên hợp lý để cùng 1 nhóm role sửa được.
+  refundYearStatus: "refunds",
 };
 
 const ALLOWED_FIELDS = new Set([
@@ -36,6 +39,9 @@ const ALLOWED_FIELDS = new Set([
   "assignedTo",
   "assignedProcessor",
   "custom",
+  "sortOrder",
+  "refundYearStatus",
+  "refundYearPendingReason",
 ]);
 
 export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/cases/[id]">) {
@@ -76,6 +82,30 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/cases/
       const existing = await prisma.case.findUnique({ where: { id }, select: { custom: true } });
       const merged = { ...((existing?.custom as Record<string, unknown>) ?? {}), ...(value as Record<string, unknown>) };
       data.custom = merged as Prisma.InputJsonValue;
+      continue;
+    }
+    // Client chỉ gửi lên đúng 1 năm vừa đổi (vd. { "2024": "pending" }) — merge cộng dồn
+    // vào object hiện có trên DB, tránh ghi đè mất trạng thái các năm khác nếu 2 người
+    // sửa gần như cùng lúc (cùng cơ chế merge với "custom" ở trên).
+    if (field === "refundYearStatus" && value && typeof value === "object") {
+      const existing = await prisma.case.findUnique({ where: { id }, select: { refundYearStatus: true } });
+      const merged = {
+        ...((existing?.refundYearStatus as Record<string, unknown>) ?? {}),
+        ...(value as Record<string, unknown>),
+      };
+      data.refundYearStatus = merged as Prisma.InputJsonValue;
+      continue;
+    }
+    // Không map qua FIELD_TO_COLUMN_KEY (không có bước canEditColumn ở trên) -> mọi user
+    // đã đăng nhập đều sửa được, đúng yêu cầu "phân quyền edit cho tất cả user" (khác
+    // refundYearStatus vẫn giới hạn theo role của cột "refunds").
+    if (field === "refundYearPendingReason" && value && typeof value === "object") {
+      const existing = await prisma.case.findUnique({ where: { id }, select: { refundYearPendingReason: true } });
+      const merged = {
+        ...((existing?.refundYearPendingReason as Record<string, unknown>) ?? {}),
+        ...(value as Record<string, unknown>),
+      };
+      data.refundYearPendingReason = merged as Prisma.InputJsonValue;
       continue;
     }
     (data as Record<string, unknown>)[field] = value;

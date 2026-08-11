@@ -2,9 +2,20 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, Volume2, VolumeX } from "lucide-react";
+import { Bell, Volume2, VolumeX, UserPlus, RefreshCw, AtSign, X } from "lucide-react";
 import { useAppStore } from "@/store/app-store";
 import { useLanguage, useT } from "@/lib/i18n";
+import { Avatar } from "@/components/avatar";
+import type { NotificationType } from "@/lib/types";
+
+/** Icon + màu badge nhỏ đè góc dưới-phải avatar (kiểu Facebook: mỗi loại thông báo có
+ * 1 icon tròn màu riêng) — chỉ 3 loại NotificationType hiện có nên map trực tiếp,
+ * không cần bảng cấu hình rời. */
+const NOTIF_TYPE_STYLE: Record<NotificationType, { icon: typeof UserPlus; className: string }> = {
+  assigned: { icon: UserPlus, className: "bg-blue-500" },
+  status_change: { icon: RefreshCw, className: "bg-amber-500" },
+  mention: { icon: AtSign, className: "bg-emerald-500" },
+};
 
 function timeAgo(iso: string, language: "vi" | "en"): string {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -25,6 +36,7 @@ function timeAgo(iso: string, language: "vi" | "en"): string {
 
 export function NotificationBell({ currentUserId }: { currentUserId: string }) {
   const [open, setOpen] = useState(false);
+  const [filter, setFilter] = useState<"all" | "unread">("all");
   const notifications = useAppStore((s) => s.notifications);
   /** Thông báo mới nhất vừa nhận (không phải toàn bộ mine) — hiện 1 banner nhỏ ngay dưới
    * nút chuông trong ~10s rồi tự tắt (xem useEffect phát âm thanh bên dưới, tái dùng
@@ -51,6 +63,15 @@ export function NotificationBell({ currentUserId }: { currentUserId: string }) {
 
   const mine = notifications.filter((n) => n.toUserId === currentUserId);
   const unreadCount = mine.filter((n) => !n.read).length;
+
+  // Mở dropdown đánh dấu TOÀN BỘ đã đọc ngay (giữ hành vi cũ, tắt số đỏ trên chuông) —
+  // nhưng vẫn cần biết "cái nào MỚI VỪA chưa đọc trước khi mở" để giữ style nổi bật
+  // (bold/nền xanh nhạt/chấm xanh) trong lúc panel đang mở, giống Facebook: đã "seen"
+  // (số đỏ tắt) không có nghĩa là hết nổi bật ngay lập tức. Chụp nhanh (snapshot) 1 lần
+  // ngay TRƯỚC khi gọi markAllNotificationsRead(), không đọc lại theo n.read (đã đổi
+  // thành true trong store ngay sau đó).
+  const [unreadSnapshot, setUnreadSnapshot] = useState<Set<string>>(new Set());
+  const visibleList = filter === "unread" ? mine.filter((n) => unreadSnapshot.has(n.id)) : mine;
 
   // Phát âm thanh mỗi khi có notification MỚI cho đúng tài khoản đang đăng nhập — so
   // sánh id với lần render trước (không dùng length vì đọc/markAllRead cũng đổi length
@@ -94,10 +115,14 @@ export function NotificationBell({ currentUserId }: { currentUserId: string }) {
           // a different component".
           const next = !open;
           setOpen(next);
-          if (next && unreadCount > 0) markAllNotificationsRead();
-          if (next) setToastNotification(null);
+          if (next) {
+            setUnreadSnapshot(new Set(mine.filter((n) => !n.read).map((n) => n.id)));
+            setFilter("all");
+            if (unreadCount > 0) markAllNotificationsRead();
+            setToastNotification(null);
+          }
         }}
-        className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-surface text-text-dim transition hover:bg-surface-hover hover:text-text"
+        className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-surface text-text-dim transition hover:bg-surface-hover hover:text-text active:scale-95"
         aria-label={t("notif.ariaLabel")}
       >
         <Bell size={17} />
@@ -108,51 +133,107 @@ export function NotificationBell({ currentUserId }: { currentUserId: string }) {
         )}
       </button>
 
-      {/* Banner thông báo mới — bong bóng kiểu tin nhắn NỐI LIỀN từ chân nút chuông (đuôi
-          tam giác xem .notif-toast::before trong globals.css), nền ĐEN cố định + chữ màu
-          xanh dương SÁNG (--accent-from, đầu gradient logo — sáng hơn --accent gốc, xem
-          globals.css/ui-design.md — KHÔNG đổi theo theme). Tự nhấp nháy chậm (tái dùng
-          .greeting-blink đã có — mờ dần rồi rõ lại, chu kỳ 3.5s) để dễ thu hút chú ý hơn.
-          Bấm vào -> đánh dấu đã đọc + tắt banner ngay (đúng như bấm 1 thông báo trong
-          dropdown, kèm nhảy tới đúng hồ sơ). Tự tắt sau 10s nếu không bấm (xem useEffect
-          phát hiện id mới ở trên) hoặc tắt ngay nếu người dùng mở dropdown xem chi tiết. */}
-      {!open && toastNotification && (
-        <button
-          onClick={() => {
-            const n = toastNotification;
-            markNotificationRead(n.id);
-            setToastNotification(null);
-            goToNotification(n.caseId);
-          }}
-          className="notif-toast greeting-blink absolute right-0 top-full z-50 mt-2.5 w-72 max-w-[70vw] rounded-xl bg-black px-3 py-2.5 text-left text-xs font-medium text-accent-from shadow-2xl shadow-black/60 transition hover:bg-neutral-900"
-        >
-          {toastNotification.message}
-        </button>
-      )}
+      {/* Banner thông báo mới — thẻ nổi kiểu Facebook desktop (avatar tròn + icon-badge góc
+          theo loại thông báo, giống hệt style dùng trong dropdown bên dưới), KHÔNG còn
+          bong bóng đuôi tam giác/nhấp nháy như bản cũ — trượt nhẹ + mờ dần vào (xem
+          .notif-toast-in trong globals.css) trông hiện đại và ít gây rối mắt hơn. Bấm vào
+          nội dung -> đánh dấu đã đọc + nhảy tới đúng hồ sơ; nút X riêng chỉ đóng banner,
+          KHÔNG đánh dấu đã đọc (vẫn còn nguyên trong dropdown để xem lại). Tự tắt sau 10s
+          nếu không thao tác gì (xem useEffect phát hiện id mới ở trên). */}
+      {!open &&
+        toastNotification &&
+        (() => {
+          const n = toastNotification;
+          const from = users.find((u) => u.id === n.fromUserId);
+          const { icon: TypeIcon, className: badgeClassName } = NOTIF_TYPE_STYLE[n.type];
+          return (
+            <div className="notif-toast-in popover absolute right-0 top-full z-50 mt-2.5 w-80 max-w-[85vw] rounded-2xl p-3 shadow-2xl shadow-black/60">
+              <button
+                onClick={() => {
+                  markNotificationRead(n.id);
+                  setToastNotification(null);
+                  goToNotification(n.caseId);
+                }}
+                className="flex w-full items-start gap-3 text-left"
+              >
+                <div className="relative shrink-0">
+                  <Avatar name={from?.name ?? "?"} color={from?.avatarColor ?? "#6b7280"} url={from?.avatarUrl} size={44} />
+                  <span
+                    className={`absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full ring-2 ring-bg-elevated ${badgeClassName}`}
+                  >
+                    <TypeIcon size={11} strokeWidth={2.5} className="text-white" />
+                  </span>
+                </div>
+                <div className="min-w-0 flex-1 pt-0.5 pr-5">
+                  <p className="text-[13px] font-semibold leading-snug text-text">{n.message}</p>
+                  <p className="mt-0.5 text-[12px] font-semibold text-accent-from">{timeAgo(n.createdAt, language)}</p>
+                </div>
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setToastNotification(null);
+                  if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+                }}
+                aria-label={t("common.close")}
+                title={t("common.close")}
+                className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full text-text-faint transition hover:bg-surface-hover hover:text-text"
+              >
+                <X size={13} />
+              </button>
+            </div>
+          );
+        })()}
 
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="popover absolute right-0 z-50 mt-2 w-80 max-w-[85vw] rounded-xl p-2 shadow-2xl shadow-black/60">
-            <div className="flex items-center justify-between px-2 py-1.5">
-              <span className="text-sm font-medium">{t("notif.title")}</span>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setNotificationSoundMuted(!notificationSoundMuted)}
-                  title={notificationSoundMuted ? t("notif.unmute") : t("notif.mute")}
-                  aria-label={notificationSoundMuted ? t("notif.unmute") : t("notif.mute")}
-                  className="flex h-6 w-6 items-center justify-center rounded-md text-text-faint transition hover:bg-surface-hover hover:text-text"
-                >
-                  {notificationSoundMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
-                </button>
-              </div>
+          {/* Kiểu Facebook: panel rộng hơn, tiêu đề đậm cỡ lớn, 2 pill lọc Tất cả/Chưa đọc,
+              mỗi dòng có avatar tròn lớn + icon-badge nhỏ đè góc dưới-phải theo loại thông
+              báo (assigned/status_change/mention — xem NOTIF_TYPE_STYLE), dòng chưa đọc có
+              nền xanh nhạt + chữ đậm + chấm tròn xanh bên phải. */}
+          <div className="popover absolute right-0 z-50 mt-2 flex w-96 max-w-[90vw] flex-col rounded-2xl p-0 shadow-2xl shadow-black/60">
+            <div className="flex items-center justify-between px-4 pb-1 pt-3.5">
+              <span className="text-[17px] font-bold tracking-tight text-text">{t("notif.title")}</span>
+              <button
+                onClick={() => setNotificationSoundMuted(!notificationSoundMuted)}
+                title={notificationSoundMuted ? t("notif.unmute") : t("notif.mute")}
+                aria-label={notificationSoundMuted ? t("notif.unmute") : t("notif.mute")}
+                className="flex h-9 w-9 items-center justify-center rounded-full text-text-dim transition hover:bg-surface-hover hover:text-text"
+              >
+                {notificationSoundMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+              </button>
             </div>
-            <div className="mt-1 max-h-80 overflow-y-auto">
-              {mine.length === 0 && (
-                <div className="px-2 py-6 text-center text-xs text-text-faint">{t("notif.empty")}</div>
+
+            <div className="flex items-center gap-1.5 px-3.5 pb-2.5 pt-1">
+              {(["all", "unread"] as const).map((key) => (
+                <button
+                  key={key}
+                  onClick={() => setFilter(key)}
+                  className={`rounded-full px-3.5 py-1.5 text-[13px] font-semibold transition ${
+                    filter === key
+                      ? "bg-accent-soft text-accent-from"
+                      : "text-text-dim hover:bg-surface-hover hover:text-text"
+                  }`}
+                >
+                  {key === "all" ? t("notif.all") : t("notif.unread")}
+                </button>
+              ))}
+            </div>
+
+            <div className="max-h-96 overflow-y-auto px-2 pb-2">
+              {visibleList.length === 0 && (
+                <div className="flex flex-col items-center gap-2 px-2 py-10 text-center">
+                  <Bell size={26} className="text-text-faint" strokeWidth={1.5} />
+                  <span className="text-xs text-text-faint">
+                    {filter === "unread" ? t("notif.emptyUnread") : t("notif.empty")}
+                  </span>
+                </div>
               )}
-              {mine.map((n) => {
+              {visibleList.map((n) => {
                 const from = users.find((u) => u.id === n.fromUserId);
+                const unread = unreadSnapshot.has(n.id);
+                const { icon: TypeIcon, className: badgeClassName } = NOTIF_TYPE_STYLE[n.type];
                 return (
                   <button
                     key={n.id}
@@ -161,14 +242,27 @@ export function NotificationBell({ currentUserId }: { currentUserId: string }) {
                       setOpen(false);
                       goToNotification(n.caseId);
                     }}
-                    className={`flex w-full flex-col gap-0.5 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-surface-hover ${
-                      !n.read ? "bg-accent-soft" : ""
+                    className={`group flex w-full items-start gap-3 rounded-xl px-2.5 py-2.5 text-left transition ${
+                      unread ? "bg-accent-soft hover:brightness-[1.08]" : "hover:bg-surface-hover"
                     }`}
                   >
-                    <span className="text-text">{n.message}</span>
-                    <span className="text-text-faint">
-                      {from?.name} · {timeAgo(n.createdAt, language)}
-                    </span>
+                    <div className="relative shrink-0">
+                      <Avatar name={from?.name ?? "?"} color={from?.avatarColor ?? "#6b7280"} url={from?.avatarUrl} size={44} />
+                      <span
+                        className={`absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full ring-2 ring-bg-elevated ${badgeClassName}`}
+                      >
+                        <TypeIcon size={11} strokeWidth={2.5} className="text-white" />
+                      </span>
+                    </div>
+                    <div className="min-w-0 flex-1 pt-0.5">
+                      <p className={`text-[13px] leading-snug ${unread ? "font-semibold text-text" : "text-text-dim"}`}>
+                        {n.message}
+                      </p>
+                      <p className={`mt-0.5 text-[12px] ${unread ? "font-semibold text-accent-from" : "text-text-faint"}`}>
+                        {from?.name} · {timeAgo(n.createdAt, language)}
+                      </p>
+                    </div>
+                    {unread && <span className="mt-2 h-2.5 w-2.5 shrink-0 rounded-full bg-accent-from" />}
                   </button>
                 );
               })}

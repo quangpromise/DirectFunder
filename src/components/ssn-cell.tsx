@@ -85,8 +85,8 @@ function SsnSlot({
 
   if (!editable) {
     return (
-      <div className="w-full truncate px-2 py-0.5 text-center text-xs text-text-dim">
-        {value || <span className="text-text-faint">—</span>}
+      <div className="w-full truncate px-1.5 py-0.5 text-center text-[11px] font-semibold text-text">
+        {value || <span className="font-normal text-text-faint">—</span>}
       </div>
     );
   }
@@ -95,9 +95,9 @@ function SsnSlot({
     <button
       onClick={() => setEditing(true)}
       {...{ [CELL_NAV_ATTR]: "1" }}
-      className="w-full truncate rounded-md px-2 py-0.5 text-center text-xs transition hover:bg-surface-hover"
+      className="w-full truncate rounded-md px-1.5 py-0.5 text-center text-[11px] font-semibold text-text transition hover:bg-surface-hover"
     >
-      {value || <span className="text-text-faint">{t("ssn.add")}</span>}
+      {value || <span className="font-normal text-text-faint">{t("ssn.add")}</span>}
     </button>
   );
 }

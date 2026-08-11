@@ -10,8 +10,10 @@ import { formatSsn } from "@/lib/ssn";
 import { parseDobPaste } from "@/lib/date-format";
 import type { ClientProfilePayload } from "@/lib/api-client";
 import { useT } from "@/lib/i18n";
+import { SendClientEmailButton } from "./send-client-email-button";
 
 type SaveResult = { ok: true } | { ok: false; error: string };
+type SendClientEmailResult = { ok: true } | { ok: false; error: string; needsMicrosoftAuth?: boolean };
 
 function refundsToDraft(refunds: Record<string, number> | undefined): Record<string, string> {
   const draft: Record<string, string> = {};
@@ -62,6 +64,11 @@ export function ClientProfileDialog({
   role,
   isDuplicateSsn,
   onSave,
+  canSendClientEmail,
+  confirm,
+  alertWarn,
+  sendClientEmail,
+  connectMicrosoftAccount,
 }: {
   caseRecord: CaseRecord;
   columns: ColumnDef[];
@@ -70,6 +77,13 @@ export function ClientProfileDialog({
    * slot đang sửa của chính hồ sơ này) — dùng chung logic với SsnCell ở bảng chính. */
   isDuplicateSsn: (slot: 0 | 1, candidate: string) => boolean;
   onSave: (payload: ClientProfilePayload) => Promise<SaveResult>;
+  /** hasFeature(permissions, "sendClientEmail", role) — quyết định có hiện nút gửi email
+   * khách hàng cạnh ô Email hay không (Manager luôn true qua hasFeature()). */
+  canSendClientEmail: boolean;
+  confirm: (message: string, opts?: { title?: string; tone?: "default" | "danger" }) => Promise<boolean>;
+  alertWarn: (message: string, opts?: { title?: string }) => Promise<void>;
+  sendClientEmail: (caseId: string) => Promise<SendClientEmailResult>;
+  connectMicrosoftAccount: () => Promise<boolean>;
 }) {
   const [open, setOpen] = useState(false);
   const [clients, setClients] = useState<[ClientNameEntry, ClientNameEntry]>(caseRecord.clients);
@@ -123,9 +137,22 @@ export function ClientProfileDialog({
   }) as [string, string];
   const hasSsnDuplicate = ssnDuplicateErrors.some(Boolean);
 
+  // Last Name bắt buộc: luôn bắt buộc ở slot Taxpayer (khách hàng chính của hồ sơ); ở slot
+  // Spouse chỉ bắt buộc nếu đã nhập First Name (Spouse được phép để trống hoàn toàn).
+  const lastNameErrors: [string, string] = [0, 1].map((slot) => {
+    const entry = clients[slot as 0 | 1];
+    const required = slot === 0 || Boolean(entry.firstName.trim());
+    return required && !entry.lastName.trim() ? t("clientProfile.errLastNameRequired") : "";
+  }) as [string, string];
+  const hasLastNameError = canEdit("clientName") && lastNameErrors.some(Boolean);
+
   async function handleSave() {
     if (hasSsnDuplicate) {
       setError(t("ssn.errDuplicate"));
+      return;
+    }
+    if (hasLastNameError) {
+      setError(t("clientProfile.errLastNameRequired"));
       return;
     }
     const payload: ClientProfilePayload = {};
@@ -186,7 +213,10 @@ export function ClientProfileDialog({
               <div className="mt-3 flex flex-col gap-3 overflow-y-auto px-5 lg:flex-row">
                 <div className="grid flex-[2] grid-cols-1 gap-3 sm:grid-cols-2">
                   {([0, 1] as const).map((slot) => (
-                    <div key={slot} className="flex flex-col gap-1.5 rounded-lg border border-border p-2.5">
+                    <div
+                      key={slot}
+                      className="flex flex-col gap-1.5 rounded-lg border border-border p-2.5 transition-colors focus-within:border-accent focus-within:bg-accent-soft"
+                    >
                       <p className="text-xs font-semibold text-text-dim">
                         {slot === 0 ? t("clientProfile.taxpayer") : t("clientProfile.spouse")}
                       </p>
@@ -217,8 +247,11 @@ export function ClientProfileDialog({
                               return next;
                             })
                           }
-                          className={inputCls}
+                          className={`${inputCls} ${lastNameErrors[slot] ? "border-red-500" : ""}`}
                         />
+                        {lastNameErrors[slot] && (
+                          <p className="mt-0.5 text-[10px] leading-tight text-red-400">{lastNameErrors[slot]}</p>
+                        )}
                       </div>
                       <div>
                         <label className="mb-0.5 block text-[11px] text-text-faint">{t("clientProfile.ssn")}</label>
@@ -309,12 +342,23 @@ export function ClientProfileDialog({
                     </div>
                     <div>
                       <label className="mb-0.5 block text-[11px] text-text-dim">{t("clientProfile.email")}</label>
-                      <input
-                        value={email}
-                        disabled={!canEdit("email")}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className={inputCls}
-                      />
+                      <div className="flex items-center gap-1">
+                        <input
+                          value={email}
+                          disabled={!canEdit("email")}
+                          onChange={(e) => setEmail(e.target.value)}
+                          className={inputCls}
+                        />
+                        {canSendClientEmail && email.trim() && (
+                          <SendClientEmailButton
+                            caseId={caseRecord.id}
+                            confirm={confirm}
+                            alertWarn={alertWarn}
+                            sendClientEmail={sendClientEmail}
+                            connectMicrosoftAccount={connectMicrosoftAccount}
+                          />
+                        )}
+                      </div>
                     </div>
                     <div className="col-span-2">
                       <label className="mb-0.5 block text-[11px] text-text-dim">{t("clientProfile.address")}</label>
@@ -384,7 +428,7 @@ export function ClientProfileDialog({
                 </button>
                 <button
                   onClick={handleSave}
-                  disabled={saving || hasSsnDuplicate}
+                  disabled={saving || hasSsnDuplicate || hasLastNameError}
                   className="gradient-btn rounded-lg px-3.5 py-2 text-sm font-medium text-white disabled:cursor-default disabled:opacity-60"
                 >
                   {saving ? t("clientProfile.saving") : t("clientProfile.saveBtn")}

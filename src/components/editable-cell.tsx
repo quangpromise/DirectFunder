@@ -14,12 +14,19 @@ export function EditableCell({
   editable,
   options,
   onCommit,
+  dense,
 }: {
   value: Value;
   type: ColumnType;
   editable: boolean;
   options?: SelectOption[];
   onCommit: (value: Value) => void;
+  /** Chữ đậm + màu tương phản cao (trắng sáng ở Dark Mode/đen đậm ở Light Mode, xem
+   * --text trong globals.css) thay vì text-text-dim mờ mặc định, đồng thời giảm padding
+   * ngang — dùng cho các cột nội dung ngắn (Zip/Case/Money) đang bị dư khoảng trắng, ĐỒNG
+   * BỘ với cách SSN/Phone/Client Name đã đổi (xem ssn-cell.tsx/client-name-cell.tsx). Mặc
+   * định false để không ảnh hưởng các cột khác (Description, cột tuỳ chỉnh...). */
+  dense?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<Value>(value);
@@ -65,7 +72,12 @@ export function EditableCell({
 
   if (!editable) {
     return (
-      <div className="w-full truncate px-2.5 py-1.5 text-center text-xs text-text-dim" title={displayText || undefined}>
+      <div
+        className={`w-full truncate text-center ${
+          dense ? "px-1.5 py-1.5 text-[11px] font-semibold text-text" : "px-2.5 py-1.5 text-xs text-text-dim"
+        }`}
+        title={displayText || undefined}
+      >
         {displayText || <span className="text-text-faint">—</span>}
       </div>
     );
@@ -108,7 +120,9 @@ export function EditableCell({
     <button
       onClick={() => setEditing(true)}
       {...{ [CELL_NAV_ATTR]: "1" }}
-      className="w-full truncate rounded-md px-2.5 py-1.5 text-center text-xs transition hover:bg-surface-hover"
+      className={`w-full truncate rounded-md text-center transition hover:bg-surface-hover ${
+        dense ? "px-1.5 py-1.5 text-[11px] font-semibold text-text" : "px-2.5 py-1.5 text-xs"
+      }`}
       title={displayText || undefined}
     >
       {displayText || <span className="text-text-faint">—</span>}

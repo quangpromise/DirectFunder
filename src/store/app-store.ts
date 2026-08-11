@@ -3,11 +3,15 @@ import { persist } from "zustand/middleware";
 import { DEFAULT_COLUMNS, DEFAULT_FEATURE_PERMISSIONS } from "@/lib/rbac";
 import { INITIAL_CASES, INITIAL_NOTIFICATIONS, INITIAL_USERS } from "@/lib/mock-data";
 import { getFullName, primarySsn } from "@/lib/client-name";
+import { summarizeCheckInitial } from "@/lib/check-initial";
+import { REFUND_STATUS_LABEL, DEFAULT_REFUND_YEAR_STATUS } from "@/lib/refund-status";
 import { api, syncInBackground, type ClientProfilePayload } from "@/lib/api-client";
 import type { ParsedCaseRow } from "@/lib/excel";
 import {
   AppNotification,
   CaseRecord,
+  CheckInitialValue,
+  ClientEmailTemplate,
   ColumnDef,
   ColumnType,
   CpaEmailDefaults,
@@ -19,7 +23,9 @@ import {
   Language,
   OrderRecord,
   OrderType,
+  RefundYearStatus,
   Role,
+  RuleRecord,
   SelectOption,
   Theme,
   User,
@@ -68,6 +74,7 @@ function formatHistoryValue(value: unknown, col?: ColumnDef): string {
   }
   if (col?.type === "boolean") return value ? "Có" : "Không";
   if (col?.type === "currency" && typeof value === "number") return `$${value.toLocaleString("en-US")}`;
+  if (col?.type === "checklist") return summarizeCheckInitial(value) || "—";
   return String(value);
 }
 
@@ -104,8 +111,14 @@ interface AppState {
   /** Sheet đích + cột nào/thứ tự nào được đẩy khi bấm nút "Send" ở cột Status (chỉ hiện
    * khi status = cpa_review) — null = Admin chưa cấu hình, nút Send báo lỗi rõ ràng. */
   googleSheetConfig: GoogleSheetConfig | null;
+  /** Mẫu Subject/Body cố định cho tính năng "Gửi email cho khách hàng" (popup Edit Hồ sơ)
+   * — null = Admin chưa cấu hình, dùng DEFAULT_CLIENT_EMAIL_SUBJECT/BODY. */
+  clientEmailTemplate: ClientEmailTemplate | null;
   deletionHistory: DeletedRowRecord[];
   editHistory: EditHistoryRecord[];
+  /** Bảng tin "Rules" (tab riêng sau Orders) — nạp từ server ở hydrateFromServer, KHÔNG
+   * persist localStorage (giống cases/users, luôn tin dữ liệu server mới nhất). */
+  rules: RuleRecord[];
 
   /** true khi đã hydrate xong dữ liệu thật từ server ít nhất 1 lần trong phiên này. */
   hydrated: boolean;
@@ -127,7 +140,7 @@ interface AppState {
   updateCell: (
     caseId: string,
     columnKey: string,
-    value: string | number | boolean | null,
+    value: string | number | boolean | null | CheckInitialValue,
     isCustom: boolean
   ) => void;
   addRow: (creatorId: string, creatorRole: Role) => void;
@@ -138,6 +151,8 @@ interface AppState {
   deleteRow: (caseId: string, deletedByUserId: string) => void;
   updateClientLink: (caseId: string, link: string | null) => void;
   updateSsn: (caseId: string, slot: 0 | 1, value: string | null) => void;
+  updateRefundYearStatus: (caseId: string, year: string, status: RefundYearStatus) => void;
+  updateRefundYearPendingReason: (caseId: string, year: string, reason: string) => void;
   /** Foreground action (giống sendCpaEmail) — lưu toàn bộ nội dung popup "Edit Hồ sơ"
    * (ClientProfileDialog) trong 1 lần gọi, server tự tính lại money/caseLabel từ
    * refunds và trả về giá trị đã tính để đồng bộ local state chính xác. */
@@ -220,8 +235,28 @@ interface AppState {
    * timeout dự phòng nếu user đóng popup tay mà không hoàn tất. */
   connectGoogleAccount: () => Promise<boolean>;
 
+  setClientEmailTemplate: (template: ClientEmailTemplate) => void;
+  /** Foreground action, cùng lý do sendCpaEmail/sendCaseRowToSheet — gửi có thể fail rõ
+   * ràng (chưa kết nối Outlook, email khách hàng sai định dạng...). needsMicrosoftAuth:true
+   * khi user chưa/không còn kết nối Outlook — UI tự mở popup connectMicrosoftAccount() rồi
+   * gọi lại action này. KHÔNG có trạng thái "đã gửi" bền vững (khác sheetSentAt/
+   * cpaEmailSentAt) — gửi email khách hàng là hành động tự do, gửi lại thoải mái, lịch sử
+   * đủ dùng qua editHistory (logEdit) bên dưới. */
+  sendClientEmail: (caseId: string) => Promise<{ ok: true } | { ok: false; error: string; needsMicrosoftAuth?: boolean }>;
+  /** Mở popup OAuth Microsoft (window.open), lắng nghe postMessage "microsoft-oauth-done"
+   * từ /api/auth/microsoft/callback — cùng cơ chế connectGoogleAccount ở trên. */
+  connectMicrosoftAccount: () => Promise<boolean>;
+
   reorderColumn: (fromId: string, toId: string) => void;
   reorderCase: (fromId: string, toId: string) => void;
+
+  /** Foreground action (giống sendCpaEmail) — thêm/sửa/xoá rule cần feedback lỗi rõ ràng
+   * ngay (chỉ Quản lý được phép, server 403 nếu không), không optimistic. Trả về rule đã
+   * lưu (server tính lại createdAt/updatedAt) để store thay thế đúng bản ghi optimistic
+   * tạm nếu có. */
+  addRule: (content: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+  editRule: (ruleId: string, content: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+  deleteRule: (ruleId: string) => Promise<{ ok: true } | { ok: false; error: string }>;
 }
 
 export const useAppStore = create<AppState>()(
@@ -261,7 +296,13 @@ export const useAppStore = create<AppState>()(
         const state = get();
         syncInBackground(
           "config",
-          api.putConfig(state.columns, state.featurePermissions, state.cpaEmailDefaults, state.googleSheetConfig ?? undefined)
+          api.putConfig(
+            state.columns,
+            state.featurePermissions,
+            state.cpaEmailDefaults,
+            state.googleSheetConfig ?? undefined,
+            state.clientEmailTemplate ?? undefined
+          )
         );
       }
 
@@ -280,8 +321,10 @@ export const useAppStore = create<AppState>()(
       cpaEmailDefaults: { to: [], cc: [] },
       cpaSenderEmail: "",
       googleSheetConfig: null,
+      clientEmailTemplate: null,
       deletionHistory: [],
       editHistory: [],
+      rules: [],
 
       login: async (email, password) => {
         try {
@@ -301,7 +344,12 @@ export const useAppStore = create<AppState>()(
       // .claude/rules/deployment-database-sync.md) — bản trong localStorage chỉ còn là
       // cache hiển thị tạm trước khi hydrate xong, luôn bị ghi đè bởi dữ liệu server.
       hydrateFromServer: async () => {
-        const [users, cases, config] = await Promise.all([api.listUsers(), api.listCases(), api.getConfig()]);
+        const [users, cases, config, rules] = await Promise.all([
+          api.listUsers(),
+          api.listCases(),
+          api.getConfig(),
+          api.listRules(),
+        ]);
         set({
           users,
           cases,
@@ -310,6 +358,8 @@ export const useAppStore = create<AppState>()(
           cpaEmailDefaults: config.cpaEmailDefaults ?? { to: [], cc: [] },
           cpaSenderEmail: config.cpaSenderEmail ?? "",
           googleSheetConfig: config.googleSheetConfig ?? null,
+          clientEmailTemplate: config.clientEmailTemplate ?? null,
+          rules,
           hydrated: true,
         });
       },
@@ -564,6 +614,12 @@ export const useAppStore = create<AppState>()(
           custom: { caseLabel: 0 },
           sheetSentAt: null,
           cpaEmailSentAt: null,
+          // Số âm theo epoch-ms hiện tại -> luôn nhỏ hơn mọi sortOrder hiện có -> tự động
+          // lên đầu bảng, khớp hành vi cũ "mới nhất lên đầu" (server tạo cũng tự tính
+          // đúng công thức này nếu thiếu, xem POST /api/cases).
+          sortOrder: -Date.now(),
+          refundYearStatus: {},
+          refundYearPendingReason: {},
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
@@ -629,6 +685,9 @@ export const useAppStore = create<AppState>()(
               custom: { caseLabel: row.caseLabel || "1" },
               sheetSentAt: null,
               cpaEmailSentAt: null,
+              sortOrder: -Date.now(),
+              refundYearStatus: {},
+              refundYearPendingReason: {},
               createdAt: new Date().toISOString(),
               updatedAt: new Date().toISOString(),
             };
@@ -691,6 +750,44 @@ export const useAppStore = create<AppState>()(
           }),
         }));
         syncInBackground("ssn", api.patchCase(caseId, { ssn: nextSsn }));
+      },
+
+      updateRefundYearStatus: (caseId, year, status) => {
+        const kase = get().cases.find((c) => c.id === caseId);
+        const oldStatus = kase?.refundYearStatus[year] ?? DEFAULT_REFUND_YEAR_STATUS;
+        if (kase) logEdit(caseId, `Refund ${year}`, REFUND_STATUS_LABEL[oldStatus], REFUND_STATUS_LABEL[status]);
+        set((state) => ({
+          cases: state.cases.map((c) =>
+            c.id === caseId
+              ? { ...c, refundYearStatus: { ...c.refundYearStatus, [year]: status }, updatedAt: new Date().toISOString() }
+              : c
+          ),
+        }));
+        // Chỉ gửi đúng 1 năm vừa đổi (không phải toàn bộ object) -> server tự merge cộng
+        // dồn (xem PATCH /api/cases/[id]), tránh ghi đè mất trạng thái các năm khác nếu 2
+        // người sửa gần như cùng lúc.
+        syncInBackground("refundYearStatus", api.patchCase(caseId, { refundYearStatus: { [year]: status } }));
+      },
+
+      // Lý do Pending — mọi user đăng nhập đều sửa được (không kiểm tra editableBy như
+      // refundYearStatus), xem PATCH /api/cases/[id]. Component tự commit khi rời khỏi ô
+      // nhập (blur), không sync theo từng phím gõ.
+      updateRefundYearPendingReason: (caseId, year, reason) => {
+        const kase = get().cases.find((c) => c.id === caseId);
+        const oldReason = kase?.refundYearPendingReason[year] ?? "";
+        if (kase && oldReason !== reason) logEdit(caseId, `Lý do Pending ${year}`, oldReason, reason);
+        set((state) => ({
+          cases: state.cases.map((c) =>
+            c.id === caseId
+              ? {
+                  ...c,
+                  refundYearPendingReason: { ...c.refundYearPendingReason, [year]: reason },
+                  updatedAt: new Date().toISOString(),
+                }
+              : c
+          ),
+        }));
+        syncInBackground("refundYearPendingReason", api.patchCase(caseId, { refundYearPendingReason: { [year]: reason } }));
       },
 
       // Foreground (giống sendCpaEmail/sendCaseRowToSheet) — server tự tính money/
@@ -1046,8 +1143,63 @@ export const useAppStore = create<AppState>()(
         });
       },
 
-      // Ghi chú: reorderColumn/reorderCase chỉ đổi thứ tự hiển thị cục bộ, AppConfig/Case
-      // hiện chưa có field lưu thứ tự nên chưa đồng bộ lên server ở giai đoạn này.
+      setClientEmailTemplate: (template) => {
+        set({ clientEmailTemplate: template });
+        syncConfig();
+      },
+
+      // Foreground, cùng lý do sendCpaEmail/sendCaseRowToSheet — gửi có thể fail rõ ràng,
+      // cần await + báo lỗi ngay. needsMicrosoftAuth:true khi server trả
+      // "MICROSOFT_NOT_CONNECTED" (chưa kết nối Outlook hoặc refresh_token đã bị server tự
+      // xoá do hết hạn/thu hồi). KHÔNG cập nhật case nào trong store — không có cờ trạng
+      // thái "đã gửi" bền vững cho tính năng này (xem ghi chú ở khai báo type phía trên).
+      sendClientEmail: async (caseId) => {
+        try {
+          await api.sendClientEmail(caseId);
+          logEdit(caseId, "Gửi email cho khách hàng", "", "Đã gửi");
+          return { ok: true } as const;
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Gửi email cho khách hàng thất bại";
+          if (message === "MICROSOFT_NOT_CONNECTED") {
+            return { ok: false, error: message, needsMicrosoftAuth: true } as const;
+          }
+          return { ok: false, error: message } as const;
+        }
+      },
+
+      connectMicrosoftAccount: () => {
+        return new Promise<boolean>((resolve) => {
+          if (typeof window === "undefined") {
+            resolve(false);
+            return;
+          }
+          const popup = window.open("/api/auth/microsoft/start", "microsoft-oauth", "width=500,height=650");
+          if (!popup) {
+            resolve(false);
+            return;
+          }
+          let settled = false;
+          function finish(ok: boolean) {
+            if (settled) return;
+            settled = true;
+            window.removeEventListener("message", onMessage);
+            clearInterval(pollClosed);
+            resolve(ok);
+          }
+          function onMessage(event: MessageEvent) {
+            if (event.origin !== window.location.origin) return;
+            if (event.data?.type === "microsoft-oauth-done") finish(Boolean(event.data.ok));
+          }
+          window.addEventListener("message", onMessage);
+          // Dự phòng nếu user tự đóng popup tay mà không hoàn tất (không có postMessage nào bắn ra).
+          const pollClosed = setInterval(() => {
+            if (popup.closed) finish(false);
+          }, 500);
+        });
+      },
+
+      // Ghi chú: reorderColumn chỉ đổi thứ tự hiển thị cục bộ (lưu trong AppConfig.columns
+      // qua syncConfig() ngay bên dưới). reorderCase lưu vào Case.sortOrder (xem hàm dưới).
       reorderColumn: (fromId, toId) => {
         set((state) => {
           if (fromId === toId) return {};
@@ -1062,7 +1214,13 @@ export const useAppStore = create<AppState>()(
         syncConfig();
       },
 
-      reorderCase: (fromId, toId) =>
+      // Kéo-thả xong: xếp lại mảng cục bộ như cũ, ĐỒNG THỜI tính lại sortOrder của dòng
+      // vừa di chuyển bằng fractional indexing (trung bình sortOrder 2 hàng xóm mới của
+      // nó) rồi PATCH lên server — nếu không lưu field này, GET /api/cases lần sau (vd.
+      // sau khi reload) sẽ trả về theo sortOrder cũ trong DB, khiến dòng "nhảy về vị trí
+      // cũ" (bug đã gặp trước khi có field sortOrder).
+      reorderCase: (fromId, toId) => {
+        let newSortOrder: number | null = null;
         set((state) => {
           if (fromId === toId) return {};
           const list = [...state.cases];
@@ -1071,8 +1229,50 @@ export const useAppStore = create<AppState>()(
           if (fromIdx === -1 || toIdx === -1) return {};
           const [moved] = list.splice(fromIdx, 1);
           list.splice(toIdx, 0, moved);
+
+          const movedIdx = list.findIndex((c) => c.id === fromId);
+          const prev = list[movedIdx - 1];
+          const next = list[movedIdx + 1];
+          if (prev && next) newSortOrder = (prev.sortOrder + next.sortOrder) / 2;
+          else if (prev) newSortOrder = prev.sortOrder + 1000;
+          else if (next) newSortOrder = next.sortOrder - 1000;
+          else newSortOrder = moved.sortOrder;
+
+          list[movedIdx] = { ...moved, sortOrder: newSortOrder };
           return { cases: list };
-        }),
+        });
+        if (newSortOrder !== null) {
+          syncInBackground("reorderCase", api.patchCase(fromId, { sortOrder: newSortOrder }));
+        }
+      },
+
+      addRule: async (content) => {
+        try {
+          const rule = await api.createRule(content);
+          set((s) => ({ rules: [rule, ...s.rules] }));
+          return { ok: true };
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Thêm rule thất bại" };
+        }
+      },
+      editRule: async (ruleId, content) => {
+        try {
+          const rule = await api.updateRule(ruleId, content);
+          set((s) => ({ rules: s.rules.map((r) => (r.id === ruleId ? rule : r)) }));
+          return { ok: true };
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Sửa rule thất bại" };
+        }
+      },
+      deleteRule: async (ruleId) => {
+        try {
+          const rule = await api.deleteRule(ruleId);
+          set((s) => ({ rules: s.rules.map((r) => (r.id === ruleId ? rule : r)) }));
+          return { ok: true };
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Xoá rule thất bại" };
+        }
+      },
       };
     },
     {

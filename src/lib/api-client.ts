@@ -1,4 +1,14 @@
-import type { CaseRecord, ColumnDef, CpaEmailDefaults, FeaturePermissions, GoogleSheetConfig, Role, User } from "./types";
+import type {
+  CaseRecord,
+  ClientEmailTemplate,
+  ColumnDef,
+  CpaEmailDefaults,
+  FeaturePermissions,
+  GoogleSheetConfig,
+  Role,
+  RuleRecord,
+  User,
+} from "./types";
 
 class ApiError extends Error {}
 
@@ -65,21 +75,24 @@ export const api = {
       cpaEmailDefaults: CpaEmailDefaults | null;
       cpaSenderEmail: string | null;
       googleSheetConfig: GoogleSheetConfig | null;
+      clientEmailTemplate: ClientEmailTemplate | null;
     }>("/api/config"),
   putConfig: (
     columns: ColumnDef[],
     featurePermissions: FeaturePermissions,
     cpaEmailDefaults?: CpaEmailDefaults,
-    googleSheetConfig?: GoogleSheetConfig
+    googleSheetConfig?: GoogleSheetConfig,
+    clientEmailTemplate?: ClientEmailTemplate
   ) =>
     request<{
       columns: ColumnDef[];
       featurePermissions: FeaturePermissions;
       cpaEmailDefaults: CpaEmailDefaults | null;
       googleSheetConfig: GoogleSheetConfig | null;
+      clientEmailTemplate: ClientEmailTemplate | null;
     }>("/api/config", {
       method: "PUT",
-      body: JSON.stringify({ columns, featurePermissions, cpaEmailDefaults, googleSheetConfig }),
+      body: JSON.stringify({ columns, featurePermissions, cpaEmailDefaults, googleSheetConfig, clientEmailTemplate }),
     }),
 
   /** Gửi email cho CPA từ 1 hồ sơ — xem POST /api/cases/[id]/send-cpa-email. Server trả về
@@ -129,6 +142,13 @@ export const api = {
       body: JSON.stringify({ [action]: true }),
     }),
 
+  /** Gửi email mẫu cố định (Admin cấu hình) cho khách hàng của 1 hồ sơ — xem POST
+   * /api/cases/[id]/send-client-email. Lỗi "MICROSOFT_NOT_CONNECTED" (HTTP 428, xem
+   * request() ném ApiError với message này) báo hiệu UI cần mở popup kết nối Outlook trước
+   * khi gọi lại. Không có trạng thái "đã gửi" bền vững nên response chỉ trả { ok: true }. */
+  sendClientEmail: (caseId: string) =>
+    request<{ ok: true }>(`/api/cases/${caseId}/send-client-email`, { method: "POST" }),
+
   /** Lưu toàn bộ nội dung popup "Edit Hồ sơ" (ClientProfileDialog) trong 1 lần gọi —
    * server tự tính lại `money`/`custom.caseLabel` từ `refunds`, trả về giá trị đã tính
    * để store cập nhật local state khớp đúng server (không tin giá trị optimistic). */
@@ -137,6 +157,12 @@ export const api = {
       `/api/cases/${caseId}/client-profile`,
       { method: "POST", body: JSON.stringify(payload) }
     ),
+
+  listRules: () => request<RuleRecord[]>("/api/rules"),
+  createRule: (content: string) => request<RuleRecord>("/api/rules", { method: "POST", body: JSON.stringify({ content }) }),
+  updateRule: (ruleId: string, content: string) =>
+    request<RuleRecord>(`/api/rules/${ruleId}`, { method: "PATCH", body: JSON.stringify({ content }) }),
+  deleteRule: (ruleId: string) => request<RuleRecord>(`/api/rules/${ruleId}`, { method: "DELETE" }),
 };
 
 export interface ClientProfilePayload {

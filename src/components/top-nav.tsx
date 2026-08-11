@@ -12,11 +12,15 @@ import { RoleBadge } from "@/components/role-badge";
 import { ChangePasswordDialog } from "@/components/change-password-dialog";
 import { PhoenixClock } from "@/components/phoenix-clock";
 import { NotificationBell } from "@/components/notification-bell";
+import { RulesPanel } from "@/components/rules-panel";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { Role } from "@/lib/types";
 import { useT } from "@/lib/i18n";
 
+// "Rules" KHÔNG còn là 1 route riêng trong danh sách này nữa — đã đổi thành dropdown
+// (RulesPanel, kiểu bảng thông báo giống NotificationBell) mở ngay tại chỗ, không điều
+// hướng rời màn hình đang làm việc. Xem RulesPanel trong icon row bên dưới.
 const NAV: { href: string; labelKey: string; icon: typeof Table2; roles: Role[] | "all" }[] = [
   // Support chỉ làm việc trên tab Order — không hiện tab Hồ sơ với nhóm này.
   {
@@ -102,10 +106,17 @@ export function TopNav() {
 
       <div className="ml-auto flex items-center gap-2">
         {/* Darkmode/Ngôn ngữ chỉ hiện trực tiếp trên header ở desktop (md+) — trên mobile
-            dồn vào menu hamburger (xem khối mobileOpen bên dưới) để header đỡ chật. */}
+            dồn vào menu hamburger (xem khối mobileOpen bên dưới) để header đỡ chật. Rules đặt
+            ngay cạnh Dark Mode ở đây cho dễ nhìn (yêu cầu 2026-08-11) — trên mobile không có
+            khối Dark Mode này nên giữ 1 bản Rules riêng luôn hiện ở icon row (md:hidden bên
+            dưới), tránh mất hẳn quyền truy cập trên màn hình nhỏ. */}
         <div className="hidden items-center gap-2 md:flex">
           <ThemeSwitcher compact />
+          <RulesPanel />
           <LanguageSwitcher compact />
+        </div>
+        <div className="md:hidden">
+          <RulesPanel />
         </div>
         <PhoenixClock />
         <NotificationBell currentUserId={user.id} />

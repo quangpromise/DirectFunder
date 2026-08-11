@@ -13,7 +13,7 @@
 
 **Còn thiếu / chưa làm:**
 - Orders/Notifications/Deletion/Edit history vẫn dùng field JSON nhúng trong `Case` hoặc còn ở Zustand-only, chưa tách bảng riêng.
-- `reorderCase`/`reorderColumn` (thứ tự hiển thị) chưa đồng bộ lên server — DB chưa có field lưu thứ tự.
+- `reorderColumn` (thứ tự cột) vẫn chỉ đổi cục bộ + lưu trong `AppConfig.columns` (không cần field riêng). `reorderCase` (thứ tự dòng, kéo-thả) đã đồng bộ server từ 2026-08-11 — xem `Case.sortOrder` (mục 4.13).
 - Chưa có script export dữ liệu localStorage cũ (mục 3) — không cấp thiết vì dữ liệu hiện tại chỉ là seed demo, chưa có người dùng thật nào dùng bản local-only trước đó.
 
 **Cập nhật 2026-08-10 — production ĐÃ deploy thật**: Vercel (`funder-crm-mini.vercel.app`) + Neon, remote GitHub đã có (`origin`). Dòng "chưa deploy production thật" ở các mục dưới đây đã lỗi thời — chỉ còn đúng ở lịch sử, không áp dụng nữa. Xem mục 4.8 (mới) cho một class lỗi quan trọng vừa phát hiện + đã vá liên quan tới việc này.
@@ -59,6 +59,59 @@ Thêm `Case.phone2`/`Case.email`/`Case.dateOfBirth`/`Case.refunds` (additive) + 
 2. Chạy script merge cộng dồn nhắm `AppConfig.columns` production: thêm 4 cột `dateOfBirth`/`phone2`/`email`/`refunds` (copy nguyên `DEFAULT_COLUMNS` tương ứng trong `rbac.ts`) NẾU production chưa có id đó; đồng thời tìm cột `money`/`caseLabel` production hiện có, set `editableBy: []` (ghi đè đúng 2 field này, KHÔNG đụng `label`/`options`/các field khác nếu Admin đã tuỳ biến).
 3. Đăng nhập bằng tài khoản **không phải Manager** (vd Processor) thật trên production, bấm nút bút chì "Edit Hồ sơ" ở 1 hồ sơ bất kỳ → xác nhận 4 field mới (Date of Birth, Phone 2, Email, Refund) hiện **enable được** (không bị khoá xám) đúng theo `editableBy` đã cấu hình — nếu vẫn khoá dù đã chạy bước 2, kiểm tra lại script merge có đúng target `AppConfig.id: "singleton"` production không.
 4. Thử sửa + Lưu 1 hồ sơ test → xác nhận cột "Case"/"Money" trên bảng chính production cập nhật đúng và **không còn bấm sửa tay trực tiếp được** (click vào ô không hiện input).
+
+### 4.12 [CHỜ XỬ LÝ] Đồng bộ production cho tính năng "Gửi email cho khách hàng" (Microsoft 365/Outlook) (thêm 2026-08-11)
+
+Tính năng mới thêm `User.microsoftRefreshToken` + `AppConfig.clientEmailTemplate` (2 field additive) + feature key `sendClientEmail` vào `DEFAULT_FEATURE_PERMISSIONS` — đúng loại thay đổi mô tả ở mục 4.8, nên **sau khi deploy code này lên production PHẢI làm đủ các bước sau** (xoá mục này khỏi file khi đã làm xong):
+1. `prisma migrate deploy` nhắm production (2 cột trên, an toàn/additive).
+2. Chạy script merge cộng dồn thêm `sendClientEmail: ["processor"]` vào `AppConfig.featurePermissions` production nếu key đó chưa có (nếu bỏ qua, processor trên production sẽ không thấy nút dù code đúng — xem cơ chế lỗi ở mục 4.8).
+3. Tạo App registration trên Azure Portal (tenant công ty `@directfunder.com`, Single tenant) nếu chưa có từ bước dev, đăng ký thêm redirect URI production `https://<production-domain>/api/auth/microsoft/callback`, xác nhận API permission `Mail.Send` (Delegated) đã cấp, Admin bấm "Grant admin consent" nếu tenant policy yêu cầu.
+4. Thêm `MICROSOFT_OAUTH_CLIENT_ID`/`MICROSOFT_OAUTH_CLIENT_SECRET`/`MICROSOFT_TENANT_ID` vào Vercel Environment Variables (Production).
+5. Đăng nhập bằng tài khoản **processor** thật trên production, mở popup "Edit Hồ sơ" 1 hồ sơ đã có email khách hàng → bấm nút gửi mail cạnh field Email → xác nhận popup OAuth Microsoft mở đúng, đăng nhập bằng mailbox `@directfunder.com` thật, kết nối xong tự gửi tiếp.
+6. Vào trang Phân quyền (Admin), mở dialog cấu hình mẫu email khách hàng, nhập Subject/Body thật lần đầu (mặc định rỗng sau migration → dùng DEFAULT_CLIENT_EMAIL_SUBJECT/BODY trong code cho tới khi Admin lưu).
+7. Gửi thử 1 email thật tới hộp thư test, xác nhận nội dung/placeholder render đúng và mail đến từ đúng địa chỉ `@directfunder.com` của người bấm gửi (không phải mailbox chung).
+
+### 4.13 [CHỜ XỬ LÝ] Đồng bộ production cho "Case.sortOrder" (lưu thứ tự kéo-thả dòng) (thêm 2026-08-11)
+
+Bug đã sửa: kéo-thả đổi vị trí dòng trên bảng Hồ sơ chỉ đổi thứ tự trong Zustand state cục bộ, không có field nào trên `Case` lưu lại — mỗi lần reload, `GET /api/cases` trả về theo `createdAt desc` như cũ nên dòng vừa kéo "nhảy về vị trí cũ". Đã thêm `Case.sortOrder` (Float, additive) + `reorderCase` giờ tính lại giá trị bằng fractional indexing (trung bình sortOrder 2 hàng xóm mới) và PATCH lên server; `GET /api/cases` đổi `orderBy` thành `[{ sortOrder: "asc" }, { createdAt: "desc" }]`; migration có kèm backfill SQL gán `sortOrder = -epoch(createdAt)*1000` cho dữ liệu cũ để giữ nguyên thứ tự hiển thị hiện có. **Khác các mục 4.9–4.12**: đây KHÔNG đụng `DEFAULT_COLUMNS`/`DEFAULT_FEATURE_PERMISSIONS` (không phải cột bảng/feature permission, là field nội bộ của `Case`) nên **không cần** script merge `AppConfig` — chỉ cần chạy migration.
+
+**Sau khi deploy code này lên production PHẢI làm đủ các bước sau** (xoá mục này khỏi file khi đã làm xong):
+1. `prisma migrate deploy` nhắm production — migration `add_case_sort_order` gồm cả câu lệnh `ALTER TABLE` lẫn `UPDATE` backfill, chạy đúng thứ tự tự động, không cần thao tác gì thêm.
+2. Đăng nhập production, kéo-thả thử 1 dòng bất kỳ trên bảng Hồ sơ → reload trang → xác nhận dòng giữ đúng vị trí mới (không nhảy về chỗ cũ).
+3. Thử thêm 1 hồ sơ mới → xác nhận vẫn lên đầu bảng như hành vi cũ (client/server đều gán `sortOrder = -Date.now()` cho hồ sơ mới).
+
+### 4.14 [CHỜ XỬ LÝ] Đồng bộ production cho nút mắt "Refund theo năm" cạnh cột Case (thêm 2026-08-11)
+
+Tính năng mới: nút mắt (icon `Eye`) cạnh số trong cột "Case" — bấm mở popup xem/sửa trạng thái xử lý riêng cho từng năm có refund > 0 (Processing/Pending/CPA Review, mỗi trạng thái 1 màu badge riêng), hover mở popup tương tự nhưng chỉ xem. Mắt nhấp nháy đỏ nếu có ít nhất 1 năm đang Pending, xanh lá đứng yên nếu không. Năm đang Pending có thêm ô nhập lý do (textarea) — **khác `refundYearStatus`, ô lý do KHÔNG giới hạn theo role, mọi user đăng nhập đều sửa được** (field `refundYearPendingReason` không map qua `FIELD_TO_COLUMN_KEY` nên không bị chặn theo `editableBy`), người khác xem lại qua hover hoặc mở popup. Đã thêm `Case.refundYearStatus` + `Case.refundYearPendingReason` (2 field Json, additive, default `"{}"`) — **giống mục 4.13, KHÔNG đụng `DEFAULT_COLUMNS`/`DEFAULT_FEATURE_PERMISSIONS`** nên **không cần** script merge `AppConfig`, chỉ cần chạy migration.
+
+**Sau khi deploy code này lên production PHẢI làm đủ các bước sau** (xoá mục này khỏi file khi đã làm xong):
+1. `prisma migrate deploy` nhắm production (thêm cột `refundYearStatus` + `refundYearPendingReason`, an toàn/additive, default `{}` áp dụng luôn cho dữ liệu cũ, không cần backfill).
+2. Đăng nhập production bằng tài khoản có quyền sửa refunds (Processor/Agent/Manager...), mở popup mắt ở 1 hồ sơ có refund > 0, đổi thử 1 năm sang Pending → xác nhận mắt chuyển đỏ nhấp nháy + hiện ô nhập lý do, gõ thử 1 lý do, reload trang xác nhận trạng thái VÀ lý do còn nguyên.
+3. Đăng nhập bằng tài khoản KHÔNG có quyền sửa refunds (nếu có) → xác nhận hover/click popup chỉ hiện badge tĩnh (không có dropdown để đổi trạng thái) nhưng VẪN gõ được vào ô lý do Pending (đúng thiết kế — ô lý do mở cho mọi user).
+
+### 4.15 [CHỜ XỬ LÝ] Đồng bộ production cho tab "Rules" (bảng tin quy định nội bộ) (thêm 2026-08-11)
+
+Tính năng mới: tab điều hướng "Rules" (đặt sau Orders) — thêm/sửa/xoá rule dạng bảng tin (quyền theo `manageRules`, xem mục 4.16). Rule mới lên đầu, badge "New" vàng tự hết khi qua ngày (so theo giờ Phoenix, xem `ruleIsNewToday` trong `src/lib/rules.ts`). Xoá là soft-delete (`Rule.deletedAt`/`deletedBy`) — rule vẫn hiển thị, bị đẩy xuống cuối + gạch ngang chữ, KHÔNG ẩn hẳn. Nút "Rules" ở top-nav còn hiện badge đếm "N Rule mới" ở MỌI màn hình khác (ẩn khi đang ở chính trang Rules). Thêm **bảng mới hoàn toàn** `Rule` (model mới, không phải field thêm vào `Case`/`AppConfig`) — **khác các mục 4.9–4.12, GIỐNG mục 4.13/4.14: KHÔNG đụng `DEFAULT_COLUMNS`/`DEFAULT_FEATURE_PERMISSIONS`** nên **không cần** script merge `AppConfig`, chỉ cần chạy migration. **Lưu ý (2026-08-11): đoạn "hard-code role manager, không đi qua FeaturePermissions" ở bản đầu tiên tính năng này đã lỗi thời** — mục 4.16 thay quyền hard-code bằng feature key `manageRules` cấu hình được qua trang Phân quyền.
+
+**Sau khi deploy code này lên production PHẢI làm đủ các bước sau** (xoá mục này khỏi file khi đã làm xong):
+1. `prisma migrate deploy` nhắm production (tạo bảng `rules` mới, an toàn/additive — không đụng bảng nào có sẵn).
+2. Đăng nhập production bằng tài khoản **manager** thật, vào tab Rules, đăng thử 1 rule → xác nhận lên đầu danh sách kèm badge "New" vàng, và nút "Rules" ở top-nav (khi ở trang khác) hiện đúng "1 Rule mới".
+3. Sửa rule vừa đăng → xác nhận nội dung cập nhật đúng, reload xác nhận còn nguyên. Xoá rule đó → xác nhận bị đẩy xuống cuối + gạch ngang (không biến mất), reload xác nhận vẫn giữ trạng thái đã xoá.
+4. Đăng nhập bằng tài khoản **không phải Manager** → xác nhận tab Rules vẫn xem được danh sách nhưng KHÔNG thấy khung đăng rule mới/nút Sửa/Xoá trên từng rule.
+5. Đợi qua ngày hôm sau (hoặc kiểm tra lại vào hôm sau) → xác nhận badge "New" trên rule cũ và badge đếm "N Rule mới" ở top-nav tự biến mất mà không cần thao tác gì thêm (tự tính lại theo ngày hiện tại, không có dữ liệu "đã xem" lưu riêng).
+
+### 4.16 [CHỜ XỬ LÝ] Rich text (bold/italic/font) cho ô nhập Rules + đổi quyền thêm/sửa/xoá Rules sang `manageRules` cấu hình được (thêm 2026-08-11)
+
+Hai thay đổi cùng lúc trên tab Rules (mục 4.15):
+1. **Rich text editor** (`src/components/rich-text-editor.tsx`) cho khung đăng rule mới lẫn khung sửa — toolbar Bold/In đậm, Italic/In nghiêng, chọn font (giống Gmail compose rút gọn), dựa trên `contentEditable` + `document.execCommand` (không thêm thư viện WYSIWYG). `Rule.content` (đã có sẵn, kiểu `String`) giờ lưu **HTML** thay vì plain text — **KHÔNG đổi schema** (không cần migration) vì cột đã là String/Text sẵn từ đầu. HTML được sanitize qua whitelist tag/attribute rất hẹp (`sanitizeRuleHtml`, `src/lib/rich-text.ts` — chỉ cho `b/i/u/span/font/br`, style/face đã lọc) ở **server** (POST/PATCH `/api/rules`, nguồn xử lý chính) lẫn client (khi render, phòng hờ) — chống XSS lưu trữ giữa các nhân viên nội bộ dùng chung tab này. Rule tạo TRƯỚC thay đổi này (plain text với `\n`) vẫn hiển thị đúng nhờ `toRuleDisplayHtml` tự nhận diện + chuyển `\n` thành `<br>` nếu chưa từng qua editor mới.
+2. **Quyền thêm/sửa/xoá rule đổi từ hard-code `role === "manager"` sang feature key `manageRules`** (thêm vào `ASSIGNABLE_FEATURES`/`FEATURE_LABEL` trong `src/lib/types.ts`, `DEFAULT_FEATURE_PERMISSIONS.manageRules: []` trong `src/lib/rbac.ts`) — Quản lý cấu hình role nào khác được thêm/sửa/xoá qua trang Phân quyền (bảng tự hiện thêm dòng "Thêm / sửa / xóa Rules" vì trang đó lặp `ASSIGNABLE_FEATURES` tự động, không cần sửa UI trang Phân quyền). **Đây LÀ thay đổi `DEFAULT_FEATURE_PERMISSIONS` — đúng loại mô tả ở mục 4.8**, nhưng **khác các mục 4.9–4.12 ở chỗ giá trị mặc định là mảng RỖNG (`[]`)** — do `hasFeature()`/`setFeaturePermission()` đều tự fallback về `[]`/`false` khi key `manageRules` chưa tồn tại trong `AppConfig.featurePermissions` production (dùng `?? []`/`?? false`), nên về mặt CHỨC NĂNG **không bắt buộc** phải chạy script merge như mục 4.8 mô tả — production vẫn hoạt động đúng (chỉ Quản lý thêm/sửa/xoá được, giống hệt hành vi hard-code cũ) dù chưa merge. Script merge chỉ cần thiết nếu muốn admin **thấy rõ** dòng "Thêm / sửa / xóa Rules" đã có key tường minh trong DB (không bắt buộc, chỉ để nhất quán với các `AppConfig` merge trước đó).
+
+**Sau khi deploy code này lên production**, chỉ cần các bước sau (xoá mục này khỏi file khi đã làm xong):
+1. Không cần `prisma migrate deploy` (không đổi schema) — chỉ cần deploy code.
+2. (Tuỳ chọn, không bắt buộc) Chạy script merge cộng dồn thêm `manageRules: []` vào `AppConfig.featurePermissions` production nếu muốn key hiện tường minh trong DB thay vì dựa vào fallback runtime.
+3. Đăng nhập production bằng tài khoản **manager** thật, vào tab Rules, dùng thử Bold/Italic/đổi font khi đăng rule mới → xác nhận rule hiển thị đúng định dạng, reload vẫn giữ nguyên.
+4. Vào trang Phân quyền, tick thêm 1 role (vd Processor) vào dòng "Thêm / sửa / xóa Rules" → đăng nhập bằng tài khoản role đó → xác nhận thấy khung đăng rule mới + nút Sửa/Xoá trên từng rule (trước đó không thấy). Bỏ tick lại → xác nhận role đó quay về chỉ xem được.
+5. Đăng nhập bằng tài khoản chưa từng được cấp `manageRules` (vd Agent/Support mặc định) → xác nhận vẫn xem được danh sách rule (kể cả rule có định dạng đậm/nghiêng/font hiển thị đúng) nhưng KHÔNG thấy khung đăng/nút Sửa/Xoá.
 
 Mục 2–5 bên dưới là kiến trúc/quy trình đề xuất (phần lớn đã áp dụng đúng như mô tả, trừ Auth đã nêu ở trên). Mục 6 là checklist hành động cụ thể để đưa app này lên cloud thật.
 
