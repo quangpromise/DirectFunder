@@ -38,13 +38,20 @@ export interface RefundYearRow {
 /** Danh sách năm có refund > 0 kèm số tiền + trạng thái hiện tại (mặc định "preProcessing"
  * nếu chưa từng chọn), sắp theo thứ tự năm tăng dần — dùng cho popup nút mắt. */
 export function refundYearRows(
-  refunds: Record<string, number>,
-  refundYearStatus: Record<string, RefundYearStatus>
+  refunds: Record<string, number> | undefined,
+  refundYearStatus: Record<string, RefundYearStatus> | undefined
 ): RefundYearRow[] {
-  return REFUND_YEARS.filter((year) => (refunds[year] ?? 0) > 0).map((year) => ({
+  // `?? {}`/`?.` — case cache cũ (localStorage từ trước khi 2 field này tồn tại) hoặc dữ
+  // liệu server chưa migrate xong có thể khiến 2 tham số này thực sự `undefined` dù type
+  // khai báo không cho phép (type chỉ đúng lúc biên dịch, không đảm bảo đúng lúc chạy với dữ
+  // liệu cũ) — đã từng gây crash "Cannot read properties of undefined (reading '2023')"
+  // trên production, xem migration ladder version 27 trong app-store.ts.
+  const safeRefunds = refunds ?? {};
+  const safeStatus = refundYearStatus ?? {};
+  return REFUND_YEARS.filter((year) => (safeRefunds[year] ?? 0) > 0).map((year) => ({
     year,
-    amount: refunds[year],
-    status: refundYearStatus[year] ?? DEFAULT_REFUND_YEAR_STATUS,
+    amount: safeRefunds[year],
+    status: safeStatus[year] ?? DEFAULT_REFUND_YEAR_STATUS,
   }));
 }
 

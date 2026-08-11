@@ -1322,9 +1322,9 @@ function RowCells({
                 : "0"}
             </span>
             <CaseRefundStatusButton
-              refunds={row.refunds}
-              refundYearStatus={row.refundYearStatus}
-              refundYearPendingReason={row.refundYearPendingReason}
+              refunds={row.refunds ?? {}}
+              refundYearStatus={row.refundYearStatus ?? {}}
+              refundYearPendingReason={row.refundYearPendingReason ?? {}}
               editable={canEditRefundStatus}
               onChangeStatus={(year, status) => updateRefundYearStatus(row.id, year, status)}
               onChangeReason={(year, reason) => updateRefundYearPendingReason(row.id, year, reason)}

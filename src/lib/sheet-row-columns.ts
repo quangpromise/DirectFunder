@@ -57,13 +57,13 @@ export function getColumnValue(
     // (SendToSheetButton) — năm không chọn để trống, dù case có refund > 0 năm đó.
     // reviewYears undefined (không qua bước chọn năm) = giữ hành vi cũ, luôn lấy đủ.
     if (reviewYears && !reviewYears.includes(refundYear)) return "";
-    const value = row.refunds[refundYear];
+    const value = row.refunds?.[refundYear];
     return typeof value === "number" && value > 0 ? value : "";
   }
 
   if (col.id === CPA_REVIEW_MONEY_COLUMN_ID) {
     const sum = (reviewYears ?? []).reduce((acc, year) => {
-      const value = row.refunds[year];
+      const value = row.refunds?.[year];
       return typeof value === "number" && value > 0 ? acc + value : acc;
     }, 0);
     return sum > 0 ? sum : "";

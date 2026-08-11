@@ -754,7 +754,7 @@ export const useAppStore = create<AppState>()(
 
       updateRefundYearStatus: (caseId, year, status) => {
         const kase = get().cases.find((c) => c.id === caseId);
-        const oldStatus = kase?.refundYearStatus[year] ?? DEFAULT_REFUND_YEAR_STATUS;
+        const oldStatus = kase?.refundYearStatus?.[year] ?? DEFAULT_REFUND_YEAR_STATUS;
         if (kase) logEdit(caseId, `Refund ${year}`, REFUND_STATUS_LABEL[oldStatus], REFUND_STATUS_LABEL[status]);
         set((state) => ({
           cases: state.cases.map((c) =>
@@ -774,7 +774,7 @@ export const useAppStore = create<AppState>()(
       // nhập (blur), không sync theo từng phím gõ.
       updateRefundYearPendingReason: (caseId, year, reason) => {
         const kase = get().cases.find((c) => c.id === caseId);
-        const oldReason = kase?.refundYearPendingReason[year] ?? "";
+        const oldReason = kase?.refundYearPendingReason?.[year] ?? "";
         if (kase && oldReason !== reason) logEdit(caseId, `Lý do Pending ${year}`, oldReason, reason);
         set((state) => ({
           cases: state.cases.map((c) =>
@@ -1277,7 +1277,7 @@ export const useAppStore = create<AppState>()(
     },
     {
       name: "direct-funder-store-v10",
-      version: 26,
+      version: 27,
       migrate: (persisted, version) => {
         const state = persisted as PersistedShape;
         if (!state) return state as unknown as AppState;
@@ -1770,6 +1770,29 @@ export const useAppStore = create<AppState>()(
                 ...rec,
                 sheetSentAt: typeof rec.sheetSentAt === "string" ? rec.sheetSentAt : null,
                 cpaEmailSentAt: typeof rec.cpaEmailSentAt === "string" ? rec.cpaEmailSentAt : null,
+              };
+            });
+          }
+        }
+
+        if (version < 27) {
+          // Cùng lỗi đã gặp ở version 25 (xem comment phía trên) nhưng cho 2 field mới hơn:
+          // case cache cũ (localStorage) từ TRƯỚC khi thêm refundYearStatus/
+          // refundYearPendingReason thiếu hẳn 2 field này -> CaseRefundStatusButton (nút mắt
+          // cạnh cột Case) đọc refundYearStatus[year]/refundYearPendingReason[year] trên
+          // `undefined` -> "Cannot read properties of undefined (reading '2023')" -> crash
+          // toàn bộ trang Hồ sơ ngay từ lần render đầu, TRƯỚC khi hydrateFromServer() kịp ghi
+          // đè bằng dữ liệu thật từ server. Chỉ lộ ra trên production vì user có sẵn cache cũ.
+          if (Array.isArray(state.cases)) {
+            state.cases = state.cases.map((c) => {
+              const rec = c as Record<string, unknown>;
+              return {
+                ...rec,
+                refundYearStatus: rec.refundYearStatus && typeof rec.refundYearStatus === "object" ? rec.refundYearStatus : {},
+                refundYearPendingReason:
+                  rec.refundYearPendingReason && typeof rec.refundYearPendingReason === "object"
+                    ? rec.refundYearPendingReason
+                    : {},
               };
             });
           }
