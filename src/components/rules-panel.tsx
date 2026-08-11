@@ -291,14 +291,14 @@ export function RulesPanel({ variant = "icon" }: { variant?: "icon" | "tab" }) {
                 {panelBody}
               </div>
 
-              {/* Mobile: hiện NGAY DƯỚI nút Rules (yêu cầu 2026-08-11, thay cho overlay căn
-                  giữa màn hình trước đó) — nút Rules trên mobile giờ đặt cạnh nút menu (gần
-                  mép trái header, xem top-nav.tsx) nên neo trái (left-0) để dropdown mở rộng
-                  sang phải, không tràn mép trái; width tự co theo viewport để không tràn mép
-                  phải. */}
+              {/* Mobile: neo theo cạnh trigger (left-0/right-0) vẫn tràn màn hình vì trigger
+                  không nằm sát mép viewport — width co theo 100vw không đủ, offset ngang
+                  của trigger mới là nguyên nhân tràn. Đổi sang fixed + căn giữa NGANG theo
+                  viewport (left-1/2 -translate-x-1/2, không phụ thuộc vị trí trigger nữa),
+                  đặt ngay dưới header (top-16) để không che hết màn hình. */}
               <div className="fixed inset-0 z-40 sm:hidden" onClick={() => setOpen(false)} />
               <div
-                className="popover absolute left-0 z-50 mt-2 flex max-h-[75vh] w-[min(22rem,calc(100vw-2rem))] flex-col overflow-y-auto rounded-2xl p-0 shadow-2xl shadow-black/60 sm:hidden"
+                className="popover fixed left-1/2 top-16 z-50 flex max-h-[75vh] w-[min(22rem,calc(100vw-2rem))] -translate-x-1/2 flex-col overflow-y-auto rounded-2xl p-0 shadow-2xl shadow-black/60 sm:hidden"
                 onClick={(e) => e.stopPropagation()}
               >
                 {panelBody}
