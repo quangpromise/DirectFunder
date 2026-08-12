@@ -64,44 +64,6 @@ type CaseTab = "all" | "cannot_process" | "active" | "done";
 /** Nhóm status thực tế dùng để lọc dữ liệu — "all" không phải 1 nhóm status, chỉ là bỏ qua lọc. */
 type CaseStatusGroup = Exclude<CaseTab, "all">;
 
-const CASE_TABS: { id: CaseTab; labelKey: string }[] = [
-  { id: "all", labelKey: "cases.tab.all" },
-  { id: "cannot_process", labelKey: "cases.tab.cannotProcess" },
-  { id: "active", labelKey: "cases.tab.processing" },
-  { id: "done", labelKey: "cases.tab.done" },
-];
-
-// Màu nền/chữ riêng cho từng tab, gợi ý đúng ý nghĩa tên tab: All trung tính theo màu
-// thương hiệu, Can not Process đỏ (bị chặn), Processing vàng (đang xử lý), Done xanh lá
-// (hoàn tất). Badge đậm hơn khi tab đang được chọn.
-const TAB_COLORS: Record<CaseTab, { active: string; inactive: string; badgeActive: string; badgeInactive: string }> = {
-  all: {
-    active: "border-accent/40 bg-accent-soft text-accent",
-    inactive: "border-transparent text-text-faint hover:bg-accent-soft/40 hover:text-accent",
-    badgeActive: "bg-accent/20 text-accent",
-    badgeInactive: "bg-accent-soft text-accent/70",
-  },
-  cannot_process: {
-    active: "border-red-500/40 bg-red-500/15 text-red-300 light:text-red-700",
-    inactive: "border-transparent text-red-400/70 hover:bg-red-500/10 hover:text-red-300 light:text-red-600 light:hover:text-red-700",
-    badgeActive: "bg-red-500/20 text-red-300 light:text-red-700",
-    badgeInactive: "bg-red-500/10 text-red-400/70 light:text-red-600",
-  },
-  active: {
-    active: "border-amber-500/40 bg-amber-500/15 text-amber-300 light:text-amber-700",
-    inactive: "border-transparent text-amber-400/70 hover:bg-amber-500/10 hover:text-amber-300 light:text-amber-600 light:hover:text-amber-700",
-    badgeActive: "bg-amber-500/20 text-amber-300 light:text-amber-700",
-    badgeInactive: "bg-amber-500/10 text-amber-400/70 light:text-amber-600",
-  },
-  done: {
-    active: "border-emerald-500/40 bg-emerald-500/15 text-emerald-300 light:text-emerald-700",
-    inactive:
-      "border-transparent text-emerald-400/70 hover:bg-emerald-500/10 hover:text-emerald-300 light:text-emerald-600 light:hover:text-emerald-700",
-    badgeActive: "bg-emerald-500/20 text-emerald-300 light:text-emerald-700",
-    badgeInactive: "bg-emerald-500/10 text-emerald-400/70 light:text-emerald-600",
-  },
-};
-
 // Status "On-Hold"/"Cancelled" -> tab Can not Process, "CPA Review"/"Approved" (Accepted)
 // -> tab Done, mọi status còn lại (kể cả status tùy chỉnh thêm sau này) -> tab Processing.
 const CANNOT_PROCESS_STATUS_IDS = new Set(["on_hold", "cancelled"]);
@@ -311,10 +273,15 @@ export default function CasesPage() {
         await alertWarn(t("cases.import.emptyFile"), { title: t("cases.import.title") });
         return;
       }
-      const { success, failed } = await importCases(rows, user.id, user.role);
-      await alertWarn(t("cases.import.result", { success: String(success), failed: String(failed) }), {
-        title: t("cases.import.title"),
-      });
+      const { success, failed, duplicateSsn } = await importCases(rows, user.id, user.role);
+      await alertWarn(
+        t("cases.import.result", {
+          success: String(success),
+          failed: String(failed),
+          duplicateSsn: String(duplicateSsn),
+        }),
+        { title: t("cases.import.title") }
+      );
     } catch (err) {
       console.error("[import] Đọc file Excel thất bại:", err);
       await alertWarn(t("cases.import.parseError"), { title: t("cases.import.title") });
@@ -509,11 +476,6 @@ export default function CasesPage() {
 
   const tabStatusOptions = tab === "all" ? statusOptions : statusOptions.filter((o) => getCaseTab(o.id) === tab);
 
-  function changeTab(next: CaseTab) {
-    setTab(next);
-    setStatusFilter("all");
-  }
-
   const otherColumns = columns.filter(
     (col) =>
       col.key !== "clientName" &&
@@ -540,35 +502,8 @@ export default function CasesPage() {
     <div className="flex h-full flex-col">
       {ConfirmDialogUI}
       {AlertDialogUI}
-      {/* flex-wrap — trên màn hình hẹp (mobile), nhóm nút List/Dashboard (ml-auto) không đủ
-          chỗ cùng hàng với các tab sẽ tự xuống dòng thay vì tràn ra ngoài khung nhìn (bug đã
-          gặp: 2 nút bị đẩy lệch hẳn ra ngoài màn hình, không cuộn ngang tới được vì body
-          không có scrollbar ngang). */}
-      <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-4 pt-3 sm:px-6">
-        {view === "list" &&
-          CASE_TABS.map((ct) => {
-            const colors = TAB_COLORS[ct.id];
-            return (
-              <button
-                key={ct.id}
-                onClick={() => changeTab(ct.id)}
-                className={`flex items-center gap-1.5 rounded-t-lg border border-b-0 px-3.5 py-2 text-sm font-medium transition ${
-                  tab === ct.id ? colors.active : colors.inactive
-                }`}
-              >
-                {t(ct.labelKey)}
-                <span
-                  className={`rounded-full px-1.5 py-0.5 text-[11px] font-semibold ${
-                    tab === ct.id ? colors.badgeActive : colors.badgeInactive
-                  }`}
-                >
-                  {stats.byTab[ct.id]}
-                </span>
-              </button>
-            );
-          })}
-
-        <div className="ml-auto mb-1.5 flex shrink-0 gap-1.5 rounded-lg border border-border bg-surface p-1">
+      <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3 sm:px-6">
+        <div className="flex shrink-0 gap-1.5 rounded-lg border border-border bg-surface p-1">
           <button
             onClick={() => setView("list")}
             className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
@@ -586,35 +521,21 @@ export default function CasesPage() {
             {t("cases.view.dashboard")}
           </button>
         </div>
+
+        {/* Đứng yên, chỉ nhấp nháy CHẬM (mờ dần rồi rõ lại — xem .greeting-blink trong
+            globals.css) — nằm cùng hàng với nút List/Dashboard thay vì hàng riêng bên dưới. */}
+        <h1 className="greeting-blink flex-1 whitespace-nowrap text-center text-sm font-semibold tracking-tight sm:text-lg">
+          {t("cases.greeting")} {user.name.split(" ").slice(-1)[0]}
+          {greetingPeriod && (
+            <>
+              {" "}
+              - {t(`cases.greetingPeriod.${greetingPeriod}`)} {greetingEmoji(greetingPeriod)}
+            </>
+          )}
+        </h1>
       </div>
       {view === "list" && (
-      // flex-col LUÔN (không chỉ mobile) — dòng chào chiếm trọn 1 hàng riêng full-width,
-      // stat chip + nút "Xem thống kê" dồn xuống hàng dưới, mọi kích thước màn hình.
       <div className="flex flex-col gap-3 border-b border-border px-4 py-3 sm:px-6">
-        {(() => {
-          const greetingText = (
-            <>
-              {t("cases.greeting")} {user.name.split(" ").slice(-1)[0]}
-              {greetingPeriod && (
-                <>
-                  {" "}
-                  - {t(`cases.greetingPeriod.${greetingPeriod}`)} {greetingEmoji(greetingPeriod)}
-                </>
-              )}
-            </>
-          );
-          // Đứng yên, căn giữa cả hàng (w-full + flex justify-center), chỉ nhấp nháy CHẬM
-          // (mờ dần rồi rõ lại — xem .greeting-blink trong globals.css), không chạy ngang
-          // như trước nữa.
-          return (
-            <div className="flex w-full justify-center">
-              <h1 className="greeting-blink whitespace-nowrap text-sm font-semibold tracking-tight sm:text-lg">
-                {greetingText}
-              </h1>
-            </div>
-          );
-        })()}
-
         {/* Chọn cách đếm dãy chip bên dưới — "case" (mặc định): đếm theo từng năm refund
             (dữ liệu popup mắt cột Case), "client": đếm theo hồ sơ như trước đây. Luôn hiện
             (không chỉ desktop) vì áp dụng cho cả 2 cách hiển thị thống kê bên dưới. */}
@@ -1501,25 +1422,13 @@ function RowCells({
           />
         </div>
       </div>
-      <div className="flex h-full min-w-0 flex-col divide-y divide-border border-b border-r border-border transition-colors group-hover:bg-surface-hover">
-        <div className="flex min-h-0 flex-1 items-center gap-0.5">
-          <span className="w-3 shrink-0 text-center text-[9px] font-semibold text-text-faint">1</span>
-          <AssignMenu
-            users={processorUsers}
-            assignedTo={row.assignedProcessor}
-            canAssign={canAssignFeature && canEditRow}
-            onAssign={(uid) => assignCase(row.id, uid, "assignedProcessor")}
-          />
-        </div>
-        <div className="flex min-h-0 flex-1 items-center gap-0.5">
-          <span className="w-3 shrink-0 text-center text-[9px] font-semibold text-text-faint">2</span>
-          <AssignMenu
-            users={processorUsers}
-            assignedTo={row.assignedProcessor2}
-            canAssign={canAssignFeature && canEditRow}
-            onAssign={(uid) => assignCase(row.id, uid, "assignedProcessor2")}
-          />
-        </div>
+      <div className="flex h-full min-w-0 items-center gap-0.5 border-b border-r border-border transition-colors group-hover:bg-surface-hover">
+        <AssignMenu
+          users={processorUsers}
+          assignedTo={row.assignedProcessor}
+          canAssign={canAssignFeature && canEditRow}
+          onAssign={(uid) => assignCase(row.id, uid, "assignedProcessor")}
+        />
       </div>
       <div className="border-b border-border transition-colors group-hover:bg-surface-hover">
         {canDeleteRowFeature && (

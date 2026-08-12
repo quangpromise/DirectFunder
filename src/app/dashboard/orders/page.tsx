@@ -229,10 +229,15 @@ export default function OrdersPage() {
         await alertWarn(t("cases.import.emptyFile"), { title: t("cases.import.title") });
         return;
       }
-      const { success, failed } = await importCases(rows, user.id, user.role);
-      await alertWarn(t("cases.import.result", { success: String(success), failed: String(failed) }), {
-        title: t("cases.import.title"),
-      });
+      const { success, failed, duplicateSsn } = await importCases(rows, user.id, user.role);
+      await alertWarn(
+        t("cases.import.result", {
+          success: String(success),
+          failed: String(failed),
+          duplicateSsn: String(duplicateSsn),
+        }),
+        { title: t("cases.import.title") }
+      );
     } catch (err) {
       console.error("[import] Đọc file Excel thất bại:", err);
       await alertWarn(t("cases.import.parseError"), { title: t("cases.import.title") });

@@ -7,6 +7,7 @@ import { summarizeCheckInitial } from "@/lib/check-initial";
 import { DEFAULT_REFUND_YEAR_STATUS, findRefundStatusOption } from "@/lib/refund-status";
 import { api, syncInBackground, type ClientProfilePayload } from "@/lib/api-client";
 import type { ParsedCaseRow } from "@/lib/excel";
+import { formatSsn } from "@/lib/ssn";
 import {
   AppNotification,
   CaseRecord,
@@ -41,6 +42,26 @@ import {
  */
 function uniqueId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/** Excel cho phép xuống dòng trong 1 ô (Alt+Enter) — dùng cho ô "Client Name"/"SSN" khi
+ * nhập Excel: dòng 1 là khách hàng chính, dòng 2 (nếu có) là vợ/chồng (Spouse). */
+function splitCellLines(text: string): [string, string] {
+  const lines = text
+    .split(/\r\n|\r|\n/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return [lines[0] ?? "", lines[1] ?? ""];
+}
+
+/** Tách tên theo TỪ CUỐI CÙNG -> Last Name, phần còn lại -> First Name (vd "Nguyen Van A"
+ * -> First "Nguyen Van", Last "A"). Chỉ có 1 từ thì để nguyên vào Last Name. */
+function splitNameLastWord(fullName: string): { firstName: string; lastName: string } {
+  const trimmed = fullName.trim();
+  if (!trimmed) return { firstName: "", lastName: "" };
+  const idx = trimmed.lastIndexOf(" ");
+  if (idx === -1) return { firstName: "", lastName: trimmed };
+  return { firstName: trimmed.slice(0, idx).trim(), lastName: trimmed.slice(idx + 1).trim() };
 }
 
 /** Định danh hồ sơ dùng trong thông báo (bell) — theo quy ước dự án SSN là số duy nhất
@@ -159,7 +180,11 @@ interface AppState {
   /** Thêm hàng loạt hồ sơ từ file Excel (xem src/lib/excel.ts) — mỗi dòng parse thành 1
    * request tạo hồ sơ riêng (server tự tính caseNumber duy nhất cho từng dòng, không lo
    * trùng). Trả về số dòng tạo thành công/thất bại để UI báo lại cho người dùng. */
-  importCases: (rows: ParsedCaseRow[], creatorId: string, creatorRole: Role) => Promise<{ success: number; failed: number }>;
+  importCases: (
+    rows: ParsedCaseRow[],
+    creatorId: string,
+    creatorRole: Role
+  ) => Promise<{ success: number; failed: number; duplicateSsn: number }>;
   deleteRow: (caseId: string, deletedByUserId: string) => void;
   updateClientLink: (caseId: string, link: string | null) => void;
   updateSsn: (caseId: string, slot: 0 | 1, value: string | null) => void;
@@ -689,20 +714,63 @@ export const useAppStore = create<AppState>()(
         );
       },
 
-      // Excel export/import chỉ có 1 dòng "Client Name" (không tách First/Last riêng như
-      // bảng Hồ sơ) — tách theo khoảng trắng đầu tiên: từ đầu tiên -> firstName, phần còn
-      // lại -> lastName. Agent/Processor khớp theo TÊN chính xác (không phân biệt hoa
-      // thường) với danh sách tài khoản hiện có, không khớp được thì để trống (không lỗi).
+      // Excel export/import: ô "Client Name"/"SSN" có thể chứa 2 dòng (Alt+Enter trong Excel)
+      // — dòng 1 là khách hàng chính, dòng 2 (nếu có) là vợ/chồng (Spouse), tách bằng
+      // splitCellLines(). Tên mỗi dòng tách theo TỪ CUỐI CÙNG -> Last Name, phần còn lại ->
+      // First Name (splitNameLastWord, vd "Nguyen Van A" -> First "Nguyen Van", Last "A").
+      // Agent/Processor khớp theo TÊN chính xác (không phân biệt hoa thường) với danh sách
+      // tài khoản hiện có, không khớp được thì để trống (không lỗi).
       importCases: async (rows, creatorId, creatorRole) => {
         const state = get();
         const agentUsers = state.users.filter((u) => u.role === "agent");
         const processorUsers = state.users.filter((u) => u.role === "processor");
 
-        const results = await Promise.allSettled(
-          rows.map((row) => {
-            const spaceIdx = row.clientName.indexOf(" ");
-            const firstName = spaceIdx === -1 ? row.clientName : row.clientName.slice(0, spaceIdx);
-            const lastName = spaceIdx === -1 ? "" : row.clientName.slice(spaceIdx + 1).trim();
+        // SSN đại diện duy nhất cho mỗi hồ sơ (xem workflow-conventions.md) — chuẩn hoá về
+        // đúng dạng xxx-xx-xxxx như phần mềm đang dùng ở mọi nơi khác (formatSsn), rồi loại
+        // các dòng có SSN (chính hoặc Spouse) trùng với hồ sơ đã có sẵn TRONG DB lẫn trùng
+        // nhau NGAY TRONG file vừa tải lên — không import những dòng đó, chỉ đếm lại để báo
+        // lỗi cho người dùng.
+        const existingSsns = new Set<string>();
+        for (const c of state.cases) {
+          for (const s of c.ssn) if (s) existingSsns.add(s);
+        }
+        const seenInFile = new Set<string>();
+        const importable: { row: ParsedCaseRow; ssnPrimary: string; ssnSpouse: string }[] = [];
+        let duplicateSsn = 0;
+        for (const row of rows) {
+          const [ssnLine1, ssnLine2] = splitCellLines(row.ssn);
+          const ssnPrimary = ssnLine1 ? formatSsn(ssnLine1) : "";
+          const ssnSpouse = ssnLine2 ? formatSsn(ssnLine2) : "";
+          const candidates = [ssnPrimary, ssnSpouse].filter(Boolean);
+          if (candidates.some((s) => existingSsns.has(s) || seenInFile.has(s))) {
+            duplicateSsn += 1;
+            continue;
+          }
+          for (const s of candidates) seenInFile.add(s);
+          importable.push({ row, ssnPrimary, ssnSpouse });
+        }
+
+        // Dòng đầu file Excel phải nằm trên cùng bảng: gán sortOrder giảm dần theo thứ tự
+        // dòng trong file (dòng 1 nhận giá trị âm nhất) trong cùng 1 mốc thời gian base, thay
+        // vì mỗi dòng tự gọi -Date.now() riêng (dễ đảo ngược thứ tự do các lệnh gọi liên tiếp
+        // trong .map() cho ra giá trị tăng dần).
+        const baseSortOrder = -Date.now();
+
+        // Tạo TUẦN TỰ (không Promise.allSettled bắn song song) — server tự tính caseNumber
+        // kế tiếp bằng cách quét max hiện có (nextCaseNumber trong api/cases/route.ts),
+        // caseNumber lại có ràng buộc @unique trên DB; nếu bắn nhiều request tạo hồ sơ cùng
+        // lúc, nhiều request sẽ đọc thấy cùng 1 giá trị max (do các request trước chưa kịp
+        // commit) rồi tính ra CÙNG 1 caseNumber -> chỉ request đầu tiên insert thành công,
+        // các request còn lại vi phạm unique constraint và bị coi là "failed" dù dữ liệu
+        // hoàn toàn hợp lệ. Đây là nguyên nhân gây ra hiện tượng nhập Excel báo "N dòng lỗi"
+        // dù file không có gì sai.
+        const results: PromiseSettledResult<CaseRecord>[] = [];
+        for (let index = 0; index < importable.length; index++) {
+          const { row, ssnPrimary, ssnSpouse } = importable[index];
+          try {
+            const [nameLine1, nameLine2] = splitCellLines(row.clientName);
+            const primaryName = splitNameLastWord(nameLine1);
+            const spouseName = splitNameLastWord(nameLine2);
             const agent = agentUsers.find((u) => u.name.trim().toLowerCase() === row.agentName.toLowerCase());
             const processor = processorUsers.find(
               (u) => u.name.trim().toLowerCase() === row.processorName.toLowerCase()
@@ -710,11 +778,8 @@ export const useAppStore = create<AppState>()(
             const record: CaseRecord = {
               id: uniqueId("c"),
               status: "pre_processing",
-              clients: [
-                { firstName, lastName },
-                { firstName: "", lastName: "" },
-              ],
-              clientLink: null,
+              clients: [primaryName, spouseName],
+              clientLink: row.clientLink,
               zipcode: row.zip,
               address: row.address,
               phone: row.phone,
@@ -727,23 +792,32 @@ export const useAppStore = create<AppState>()(
               refunds: {},
               orders: [],
               assignedTo: agent?.id ?? (creatorRole === "agent" ? creatorId : null),
+              assignedTo2: null,
               assignedProcessor: processor?.id ?? (creatorRole === "processor" ? creatorId : null),
+              assignedProcessor2: null,
               createdBy: creatorId,
-              ssn: [row.ssn || null, null],
+              ssn: [ssnPrimary || null, ssnSpouse || null],
               descriptionReplies: [],
               descriptionReadBy: [],
-              custom: { caseLabel: row.caseLabel || "1" },
+              // caseLabel giờ là số đếm tự động năm Refund > 0 (xem rbac.ts) — hồ sơ nhập từ
+              // Excel chưa có refund nào nên luôn mặc định 0, giống hệt hồ sơ tạo tay qua nút
+              // "Thêm dòng" (POST /api/cases nhánh không có body), không đọc theo cột nào
+              // trong file Excel nữa.
+              custom: { caseLabel: 0 },
               sheetSentAt: null,
               cpaEmailSentAt: null,
-              sortOrder: -Date.now(),
+              sortOrder: baseSortOrder - (importable.length - index),
               refundYearStatus: {},
               refundYearPendingReason: {},
               createdAt: new Date().toISOString(),
               updatedAt: new Date().toISOString(),
             };
-            return api.createCase(record);
-          })
-        );
+            const created = await api.createCase(record);
+            results.push({ status: "fulfilled", value: created });
+          } catch (err) {
+            results.push({ status: "rejected", reason: err });
+          }
+        }
 
         const created = results
           .filter((r): r is PromiseFulfilledResult<CaseRecord> => r.status === "fulfilled")
@@ -752,7 +826,7 @@ export const useAppStore = create<AppState>()(
         if (created.length > 0) {
           set((s) => ({ cases: [...s.cases, ...created] }));
         }
-        return { success: created.length, failed };
+        return { success: created.length, failed, duplicateSsn };
       },
 
       deleteRow: (caseId, deletedByUserId) => {
