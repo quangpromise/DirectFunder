@@ -771,6 +771,7 @@ export const useAppStore = create<AppState>()(
             const [nameLine1, nameLine2] = splitCellLines(row.clientName);
             const primaryName = splitNameLastWord(nameLine1);
             const spouseName = splitNameLastWord(nameLine2);
+            const [phone1, phone2] = splitCellLines(row.phone);
             const agent = agentUsers.find((u) => u.name.trim().toLowerCase() === row.agentName.toLowerCase());
             const processor = processorUsers.find(
               (u) => u.name.trim().toLowerCase() === row.processorName.toLowerCase()
@@ -782,8 +783,8 @@ export const useAppStore = create<AppState>()(
               clientLink: row.clientLink,
               zipcode: row.zip,
               address: row.address,
-              phone: row.phone,
-              phone2: "",
+              phone: phone1,
+              phone2: phone2,
               email: "",
               dateOfBirth: [null, null],
               description: "",
