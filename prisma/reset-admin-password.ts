@@ -17,22 +17,28 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { hashPassword } from "../src/lib/password";
 
-const prodUrl = process.env.PROD_DATABASE_URL;
-const email = process.env.RESET_EMAIL?.trim().toLowerCase();
-const newPassword = process.env.RESET_PASSWORD;
+const prodUrlRaw = process.env.PROD_DATABASE_URL;
+const emailRaw = process.env.RESET_EMAIL?.trim().toLowerCase();
+const newPasswordRaw = process.env.RESET_PASSWORD;
 
-if (!prodUrl) {
+if (!prodUrlRaw) {
   console.error("Thiếu PROD_DATABASE_URL (connection string Neon production).");
   process.exit(1);
 }
-if (!email) {
+if (!emailRaw) {
   console.error("Thiếu RESET_EMAIL.");
   process.exit(1);
 }
-if (!newPassword || newPassword.length < 8) {
+if (!newPasswordRaw || newPasswordRaw.length < 8) {
   console.error("Thiếu RESET_PASSWORD hoặc mật khẩu quá ngắn (cần >= 8 ký tự).");
   process.exit(1);
 }
+
+// TypeScript không giữ lại narrowing từ các if ở trên khi dùng biến bên trong 1 function
+// khác (main() dưới đây) — gán qua const kiểu tường minh để hết union `| undefined`.
+const prodUrl: string = prodUrlRaw;
+const email: string = emailRaw;
+const newPassword: string = newPasswordRaw;
 
 const prod = new PrismaClient({ adapter: new PrismaPg({ connectionString: prodUrl }) });
 

@@ -79,19 +79,37 @@ function StatChip({
   label,
   value,
   icon: Icon,
+  onClick,
 }: {
   label: string;
   value: string;
   icon: React.ComponentType<{ size?: number; className?: string }>;
+  /** Tuỳ chọn — hiện tại dùng cho chip "Tổng" ở chế độ "Xem theo Case": bấm vào để bỏ bộ
+   * lọc theo trạng thái năm refund (caseYearStatusFilter), hiện lại toàn bộ row. */
+  onClick?: () => void;
 }) {
-  return (
-    <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5">
+  const content = (
+    <>
       <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-accent-soft text-accent">
         <Icon size={13} />
       </div>
       <span className="text-xs text-text-faint">{label}</span>
       <span className="text-sm font-semibold">{value}</span>
-    </div>
+    </>
+  );
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5 transition hover:bg-surface-hover"
+      >
+        {content}
+      </button>
+    );
+  }
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5">{content}</div>
   );
 }
 
@@ -111,13 +129,31 @@ function StatusStatChip({ option, value }: { option: SelectOption; value: number
  * StatusStatChip: map dịch đó tra theo id ("pending"/"processing"...) dùng chung với cột
  * Status chính, sẽ âm thầm ghi đè label Admin đã tự đặt cho trạng thái refund-year (đúng
  * bug đã gặp và vá ở case-refund-status-button.tsx, StaticStatusBadge). */
-function CaseYearStatusChip({ option, value }: { option: SelectOption; value: number }) {
+/** Bấm vào chip -> lọc bảng chỉ còn các row có ít nhất 1 năm refund đang ở đúng trạng thái
+ * này (xem caseYearStatusFilter). Bấm lại chip đang active -> bỏ lọc (quay về "all"). */
+function CaseYearStatusChip({
+  option,
+  value,
+  active,
+  onClick,
+}: {
+  option: SelectOption;
+  value: number;
+  active: boolean;
+  onClick: () => void;
+}) {
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5">
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 transition ${
+        active ? "border-accent bg-accent-soft" : "border-border bg-surface hover:bg-surface-hover"
+      }`}
+    >
       <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: option.color }} />
-      <span className="text-xs text-text-faint">{option.label}</span>
+      <span className={`text-xs ${active ? "text-accent" : "text-text-faint"}`}>{option.label}</span>
       <span className="text-sm font-semibold">{value}</span>
-    </div>
+    </button>
   );
 }
 
@@ -211,6 +247,12 @@ export default function CasesPage() {
    * năm đó). "client": giữ hành vi cũ, đếm theo TỪNG HỒ SƠ (row), nhóm theo cột Status
    * chính. Mặc định "case" theo yêu cầu 2026-08-12. */
   const [caseSummaryMode, setCaseSummaryMode] = useState<"case" | "client">("case");
+  // Bấm 1 chip trạng thái trong dãy tổng hợp ở chế độ "Xem theo Case" -> chỉ hiện các row
+  // có ÍT NHẤT 1 năm refund đang ở đúng trạng thái đó (khác statusFilter — statusFilter lọc
+  // theo cột Status chính của row, còn bộ lọc này lọc theo trạng thái TỪNG NĂM refund trong
+  // con mắt cột Case). "all" = không lọc. Reset khi đổi qua "Xem theo Clients" để tránh lọc
+  // ẩn hồ sơ mà không có UI nào đang hiện trạng thái đang lọc.
+  const [caseYearStatusFilter, setCaseYearStatusFilter] = useState<string>("all");
   const [reportPeriod, setReportPeriod] = useState<ReportPeriod>("today");
   const [reportMonth, setReportMonth] = useState<string>(() => currentPhoenixMonth());
   const [reportYear, setReportYear] = useState<number>(() => currentPhoenixYear());
@@ -308,6 +350,13 @@ export default function CasesPage() {
     return visibleCases.filter((c) => {
       if (tab !== "all" && getCaseTab(c.status) !== tab) return false;
       if (statusFilter !== "all" && c.status !== statusFilter) return false;
+      if (
+        caseSummaryMode === "case" &&
+        caseYearStatusFilter !== "all" &&
+        !refundYearRows(c.refunds, c.refundYearStatus).some((r) => r.status === caseYearStatusFilter)
+      ) {
+        return false;
+      }
       // 2 bộ lọc dưới đây CHỈ áp dụng đúng role liên quan (xem khai báo state) — không
       // chặn theo role thì role không có UI cho bộ lọc này cũng bị ảnh hưởng bởi state
       // mặc định, ẩn nhầm hồ sơ.
@@ -338,7 +387,17 @@ export default function CasesPage() {
         c.description.toLowerCase().includes(q)
       );
     });
-  }, [visibleCases, search, statusFilter, processorFilter, agentFilter, tab, user?.role]);
+  }, [
+    visibleCases,
+    search,
+    statusFilter,
+    processorFilter,
+    agentFilter,
+    tab,
+    user?.role,
+    caseSummaryMode,
+    caseYearStatusFilter,
+  ]);
 
   const stats = useMemo(() => {
     const totalMoney = visibleCases.reduce((sum, c) => sum + c.money, 0);
@@ -541,7 +600,10 @@ export default function CasesPage() {
             (không chỉ desktop) vì áp dụng cho cả 2 cách hiển thị thống kê bên dưới. */}
         <div className="flex shrink-0 gap-1 self-start rounded-lg border border-border bg-surface p-1">
           <button
-            onClick={() => setCaseSummaryMode("client")}
+            onClick={() => {
+              setCaseSummaryMode("client");
+              setCaseYearStatusFilter("all");
+            }}
             className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
               caseSummaryMode === "client" ? "gradient-btn text-white" : "text-text-faint hover:text-text-dim"
             }`}
@@ -563,10 +625,17 @@ export default function CasesPage() {
             label={t("common.total")}
             value={String(caseSummaryMode === "case" ? caseYearStats.totalYears : stats.total)}
             icon={FileText}
+            onClick={caseSummaryMode === "case" ? () => setCaseYearStatusFilter("all") : undefined}
           />
           {caseSummaryMode === "case"
             ? refundYearStatusOptions.map((o) => (
-                <CaseYearStatusChip key={o.id} option={o} value={caseYearStats.byStatus[o.id] ?? 0} />
+                <CaseYearStatusChip
+                  key={o.id}
+                  option={o}
+                  value={caseYearStats.byStatus[o.id] ?? 0}
+                  active={caseYearStatusFilter === o.id}
+                  onClick={() => setCaseYearStatusFilter((prev) => (prev === o.id ? "all" : o.id))}
+                />
               ))
             : statusOptions.map((o) => (
                 <StatusStatChip key={o.id} option={o} value={stats.byStatus[o.id] ?? 0} />
@@ -608,10 +677,17 @@ export default function CasesPage() {
                     label={t("common.total")}
                     value={String(caseSummaryMode === "case" ? caseYearStats.totalYears : stats.total)}
                     icon={FileText}
+                    onClick={caseSummaryMode === "case" ? () => setCaseYearStatusFilter("all") : undefined}
                   />
                   {caseSummaryMode === "case"
                     ? refundYearStatusOptions.map((o) => (
-                        <CaseYearStatusChip key={o.id} option={o} value={caseYearStats.byStatus[o.id] ?? 0} />
+                        <CaseYearStatusChip
+                          key={o.id}
+                          option={o}
+                          value={caseYearStats.byStatus[o.id] ?? 0}
+                          active={caseYearStatusFilter === o.id}
+                          onClick={() => setCaseYearStatusFilter((prev) => (prev === o.id ? "all" : o.id))}
+                        />
                       ))
                     : statusOptions.map((o) => (
                         <StatusStatChip key={o.id} option={o} value={stats.byStatus[o.id] ?? 0} />

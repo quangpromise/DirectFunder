@@ -947,6 +947,11 @@ export const useAppStore = create<AppState>()(
       },
 
       addDescriptionReply: (caseId, authorId, text) => {
+        // Có description mới thì đẩy hẳn row của hồ sơ đó lên đầu bảng, giống thứ tự hội
+        // thoại có tin nhắn mới nhất — phải gán sortOrder mới (giống addRow: -Date.now() luôn
+        // nhỏ hơn mọi sortOrder hiện có) và lưu server, nếu không GET /api/cases (sắp xếp
+        // theo sortOrder) sẽ trả về đúng vị trí cũ sau khi reload, làm row "nhảy về chỗ cũ".
+        const newSortOrder = -Date.now();
         set((state) => {
           const updated = state.cases.map((c) =>
             c.id === caseId
@@ -960,22 +965,29 @@ export const useAppStore = create<AppState>()(
                   // vẫn thấy màu đỏ cho tới khi tự mở xem.
                   descriptionReadBy: [authorId],
                   updatedAt: new Date().toISOString(),
+                  sortOrder: newSortOrder,
                 }
               : c
           );
-          // Có description mới thì đẩy hẳn row của hồ sơ đó lên đầu bảng, giống thứ tự
-          // hội thoại có tin nhắn mới nhất — không chỉ đổi màu chữ mà đổi cả vị trí row.
+          // Bảng Hồ sơ hiển thị đúng theo thứ tự mảng state.cases (không tự sort lại theo
+          // sortOrder ở client) — phải tự đưa row lên đầu mảng ở đây để thấy nhảy lên NGAY,
+          // không phải đợi reload mới thấy đúng vị trí.
           const idx = updated.findIndex((c) => c.id === caseId);
-          if (idx <= 0) return { cases: updated };
-          const [moved] = updated.splice(idx, 1);
-          updated.unshift(moved);
+          if (idx > 0) {
+            const [moved] = updated.splice(idx, 1);
+            updated.unshift(moved);
+          }
           return { cases: updated };
         });
         const kase = get().cases.find((c) => c.id === caseId);
         if (kase) {
           syncInBackground(
             "descriptionReply",
-            api.patchCase(caseId, { descriptionReplies: kase.descriptionReplies, descriptionReadBy: kase.descriptionReadBy })
+            api.patchCase(caseId, {
+              descriptionReplies: kase.descriptionReplies,
+              descriptionReadBy: kase.descriptionReadBy,
+              sortOrder: newSortOrder,
+            })
           );
         }
       },
