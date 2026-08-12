@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
+import { hasFeature } from "@/lib/rbac";
+import type { FeaturePermissions } from "@/lib/types";
 import type { Prisma } from "@prisma/client";
 
 export async function GET() {
@@ -19,6 +21,8 @@ export async function GET() {
     cpaSenderEmail: process.env.GMAIL_USER ?? null,
     googleSheetConfig: config.googleSheetConfig,
     clientEmailTemplate: config.clientEmailTemplate,
+    refundYearStatusOptions: config.refundYearStatusOptions,
+    collectingColumns: config.collectingColumns,
   });
 }
 
@@ -70,9 +74,13 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: "Thiếu columns hoặc featurePermissions" }, { status: 400 });
   }
 
+  // Nạp existing sớm và luôn luôn (kể cả role manager) — vừa dùng cho carve-out order-status
+  // ở role khác, vừa dùng để kiểm tra quyền addCollectingColumn/editCollectingColumn bên
+  // dưới (áp dụng cho MỌI role, kể cả manager vì đơn giản đọc code hơn dùng lại 1 nguồn).
+  const existing = await prisma.appConfig.findUnique({ where: { id: "singleton" } });
+  if (!existing) return NextResponse.json({ error: "Chưa có cấu hình" }, { status: 404 });
+
   if (me.role !== "manager") {
-    const existing = await prisma.appConfig.findUnique({ where: { id: "singleton" } });
-    if (!existing) return NextResponse.json({ error: "Chưa có cấu hình" }, { status: 404 });
     const allowed = isOrderStatusOptionsOnlyChange(
       existing.columns,
       body.columns,
@@ -100,6 +108,30 @@ export async function PUT(request: NextRequest) {
   if (me.role === "manager" && "clientEmailTemplate" in body) {
     data.clientEmailTemplate = body.clientEmailTemplate;
   }
+  // Option id "pending" gắn liền logic nhấp nháy đỏ + ô nhập lý do ở client
+  // (hasPendingRefundYear, src/lib/refund-status.ts) — chặn ở server để không thể xoá dù
+  // request PUT bị chỉnh tay bỏ qua guard phía client (removeRefundYearStatusOption).
+  if (me.role === "manager" && "refundYearStatusOptions" in body) {
+    const options = body.refundYearStatusOptions;
+    const hasPending = Array.isArray(options) && options.some((o: { id?: unknown }) => o?.id === "pending");
+    if (Array.isArray(options) && !hasPending) {
+      return NextResponse.json({ error: "Không thể xoá trạng thái hệ thống 'pending'" }, { status: 400 });
+    }
+    data.refundYearStatusOptions = options;
+  }
+  // collectingColumns KHÁC các field "chỉ manager" ở trên — cho phép cả role được cấp
+  // addCollectingColumn/editCollectingColumn qua trang Phân quyền (tab Collecting dùng
+  // đúng cơ chế ColumnSettingsDialog như bảng Hồ sơ, không nên khoá cứng cho riêng manager).
+  // Dùng featurePermissions HIỆN CÓ trên server (existing), không tin body.featurePermissions
+  // gửi lên (role không phải manager không sửa được featurePermissions nên existing luôn
+  // đúng nguồn thật).
+  if (
+    "collectingColumns" in body &&
+    (hasFeature(existing.featurePermissions as FeaturePermissions, "editCollectingColumn", me.role) ||
+      hasFeature(existing.featurePermissions as FeaturePermissions, "addCollectingColumn", me.role))
+  ) {
+    data.collectingColumns = body.collectingColumns;
+  }
 
   const config = await prisma.appConfig.update({
     where: { id: "singleton" },
@@ -111,5 +143,7 @@ export async function PUT(request: NextRequest) {
     cpaEmailDefaults: config.cpaEmailDefaults,
     googleSheetConfig: config.googleSheetConfig,
     clientEmailTemplate: config.clientEmailTemplate,
+    refundYearStatusOptions: config.refundYearStatusOptions,
+    collectingColumns: config.collectingColumns,
   });
 }

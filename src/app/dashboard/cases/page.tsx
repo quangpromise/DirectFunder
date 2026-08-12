@@ -11,6 +11,7 @@ import { CaseRecord, CheckInitialValue, ColumnDef, CpaEmailDefaults, RefundYearS
 import { CHECK_INITIAL_COLUMN_ID } from "@/lib/check-initial";
 import { CheckInitialCell } from "@/components/check-initial-cell";
 import { CaseRefundStatusButton } from "@/components/case-refund-status-button";
+import { refundYearRows } from "@/lib/refund-status";
 import type { ClientProfilePayload } from "@/lib/api-client";
 import { EditableCell } from "@/components/editable-cell";
 import { AssignMenu } from "@/components/assign-menu";
@@ -143,6 +144,21 @@ function StatusStatChip({ option, value }: { option: SelectOption; value: number
   );
 }
 
+/** Bản dùng cho chế độ "Xem theo Case" (đếm theo trạng thái từng năm refund, option lấy từ
+ * AppConfig.refundYearStatusOptions) — CỐ Ý không dùng translateOptionLabel như
+ * StatusStatChip: map dịch đó tra theo id ("pending"/"processing"...) dùng chung với cột
+ * Status chính, sẽ âm thầm ghi đè label Admin đã tự đặt cho trạng thái refund-year (đúng
+ * bug đã gặp và vá ở case-refund-status-button.tsx, StaticStatusBadge). */
+function CaseYearStatusChip({ option, value }: { option: SelectOption; value: number }) {
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5">
+      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: option.color }} />
+      <span className="text-xs text-text-faint">{option.label}</span>
+      <span className="text-sm font-semibold">{value}</span>
+    </div>
+  );
+}
+
 /** Bản gold/đen của StatusStatChip, dùng riêng trong panel Dashboard để khớp tông màu
  * Dashboard.png — không đụng tới StatusStatChip gốc (vẫn dùng ở thanh toolbar Danh sách). */
 function ReportStatusChip({ option, value }: { option: SelectOption; value: number }) {
@@ -161,6 +177,7 @@ export default function CasesPage() {
   const viewerRole = user?.role;
   const cases = useAppStore((s) => s.cases);
   const columns = useAppStore((s) => s.columns);
+  const refundYearStatusOptions = useAppStore((s) => s.refundYearStatusOptions);
   const users = useAppStore((s) => s.users);
   const permissions = useAppStore((s) => s.featurePermissions);
   const updateCell = useAppStore((s) => s.updateCell);
@@ -227,6 +244,11 @@ export default function CasesPage() {
   /** Popup danh sách thống kê (Tổng/theo Status/Giá trị) trên di động — thay cho dãy chip
    * nằm ngang vốn tràn màn hình nhỏ, gộp vào 1 nút mở popup thay vì hiện tất cả cùng lúc. */
   const [statsPopupOpen, setStatsPopupOpen] = useState(false);
+  /** Chế độ đếm cho dãy chip tổng hợp — "case": đếm theo TỪNG NĂM refund (dữ liệu ở popup
+   * mắt cột "Case", mỗi năm có refund > 0 tính 1 đơn vị, nhóm theo trạng thái riêng của
+   * năm đó). "client": giữ hành vi cũ, đếm theo TỪNG HỒ SƠ (row), nhóm theo cột Status
+   * chính. Mặc định "case" theo yêu cầu 2026-08-12. */
+  const [caseSummaryMode, setCaseSummaryMode] = useState<"case" | "client">("case");
   const [reportPeriod, setReportPeriod] = useState<ReportPeriod>("today");
   const [reportMonth, setReportMonth] = useState<string>(() => currentPhoenixMonth());
   const [reportYear, setReportYear] = useState<number>(() => currentPhoenixYear());
@@ -323,12 +345,20 @@ export default function CasesPage() {
       // chặn theo role thì role không có UI cho bộ lọc này cũng bị ảnh hưởng bởi state
       // mặc định, ẩn nhầm hồ sơ.
       if ((user?.role === "processor_leader" || user?.role === "agent") && processorFilter !== "all") {
-        const assignee = c.assignedProcessor ?? "unassigned";
-        if (assignee !== processorFilter) return false;
+        // "Processor 2" cùng chức năng với "Processor" (thêm 2026-08-12) — khớp filter
+        // nếu người được chọn nằm ở BẤT KỲ slot nào trong 2 slot.
+        const matches =
+          processorFilter === "unassigned"
+            ? c.assignedProcessor == null && c.assignedProcessor2 == null
+            : c.assignedProcessor === processorFilter || c.assignedProcessor2 === processorFilter;
+        if (!matches) return false;
       }
       if ((user?.role === "agent_leader" || user?.role === "processor") && agentFilter !== "all") {
-        const assignee = c.assignedTo ?? "unassigned";
-        if (assignee !== agentFilter) return false;
+        const matches =
+          agentFilter === "unassigned"
+            ? c.assignedTo == null && c.assignedTo2 == null
+            : c.assignedTo === agentFilter || c.assignedTo2 === agentFilter;
+        if (!matches) return false;
       }
       if (!search.trim()) return true;
       const q = search.toLowerCase();
@@ -353,6 +383,25 @@ export default function CasesPage() {
       byTab.all += 1;
     }
     return { totalMoney, total: visibleCases.length, byStatus, byTab };
+  }, [visibleCases]);
+
+  // Dữ liệu cho chế độ "Xem theo Case" của dãy chip tổng hợp — thay vì đếm theo hồ sơ
+  // (row) như `stats` ở trên, đếm theo TỪNG NĂM có refund > 0 (đúng dữ liệu hiện trong
+  // popup mắt cột "Case", xem refundYearRows trong refund-status.ts), nhóm theo trạng
+  // thái RIÊNG của năm đó (refundYearStatusOptions) — 1 hồ sơ có nhiều năm sẽ tính nhiều
+  // đơn vị, khác `stats.total` (luôn = số hồ sơ).
+  const caseYearStats = useMemo(() => {
+    const byStatus: Record<string, number> = {};
+    let totalYears = 0;
+    let totalYearsMoney = 0;
+    for (const c of visibleCases) {
+      for (const row of refundYearRows(c.refunds, c.refundYearStatus)) {
+        byStatus[row.status] = (byStatus[row.status] ?? 0) + 1;
+        totalYears += 1;
+        totalYearsMoney += row.amount;
+      }
+    }
+    return { byStatus, totalYears, totalYearsMoney };
   }, [visibleCases]);
 
   // Khoảng ngày hiện tại + khoảng liền trước để so sánh (MoM/YoY/DoD tùy chế độ) — tính
@@ -426,7 +475,11 @@ export default function CasesPage() {
       return u.role === "agent" || u.role === "processor";
     });
     return staff.map((u) => {
-      const isMine = (c: CaseRecord) => c.assignedTo === u.id || c.assignedProcessor === u.id;
+      const isMine = (c: CaseRecord) =>
+        c.assignedTo === u.id ||
+        c.assignedTo2 === u.id ||
+        c.assignedProcessor === u.id ||
+        c.assignedProcessor2 === u.id;
       const newCount = newInRange.filter(isMine).length;
       const processingCount = visibleCases.filter((c) => isMine(c) && getCaseTab(c.status) === "active").length;
       const completedCount = completedInRange.filter(isMine).length;
@@ -562,12 +615,46 @@ export default function CasesPage() {
           );
         })()}
 
+        {/* Chọn cách đếm dãy chip bên dưới — "case" (mặc định): đếm theo từng năm refund
+            (dữ liệu popup mắt cột Case), "client": đếm theo hồ sơ như trước đây. Luôn hiện
+            (không chỉ desktop) vì áp dụng cho cả 2 cách hiển thị thống kê bên dưới. */}
+        <div className="flex shrink-0 gap-1 self-start rounded-lg border border-border bg-surface p-1">
+          <button
+            onClick={() => setCaseSummaryMode("client")}
+            className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
+              caseSummaryMode === "client" ? "gradient-btn text-white" : "text-text-faint hover:text-text-dim"
+            }`}
+          >
+            {t("cases.summaryMode.client")}
+          </button>
+          <button
+            onClick={() => setCaseSummaryMode("case")}
+            className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
+              caseSummaryMode === "case" ? "gradient-btn text-white" : "text-text-faint hover:text-text-dim"
+            }`}
+          >
+            {t("cases.summaryMode.case")}
+          </button>
+        </div>
+
         <div className="hidden flex-wrap items-center gap-2 sm:flex">
-          <StatChip label={t("common.total")} value={String(stats.total)} icon={FileText} />
-          {statusOptions.map((o) => (
-            <StatusStatChip key={o.id} option={o} value={stats.byStatus[o.id] ?? 0} />
-          ))}
-          <StatChip label={t("common.value")} value={`$${stats.totalMoney.toLocaleString("en-US")}`} icon={DollarSign} />
+          <StatChip
+            label={t("common.total")}
+            value={String(caseSummaryMode === "case" ? caseYearStats.totalYears : stats.total)}
+            icon={FileText}
+          />
+          {caseSummaryMode === "case"
+            ? refundYearStatusOptions.map((o) => (
+                <CaseYearStatusChip key={o.id} option={o} value={caseYearStats.byStatus[o.id] ?? 0} />
+              ))
+            : statusOptions.map((o) => (
+                <StatusStatChip key={o.id} option={o} value={stats.byStatus[o.id] ?? 0} />
+              ))}
+          <StatChip
+            label={t("common.value")}
+            value={`$${(caseSummaryMode === "case" ? caseYearStats.totalYearsMoney : stats.totalMoney).toLocaleString("en-US")}`}
+            icon={DollarSign}
+          />
         </div>
 
         <button
@@ -596,11 +683,23 @@ export default function CasesPage() {
                   </button>
                 </div>
                 <div className="flex flex-col gap-2">
-                  <StatChip label={t("common.total")} value={String(stats.total)} icon={FileText} />
-                  {statusOptions.map((o) => (
-                    <StatusStatChip key={o.id} option={o} value={stats.byStatus[o.id] ?? 0} />
-                  ))}
-                  <StatChip label={t("common.value")} value={`$${stats.totalMoney.toLocaleString("en-US")}`} icon={DollarSign} />
+                  <StatChip
+                    label={t("common.total")}
+                    value={String(caseSummaryMode === "case" ? caseYearStats.totalYears : stats.total)}
+                    icon={FileText}
+                  />
+                  {caseSummaryMode === "case"
+                    ? refundYearStatusOptions.map((o) => (
+                        <CaseYearStatusChip key={o.id} option={o} value={caseYearStats.byStatus[o.id] ?? 0} />
+                      ))
+                    : statusOptions.map((o) => (
+                        <StatusStatChip key={o.id} option={o} value={stats.byStatus[o.id] ?? 0} />
+                      ))}
+                  <StatChip
+                    label={t("common.value")}
+                    value={`$${(caseSummaryMode === "case" ? caseYearStats.totalYearsMoney : stats.totalMoney).toLocaleString("en-US")}`}
+                    icon={DollarSign}
+                  />
                 </div>
               </div>
             </div>,
@@ -1080,7 +1179,11 @@ function RowCells({
     description?: string
   ) => void;
   deleteRow: (caseId: string, deletedByUserId: string) => void;
-  assignCase: (caseId: string, toUserId: string | null, field: "assignedTo" | "assignedProcessor") => void;
+  assignCase: (
+    caseId: string,
+    toUserId: string | null,
+    field: "assignedTo" | "assignedProcessor" | "assignedTo2" | "assignedProcessor2"
+  ) => void;
   updateClientLink: (caseId: string, link: string | null) => void;
   updateSsn: (caseId: string, slot: 0 | 1, value: string | null) => void;
   updateRefundYearStatus: (caseId: string, year: string, status: RefundYearStatus) => void;
@@ -1145,6 +1248,14 @@ function RowCells({
   // thái này gắn liền với dữ liệu refund.
   const refundsColumn = columns.find((c) => c.id === "refunds");
   const canEditRefundStatus = Boolean(refundsColumn) && canEditColumn(user.role, refundsColumn!) && canEditRow;
+  // Đọc trực tiếp qua hook thay vì thread thêm prop qua chuỗi prop đã rất dài của RowCells
+  // — component này gọi hook được vì vẫn là function component bình thường. Chỉ Admin
+  // (manager) được thêm/sửa/xoá trạng thái trong danh sách (yêu cầu 2026-08-12).
+  const refundYearStatusOptions = useAppStore((s) => s.refundYearStatusOptions);
+  const addRefundYearStatusOption = useAppStore((s) => s.addRefundYearStatusOption);
+  const updateRefundYearStatusOption = useAppStore((s) => s.updateRefundYearStatusOption);
+  const removeRefundYearStatusOption = useAppStore((s) => s.removeRefundYearStatusOption);
+  const canManageRefundYearStatusOptions = user.role === "manager";
   return (
     <div
       data-row-id={row.id}
@@ -1325,9 +1436,14 @@ function RowCells({
               refunds={row.refunds ?? {}}
               refundYearStatus={row.refundYearStatus ?? {}}
               refundYearPendingReason={row.refundYearPendingReason ?? {}}
+              statusOptions={refundYearStatusOptions}
               editable={canEditRefundStatus}
+              canManageOptions={canManageRefundYearStatusOptions}
               onChangeStatus={(year, status) => updateRefundYearStatus(row.id, year, status)}
               onChangeReason={(year, reason) => updateRefundYearPendingReason(row.id, year, reason)}
+              onAddOption={addRefundYearStatusOption}
+              onUpdateOption={updateRefundYearStatusOption}
+              onRemoveOption={removeRefundYearStatusOption}
             />
           </div>
         ) : col.id === CHECK_INITIAL_COLUMN_ID ? (
@@ -1365,21 +1481,45 @@ function RowCells({
           </div>
         )
       )}
-      <div className="flex h-full min-w-0 items-center border-b border-r border-border transition-colors group-hover:bg-surface-hover">
-        <AssignMenu
-          users={agentUsers}
-          assignedTo={row.assignedTo}
-          canAssign={canAssignFeature && canEditRow}
-          onAssign={(uid) => assignCase(row.id, uid, "assignedTo")}
-        />
+      <div className="flex h-full min-w-0 flex-col divide-y divide-border border-b border-r border-border transition-colors group-hover:bg-surface-hover">
+        <div className="flex min-h-0 flex-1 items-center gap-0.5">
+          <span className="w-3 shrink-0 text-center text-[9px] font-semibold text-text-faint">1</span>
+          <AssignMenu
+            users={agentUsers}
+            assignedTo={row.assignedTo}
+            canAssign={canAssignFeature && canEditRow}
+            onAssign={(uid) => assignCase(row.id, uid, "assignedTo")}
+          />
+        </div>
+        <div className="flex min-h-0 flex-1 items-center gap-0.5">
+          <span className="w-3 shrink-0 text-center text-[9px] font-semibold text-text-faint">2</span>
+          <AssignMenu
+            users={agentUsers}
+            assignedTo={row.assignedTo2}
+            canAssign={canAssignFeature && canEditRow}
+            onAssign={(uid) => assignCase(row.id, uid, "assignedTo2")}
+          />
+        </div>
       </div>
-      <div className="flex h-full min-w-0 items-center border-b border-r border-border transition-colors group-hover:bg-surface-hover">
-        <AssignMenu
-          users={processorUsers}
-          assignedTo={row.assignedProcessor}
-          canAssign={canAssignFeature && canEditRow}
-          onAssign={(uid) => assignCase(row.id, uid, "assignedProcessor")}
-        />
+      <div className="flex h-full min-w-0 flex-col divide-y divide-border border-b border-r border-border transition-colors group-hover:bg-surface-hover">
+        <div className="flex min-h-0 flex-1 items-center gap-0.5">
+          <span className="w-3 shrink-0 text-center text-[9px] font-semibold text-text-faint">1</span>
+          <AssignMenu
+            users={processorUsers}
+            assignedTo={row.assignedProcessor}
+            canAssign={canAssignFeature && canEditRow}
+            onAssign={(uid) => assignCase(row.id, uid, "assignedProcessor")}
+          />
+        </div>
+        <div className="flex min-h-0 flex-1 items-center gap-0.5">
+          <span className="w-3 shrink-0 text-center text-[9px] font-semibold text-text-faint">2</span>
+          <AssignMenu
+            users={processorUsers}
+            assignedTo={row.assignedProcessor2}
+            canAssign={canAssignFeature && canEditRow}
+            onAssign={(uid) => assignCase(row.id, uid, "assignedProcessor2")}
+          />
+        </div>
       </div>
       <div className="border-b border-border transition-colors group-hover:bg-surface-hover">
         {canDeleteRowFeature && (

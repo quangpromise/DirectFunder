@@ -1,12 +1,14 @@
 import type {
   CaseRecord,
   ClientEmailTemplate,
+  CollectingRecord,
   ColumnDef,
   CpaEmailDefaults,
   FeaturePermissions,
   GoogleSheetConfig,
   Role,
   RuleRecord,
+  SelectOption,
   User,
 } from "./types";
 
@@ -68,6 +70,16 @@ export const api = {
     request<{ id: string; updatedAt: string }>(`/api/cases/${caseId}`, { method: "PATCH", body: JSON.stringify(patch) }),
   deleteCase: (caseId: string) => request<{ ok: true }>(`/api/cases/${caseId}`, { method: "DELETE" }),
 
+  listCollecting: () => request<CollectingRecord[]>("/api/collecting"),
+  createCollecting: (row: CollectingRecord) =>
+    request<CollectingRecord>("/api/collecting", { method: "POST", body: JSON.stringify(row) }),
+  patchCollecting: (rowId: string, patch: Partial<CollectingRecord>) =>
+    request<{ id: string; updatedAt: string }>(`/api/collecting/${rowId}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
+  deleteCollecting: (rowId: string) => request<{ ok: true }>(`/api/collecting/${rowId}`, { method: "DELETE" }),
+
   getConfig: () =>
     request<{
       columns: ColumnDef[];
@@ -76,13 +88,17 @@ export const api = {
       cpaSenderEmail: string | null;
       googleSheetConfig: GoogleSheetConfig | null;
       clientEmailTemplate: ClientEmailTemplate | null;
+      refundYearStatusOptions: SelectOption[] | null;
+      collectingColumns: ColumnDef[] | null;
     }>("/api/config"),
   putConfig: (
     columns: ColumnDef[],
     featurePermissions: FeaturePermissions,
     cpaEmailDefaults?: CpaEmailDefaults,
     googleSheetConfig?: GoogleSheetConfig,
-    clientEmailTemplate?: ClientEmailTemplate
+    clientEmailTemplate?: ClientEmailTemplate,
+    refundYearStatusOptions?: SelectOption[],
+    collectingColumns?: ColumnDef[]
   ) =>
     request<{
       columns: ColumnDef[];
@@ -90,9 +106,19 @@ export const api = {
       cpaEmailDefaults: CpaEmailDefaults | null;
       googleSheetConfig: GoogleSheetConfig | null;
       clientEmailTemplate: ClientEmailTemplate | null;
+      refundYearStatusOptions: SelectOption[] | null;
+      collectingColumns: ColumnDef[] | null;
     }>("/api/config", {
       method: "PUT",
-      body: JSON.stringify({ columns, featurePermissions, cpaEmailDefaults, googleSheetConfig, clientEmailTemplate }),
+      body: JSON.stringify({
+        columns,
+        featurePermissions,
+        cpaEmailDefaults,
+        collectingColumns,
+        googleSheetConfig,
+        clientEmailTemplate,
+        refundYearStatusOptions,
+      }),
     }),
 
   /** Gửi email cho CPA từ 1 hồ sơ — xem POST /api/cases/[id]/send-cpa-email. Server trả về

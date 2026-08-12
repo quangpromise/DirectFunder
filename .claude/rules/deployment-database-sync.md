@@ -113,6 +113,46 @@ Hai thay đổi cùng lúc trên tab Rules (mục 4.15):
 4. Vào trang Phân quyền, tick thêm 1 role (vd Processor) vào dòng "Thêm / sửa / xóa Rules" → đăng nhập bằng tài khoản role đó → xác nhận thấy khung đăng rule mới + nút Sửa/Xoá trên từng rule (trước đó không thấy). Bỏ tick lại → xác nhận role đó quay về chỉ xem được.
 5. Đăng nhập bằng tài khoản chưa từng được cấp `manageRules` (vd Agent/Support mặc định) → xác nhận vẫn xem được danh sách rule (kể cả rule có định dạng đậm/nghiêng/font hiển thị đúng) nhưng KHÔNG thấy khung đăng/nút Sửa/Xoá.
 
+### 4.17 [CHỜ XỬ LÝ] Quản lý (Admin) thêm/sửa/xoá trạng thái trong popup "Refund by years" (thêm 2026-08-12)
+
+Trước đây danh sách trạng thái của nút mắt cạnh cột Case (Pre-processing/Processing/Pending/CPA Review) là union type cố định trong code (`RefundYearStatus`, `src/lib/types.ts`) — không sửa/thêm/xoá được. Đổi thành danh sách `SelectOption[]` cấu hình được, lưu ở `AppConfig.refundYearStatusOptions` (cột mới, additive) — cùng dạng dữ liệu với `options` của cột kiểu select, cùng UI editor (thêm/sửa tên/màu/xoá) nhưng đặt trong popup của `CaseRefundStatusButton` (nút bánh răng, chỉ hiện với **manager**) thay vì `ColumnSettingsDialog`. Option id `"pending"` là id đặc biệt code còn tham chiếu trực tiếp (nhấp nháy đỏ + ô nhập lý do, `hasPendingRefundYear` trong `src/lib/refund-status.ts`) — **không xoá được** qua UI lẫn API (`PUT /api/config` trả 400 nếu request cố xoá), nhưng vẫn đổi tên/màu tự do được. Mặc định `DEFAULT_REFUND_YEAR_STATUS_OPTIONS` (`src/lib/rbac.ts`) giữ nguyên 4 label/màu cũ nên hành vi hiện có không đổi cho tới khi Admin chủ động sửa.
+
+**Đây là loại thay đổi field mới trong `AppConfig` (giống mục 4.9–4.12), nhưng field mặc định là `null`** (không seed sẵn, code tự fallback `config.refundYearStatusOptions ?? DEFAULT_REFUND_YEAR_STATUS_OPTIONS` ở cả `hydrateFromServer` lẫn `GET /api/config`) — nên **không bắt buộc** phải chạy script merge như mục 4.8 mô tả để app hoạt động đúng (production vẫn hiện đủ 4 trạng thái mặc định dù cột DB còn `null`), script merge chỉ cần nếu muốn Admin thấy rõ giá trị tường minh trong DB ngay từ đầu thay vì dựa vào fallback runtime.
+
+**Sau khi deploy code này lên production PHẢI làm đủ các bước sau** (xoá mục này khỏi file khi đã làm xong):
+1. `prisma migrate deploy` nhắm production (thêm cột `refundYearStatusOptions`, an toàn/additive, nullable).
+2. Đăng nhập production bằng tài khoản **manager** thật, mở popup mắt ở 1 hồ sơ có refund > 0, bấm nút bánh răng → xác nhận thấy đủ 4 trạng thái mặc định, thử đổi tên/màu 1 trạng thái + thêm 1 trạng thái mới → xác nhận lưu đúng, reload vẫn giữ nguyên.
+3. Thử xoá trạng thái "Pending" → xác nhận nút xoá bị khoá (disabled) không cho xoá; xoá 1 trạng thái khác (vd trạng thái vừa thêm) → xác nhận xoá được bình thường.
+4. Đăng nhập bằng tài khoản KHÔNG phải manager → mở popup mắt → xác nhận KHÔNG thấy nút bánh răng quản lý (chỉ chọn được trạng thái nếu có quyền sửa cột refunds, như hành vi cũ).
+
+### 4.18 [CHỜ XỬ LÝ] Tab "Collecting" mới — bảng thu hồi công nợ độc lập với bảng Hồ sơ (thêm 2026-08-12)
+
+Thêm hẳn 1 tab điều hướng mới "Collecting" (`/dashboard/collecting`, đặt sau Orders, trước Rules — Cases -> Orders -> Collecting -> Rules) — bảng dữ liệu kiểu Excel dựng cùng kiểu grid/sticky-header/freeze-cột-đầu như bảng Hồ sơ nhưng **hoàn toàn độc lập**, không liên kết Case nào. 33 cột theo đúng danh sách Excel gốc user cung cấp (Date, Confirmed By, Name, Phone, Program, Tax Offset, Acct, Agent 1/2, Collector, Year (x2), Qual./Approved/Upfront/Total Collected/Instal. Amount, Pmt method, Note, Tips, VAR, Total Actual/Service/CPA filling fee, Receipt/Check #/Amt., Cont. 1-3, IC, Check Uploaded, Checker) — xem `DEFAULT_COLLECTING_COLUMNS` trong `rbac.ts`. **Đây CHỈ là khung bảng + cột (thêm/sửa/xoá cột, inline edit, kéo-thả dòng/cột) — chưa gắn bất kỳ logic nghiệp vụ riêng nào** (không SSN/order/assign/refund status...), đúng yêu cầu "tính năng sẽ thông báo sau" của user lúc tạo.
+
+Thay đổi gồm ĐỦ 3 loại mô tả ở mục 4.8/4.9-4.12/4.15 cộng lại, cần xử lý riêng từng phần:
+1. **Bảng mới hoàn toàn** `CollectingRecord` (giống mục 4.15/Rule) — id/custom (Json)/sortOrder/createdAt/updatedAt, KHÔNG cần script merge `AppConfig`, chỉ cần migration.
+2. **Field mới trong `AppConfig`**: `collectingColumns Json?` (giống mục 4.17, mặc định `null` — code tự fallback `DEFAULT_COLLECTING_COLUMNS` ở `hydrateFromServer`/`GET /api/config`) — **không bắt buộc** script merge để app chạy đúng.
+3. **4 feature key mới trong `DEFAULT_FEATURE_PERMISSIONS`** (giống mục 4.16 — `addCollectingColumn`/`editCollectingColumn`/`addCollectingRow`/`deleteCollectingRow`, mặc định mảng RỖNG `[]`, chỉ Quản lý dùng được cho tới khi Admin cấp thêm qua trang Phân quyền) — do `hasFeature()` tự fallback `?? []` khi key chưa tồn tại trong `AppConfig.featurePermissions` production, **không bắt buộc** script merge để app hoạt động đúng (chỉ Quản lý thêm/sửa/xoá cột/dòng được, đúng mặc định).
+
+**Sau khi deploy code này lên production PHẢI làm đủ các bước sau** (xoá mục này khỏi file khi đã làm xong):
+1. `prisma migrate deploy` nhắm production (tạo bảng `collecting_records` mới + thêm cột `collectingColumns` trên `app_config`, cả 2 đều an toàn/additive).
+2. Đăng nhập production bằng tài khoản **manager** thật, vào tab "Collecting" (đặt sau Orders) → xác nhận thấy đủ 33 cột mặc định đúng thứ tự, sticky header + freeze cột "Date" đầu tiên khi cuộn ngang hoạt động đúng.
+3. Bấm "Thêm dòng" → gõ thử vài ô (đặc biệt cột tiền `currency` và cột ngày `date`) → reload trang xác nhận dữ liệu còn nguyên.
+4. Thử kéo-thả đổi thứ tự 1 dòng và 1 cột → reload xác nhận giữ đúng vị trí mới (cùng cơ chế `sortOrder`/`reorderColumn` đã có ở bảng Hồ sơ).
+5. Mở nút cài đặt (⚙) trên 1 cột → thử đổi tên, đổi quyền sửa (`editableBy`) cho thêm 1 role khác (vd Accounting) → đăng nhập bằng tài khoản role đó → xác nhận sửa được đúng ô cột đã cấp quyền, các cột khác vẫn khoá.
+6. Đăng nhập bằng tài khoản KHÔNG phải manager/accounting → xác nhận KHÔNG thấy tab "Collecting" ở nav (đã giới hạn `roles: ["manager","accounting"]` trong `top-nav.tsx` — thu hẹp/mở rộng khi có yêu cầu cụ thể hơn từ user).
+
+### 4.19 [CHỜ XỬ LÝ] Thêm slot Agent 2 / Processor 2 ở bảng Hồ sơ (thêm 2026-08-12)
+
+Cột "Agent" và "Processor" ở bảng Hồ sơ giờ có thêm 1 slot giao việc thứ 2 mỗi cột ("Agent 2"/"Processor 2", đặt ngay cạnh cột gốc — thứ tự Agent → Agent 2 → Processor → Processor 2) — **cùng chức năng/quyền hệt cột gốc** (cùng dùng `AssignMenu`, cùng danh sách user, cùng tạo notification khi giao việc, cùng tính vào `canViewCase`/`canEditCase` cho Agent/Processor/Agent Leader/Processor Leader, cùng tính vào bộ lọc Agent/Processor và báo cáo theo thành viên). Thêm 2 cột mới `Case.assignedTo2`/`Case.assignedProcessor2` (String?, additive) — **KHÔNG đụng `DEFAULT_COLUMNS`/`DEFAULT_FEATURE_PERMISSIONS`/`AppConfig`** (giống mục 4.13/4.14/4.15/4.18-phần-1) nên **không cần** script merge, chỉ cần migration. Slot 2 KHÔNG tự động gán cho người tạo hồ sơ như slot 1 (`addRow` chỉ tự gán Agent/Processor gốc) — luôn bắt đầu trống.
+
+**Sau khi deploy code này lên production PHẢI làm đủ các bước sau** (xoá mục này khỏi file khi đã làm xong):
+1. `prisma migrate deploy` nhắm production (thêm 2 cột `assignedTo2`/`assignedProcessor2` trên `cases`, an toàn/additive).
+2. Đăng nhập production bằng tài khoản **manager** thật, mở bảng Hồ sơ → xác nhận thấy đủ 4 cột Agent/Agent 2/Processor/Processor 2 theo đúng thứ tự, giao thử 1 hồ sơ cho 1 Agent ở slot "Agent 2" → xác nhận Agent đó nhận được notification, reload vẫn giữ đúng.
+3. Đăng nhập bằng tài khoản **Agent** vừa được giao ở "Agent 2" → xác nhận hồ sơ đó xuất hiện trong bảng của họ (canViewCase đã tính slot 2) dù KHÔNG được gán ở slot "Agent" gốc.
+4. Thử bộ lọc Agent (với tài khoản Processor)/Processor (với tài khoản Agent) → chọn đúng người vừa gán ở slot 2 → xác nhận hồ sơ hiện đúng trong kết quả lọc.
+5. Kiểm tra báo cáo theo thành viên (view "Báo cáo") → xác nhận hồ sơ vừa giao ở slot 2 được tính vào số liệu của đúng Agent/Processor đó.
+
 Mục 2–5 bên dưới là kiến trúc/quy trình đề xuất (phần lớn đã áp dụng đúng như mô tả, trừ Auth đã nêu ở trên). Mục 6 là checklist hành động cụ thể để đưa app này lên cloud thật.
 
 ## 2. Kiến trúc đề xuất

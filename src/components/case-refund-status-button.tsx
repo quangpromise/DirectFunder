@@ -2,56 +2,52 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Eye, ChevronDown } from "lucide-react";
-import { RefundYearStatus } from "@/lib/types";
-import { REFUND_STATUS_COLOR, REFUND_STATUS_OPTIONS, hasPendingRefundYear, refundYearRows } from "@/lib/refund-status";
+import { Eye, ChevronDown, Settings, X, Trash2, Plus } from "lucide-react";
+import { RefundYearStatus, SelectOption } from "@/lib/types";
+import { findRefundStatusOption, hasPendingRefundYear, refundYearRows } from "@/lib/refund-status";
+import { useConfirm } from "@/components/confirm-dialog";
 import { useAppStore } from "@/store/app-store";
 import { useT } from "@/lib/i18n";
 import { darkenHex, withAlpha } from "@/lib/color";
 
 const MENU_MARGIN = 8;
 const MENU_WIDTH = 268;
-
-const STATUS_I18N_KEY: Record<RefundYearStatus, string> = {
-  preProcessing: "status.pre_processing",
-  processing: "status.processing",
-  pending: "status.pending",
-  cpaReview: "status.cpa_review",
-};
+const MANAGE_WIDTH = 300;
 
 function formatMoney(n: number): string {
   return `$${n.toLocaleString("en-US")}`;
 }
 
-/** Badge màu theo trạng thái (đọc từ REFUND_STATUS_COLOR) — đậm hơn ở Light Mode giống
+/** Badge màu theo trạng thái (đọc từ SelectOption.bg/color) — đậm hơn ở Light Mode giống
  * OptionBadge, vì màu gốc chọn để đọc được trên nền tối. */
-function useStatusColor(status: RefundYearStatus) {
+function useStatusColor(option: SelectOption) {
   const theme = useAppStore((s) => s.theme);
   const isLight = theme === "light";
-  const raw = REFUND_STATUS_COLOR[status];
   return {
-    bg: isLight ? withAlpha(raw.bg, 0.22) : raw.bg,
-    color: isLight ? darkenHex(raw.color, 0.4) : raw.color,
+    bg: isLight ? withAlpha(option.bg, 0.22) : option.bg,
+    color: isLight ? darkenHex(option.color, 0.4) : option.color,
   };
 }
 
-/** Dropdown 3 lựa chọn (Processing/Pending/CPA Review) cho 1 năm — không editable thì chỉ
- * hiện badge tĩnh. Đóng khi click ra ngoài (document mousedown), không cần overlay full
- * màn hình vì popup cha đã đứng trên mọi thứ khác (portal + fixed) nên clip/z-index không
- * phải lo. */
+/** Dropdown chọn 1 trong các trạng thái đang cấu hình (statusOptions, Quản lý thêm/sửa/xoá
+ * được — xem RefundStatusOptionsManager) cho 1 năm — không editable thì chỉ hiện badge
+ * tĩnh. Đóng khi click ra ngoài (document mousedown), không cần overlay full màn hình vì
+ * popup cha đã đứng trên mọi thứ khác (portal + fixed) nên clip/z-index không phải lo. */
 function YearStatusDropdown({
   status,
+  statusOptions,
   editable,
   onChange,
 }: {
   status: RefundYearStatus;
+  statusOptions: SelectOption[];
   editable: boolean;
   onChange: (status: RefundYearStatus) => void;
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const t = useT();
-  const { bg, color } = useStatusColor(status);
+  const current = findRefundStatusOption(statusOptions, status);
+  const { bg, color } = useStatusColor(current);
 
   useEffect(() => {
     if (!open) return;
@@ -68,7 +64,7 @@ function YearStatusDropdown({
         className="inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] font-medium"
         style={{ backgroundColor: bg, color, borderColor: `${color}4d` }}
       >
-        {t(STATUS_I18N_KEY[status])}
+        {current.label}
       </span>
     );
   }
@@ -81,16 +77,20 @@ function YearStatusDropdown({
         className="inline-flex items-center gap-0.5 rounded-full border px-2 py-0.5 text-[10px] font-medium transition hover:brightness-110"
         style={{ backgroundColor: bg, color, borderColor: `${color}4d` }}
       >
-        {t(STATUS_I18N_KEY[status])}
+        {current.label}
         <ChevronDown size={10} />
       </button>
       {open && (
         <div className="popover absolute right-0 top-full z-10 mt-1 w-36 rounded-lg p-1 shadow-2xl shadow-black/60">
-          {REFUND_STATUS_OPTIONS.map((opt) => (
-            <YearStatusOption key={opt} option={opt} onSelect={() => {
-              onChange(opt);
-              setOpen(false);
-            }} />
+          {statusOptions.map((opt) => (
+            <YearStatusOption
+              key={opt.id}
+              option={opt}
+              onSelect={() => {
+                onChange(opt.id);
+                setOpen(false);
+              }}
+            />
           ))}
         </div>
       )}
@@ -98,9 +98,8 @@ function YearStatusDropdown({
   );
 }
 
-function YearStatusOption({ option, onSelect }: { option: RefundYearStatus; onSelect: () => void }) {
+function YearStatusOption({ option, onSelect }: { option: SelectOption; onSelect: () => void }) {
   const { bg, color } = useStatusColor(option);
-  const t = useT();
   return (
     <button
       onClick={onSelect}
@@ -110,9 +109,26 @@ function YearStatusOption({ option, onSelect }: { option: RefundYearStatus; onSe
         className="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium"
         style={{ backgroundColor: bg, color, borderColor: `${color}4d` }}
       >
-        {t(STATUS_I18N_KEY[option])}
+        {option.label}
       </span>
     </button>
+  );
+}
+
+/** Badge tĩnh dùng trong RefundStatusOptionsManager — CỐ Ý không dùng OptionBadge dùng
+ * chung: OptionBadge tự dịch nhãn theo id qua translateOptionLabel (DEFAULT_OPTION_LABEL_KEY
+ * trong i18n.ts), map đó dùng chung id "pending"/"processing" với cột Status chính nên sẽ
+ * âm thầm ghi đè label Admin vừa gõ ở đây bằng bản dịch cố định — badge preview này luôn
+ * hiện ĐÚNG label Admin đang nhập. */
+function StaticStatusBadge({ option }: { option: SelectOption }) {
+  const { bg, color } = useStatusColor(option);
+  return (
+    <span
+      className="inline-flex max-w-full items-center truncate rounded-full border px-2 py-0.5 text-[10px] font-medium"
+      style={{ backgroundColor: bg, color, borderColor: `${color}4d` }}
+    >
+      {option.label}
+    </span>
   );
 }
 
@@ -133,14 +149,17 @@ function PendingReasonInput({
   onCommit: (reason: string) => void;
 }) {
   const [draft, setDraft] = useState(reason);
+  const [lastSyncedReason, setLastSyncedReason] = useState(reason);
   const t = useT();
 
   // Đồng bộ draft khi `reason` đổi từ bên ngoài (người khác vừa lưu lý do khác trong lúc
-  // popup đang mở) — cùng pattern với SsnSlot/EditableCell (setDraft theo prop trong
-  // effect).
-  useEffect(() => {
+  // popup đang mở) — điều chỉnh state NGAY TRONG lúc render (so với snapshot lần render
+  // trước) thay vì trong effect, theo khuyến nghị react-hooks/set-state-in-effect (tránh
+  // 1 lượt render thừa mỗi lần reason đổi).
+  if (reason !== lastSyncedReason) {
+    setLastSyncedReason(reason);
     setDraft(reason);
-  }, [reason]);
+  }
 
   if (!editable) {
     return (
@@ -166,6 +185,114 @@ function PendingReasonInput({
   );
 }
 
+/** Bảng quản lý danh sách trạng thái (thêm/sửa/xoá/đổi màu) — mở qua nút bánh răng trong
+ * popup, chỉ hiện cho tài khoản có quyền (canManage, xem CaseRefundStatusButton). Cùng
+ * pattern UI với phần "options" trong ColumnSettingsDialog. Option id "pending" là id đặc
+ * biệt (nhấp nháy đỏ + ô nhập lý do, xem hasPendingRefundYear) — không cho xoá qua đây dù
+ * vẫn đổi tên/màu tự do được. */
+function RefundStatusOptionsManager({
+  options,
+  onAdd,
+  onUpdate,
+  onRemove,
+  onClose,
+}: {
+  options: SelectOption[];
+  onAdd: (option: Omit<SelectOption, "id">) => void;
+  onUpdate: (optionId: string, patch: Partial<Omit<SelectOption, "id">>) => void;
+  onRemove: (optionId: string) => void;
+  onClose: () => void;
+}) {
+  const [newLabel, setNewLabel] = useState("");
+  const { confirm, ConfirmDialogUI } = useConfirm();
+  const t = useT();
+
+  function handleAdd() {
+    if (!newLabel.trim()) return;
+    onAdd({ label: newLabel.trim(), bg: "rgba(139,92,246,0.15)", color: "#c4b5fd" });
+    setNewLabel("");
+  }
+
+  async function handleRemove(optionId: string, label: string) {
+    if (await confirm(t("col.removeOptionConfirm", { label }), { title: t("col.removeOptionTitle"), tone: "danger" })) {
+      onRemove(optionId);
+    }
+  }
+
+  return (
+    <div style={{ width: MANAGE_WIDTH }}>
+      {ConfirmDialogUI}
+      <div className="mb-1.5 flex items-center justify-between">
+        <span className="px-1 text-xs font-semibold text-text">{t("refundStatus.manageTitle")}</span>
+        <button onClick={onClose} className="text-text-faint hover:text-text" aria-label={t("common.close")}>
+          <X size={14} />
+        </button>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        {options.map((o) => {
+          const protectedOption = o.id === "pending";
+          return (
+            <div key={o.id} className="flex items-center gap-2 rounded-lg border border-border bg-bg-elevated px-2 py-1.5">
+              <input
+                type="color"
+                value={o.color}
+                onChange={(e) => onUpdate(o.id, { color: e.target.value })}
+                title={t("col.textColor")}
+                className="h-6 w-6 shrink-0 cursor-pointer rounded border border-border bg-transparent p-0"
+              />
+              <input
+                type="color"
+                value={rgbaToHex(o.bg)}
+                onChange={(e) => onUpdate(o.id, { bg: hexToRgba15(e.target.value) })}
+                title={t("col.bgColor")}
+                className="h-6 w-6 shrink-0 cursor-pointer rounded border border-border bg-transparent p-0"
+              />
+              <input
+                value={o.label}
+                onChange={(e) => onUpdate(o.id, { label: e.target.value })}
+                className="min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1.5 py-1 text-sm outline-none hover:border-border focus:border-accent"
+              />
+              <div className="shrink-0">
+                <StaticStatusBadge option={o} />
+              </div>
+              <button
+                onClick={() => !protectedOption && handleRemove(o.id, o.label)}
+                disabled={protectedOption}
+                title={protectedOption ? t("refundStatus.protectedOption") : t("col.removeOption")}
+                className="shrink-0 text-text-faint hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:text-text-faint"
+                aria-label={t("col.removeOption")}
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-2 flex gap-1.5">
+        <input
+          value={newLabel}
+          onChange={(e) => setNewLabel(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              handleAdd();
+            }
+          }}
+          placeholder={t("col.newOptionPlaceholder")}
+          className="w-full rounded-lg border border-border bg-bg-elevated px-3 py-1.5 text-sm outline-none focus:border-accent"
+        />
+        <button
+          onClick={handleAdd}
+          className="flex shrink-0 items-center gap-1 rounded-lg border border-dashed border-border-strong px-3 text-xs font-medium text-text-dim hover:bg-surface-hover hover:text-text"
+        >
+          <Plus size={12} />
+          {t("common.add")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** Nút mắt cạnh số trong cột "Case" — bấm mở popup xem/sửa trạng thái từng năm refund,
  * hover mở cùng popup nhưng chỉ xem (không sửa được). Xanh lá đứng yên nếu không có năm
  * nào Pending, đỏ nhấp nháy (xem .refund-eye-pending trong globals.css) nếu có ít nhất 1
@@ -174,19 +301,31 @@ export function CaseRefundStatusButton({
   refunds,
   refundYearStatus,
   refundYearPendingReason,
+  statusOptions,
   editable,
+  canManageOptions,
   onChangeStatus,
   onChangeReason,
+  onAddOption,
+  onUpdateOption,
+  onRemoveOption,
 }: {
   refunds: Record<string, number>;
   refundYearStatus: Record<string, RefundYearStatus>;
   refundYearPendingReason: Record<string, string>;
+  statusOptions: SelectOption[];
   editable: boolean;
+  /** Admin (manager) — thêm/sửa/xoá trạng thái trong danh sách qua nút bánh răng. */
+  canManageOptions: boolean;
   onChangeStatus: (year: string, status: RefundYearStatus) => void;
   onChangeReason: (year: string, reason: string) => void;
+  onAddOption: (option: Omit<SelectOption, "id">) => void;
+  onUpdateOption: (optionId: string, patch: Partial<Omit<SelectOption, "id">>) => void;
+  onRemoveOption: (optionId: string) => void;
 }) {
   const [clickOpen, setClickOpen] = useState(false);
   const [hoverOpen, setHoverOpen] = useState(false);
+  const [managing, setManaging] = useState(false);
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -201,9 +340,8 @@ export function CaseRefundStatusButton({
   // Lý do Pending KHÔNG giới hạn theo `editable` (quyền cột "refunds") — mọi user mở popup
   // bằng click đều nhập được, chỉ khoá khi mở qua hover (xem PendingReasonInput).
   const canEditReason = clickOpen;
-  // Popup đổi chiều cao khi 1 năm chuyển sang/khỏi "pending" (hiện/ẩn ô nhập lý do) — cần
-  // đo lại vị trí, không chỉ dựa vào số lượng năm (rows.length không đổi trong trường hợp
-  // này).
+  // Popup đổi chiều cao khi 1 năm chuyển sang/khỏi "pending" (hiện/ẩn ô nhập lý do) hoặc khi
+  // mở/đóng bảng quản lý options — cần đo lại vị trí.
   const rowStatusKey = rows.map((r) => r.status).join(",");
 
   useLayoutEffect(() => {
@@ -211,14 +349,30 @@ export function CaseRefundStatusButton({
     const trigger = triggerRef.current;
     if (!trigger) return;
     const rect = trigger.getBoundingClientRect();
+    const width = managing ? MANAGE_WIDTH : MENU_WIDTH;
     const menuHeight = menuRef.current?.offsetHeight ?? 200;
     const spaceBelow = window.innerHeight - rect.bottom - MENU_MARGIN;
-    const spaceAbove = rect.top - MENU_MARGIN;
-    const openUpward = menuHeight > spaceBelow && spaceAbove > spaceBelow;
-    const y = openUpward ? rect.top - 4 - menuHeight : rect.bottom + 4;
-    const x = Math.min(rect.left, window.innerWidth - MENU_WIDTH - MENU_MARGIN);
+    // Mở LÊN TRÊN bất cứ khi nào không đủ chỗ bên dưới — trước đây còn so sánh thêm
+    // "spaceAbove > spaceBelow" khiến vài hàng gần cuối màn hình (chỗ trên VÀ dưới đều hẹp,
+    // nhưng chỗ dưới nhỉnh hơn 1 chút) vẫn bị chọn mở xuống rồi tràn khuất dưới màn hình —
+    // đúng bug user báo cáo 2026-08-12. Không cần biết chỗ trên có thực sự đủ hay không ở
+    // bước này, đã kẹp cứng trong khung nhìn ngay bên dưới.
+    const openUpward = menuHeight > spaceBelow;
+    let y = openUpward ? rect.top - 4 - menuHeight : rect.bottom + 4;
+    // Kẹp cứng trong khung nhìn — phòng trường hợp cả trên lẫn dưới đều không đủ chỗ (màn
+    // hình quá thấp/popup quá cao), đảm bảo popup luôn hiện trọn vẹn thay vì vẫn bị khuất.
+    y = Math.max(MENU_MARGIN, Math.min(y, window.innerHeight - menuHeight - MENU_MARGIN));
+    const x = Math.min(rect.left, window.innerWidth - width - MENU_MARGIN);
     setPos((p) => (p.x === x && p.y === y ? p : { x, y }));
-  }, [open, rowStatusKey]);
+  }, [open, rowStatusKey, managing]);
+
+  // "managing" phải reset về false mỗi lần popup đóng (không dựa vào effect theo clickOpen —
+  // react-hooks/set-state-in-effect khuyến nghị xử lý ngay tại nơi thực sự đóng popup thay
+  // vì suy ra từ 1 effect riêng) — 2 nơi đóng popup: nút trigger (toggle) và backdrop.
+  function closePopup() {
+    setClickOpen(false);
+    setManaging(false);
+  }
 
   return (
     <span className="relative inline-flex" onMouseEnter={() => setHoverOpen(true)} onMouseLeave={() => setHoverOpen(false)}>
@@ -227,7 +381,8 @@ export function CaseRefundStatusButton({
         type="button"
         onClick={(e) => {
           e.stopPropagation();
-          setClickOpen((o) => !o);
+          if (clickOpen) closePopup();
+          else setClickOpen(true);
         }}
         aria-label={t("refundStatus.title")}
         title={t("refundStatus.title")}
@@ -240,36 +395,65 @@ export function CaseRefundStatusButton({
         typeof document !== "undefined" &&
         createPortal(
           <>
-            {clickOpen && <div className="fixed inset-0 z-[90]" onClick={() => setClickOpen(false)} />}
+            {clickOpen && <div className="fixed inset-0 z-[90]" onClick={closePopup} />}
             <div
               ref={menuRef}
               className="popover fixed z-[100] rounded-xl p-2 shadow-2xl shadow-black/60"
-              style={{ left: pos.x, top: pos.y, width: MENU_WIDTH }}
+              style={{ left: pos.x, top: pos.y, width: managing ? MANAGE_WIDTH : MENU_WIDTH }}
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="px-1 pb-1.5 text-xs font-semibold text-text">{t("refundStatus.title")}</div>
-              {rows.length === 0 ? (
-                <div className="px-1 py-3 text-center text-xs text-text-faint">{t("refundStatus.empty")}</div>
+              {managing ? (
+                <RefundStatusOptionsManager
+                  options={statusOptions}
+                  onAdd={onAddOption}
+                  onUpdate={onUpdateOption}
+                  onRemove={onRemoveOption}
+                  onClose={() => setManaging(false)}
+                />
               ) : (
-                <div className="flex flex-col gap-1.5">
-                  {rows.map((r) => (
-                    <div key={r.year} className="flex flex-col gap-1 rounded-lg px-1.5 py-1">
-                      <div className="grid grid-cols-[36px_1fr_auto] items-center gap-2">
-                        <span className="text-xs font-medium text-text-dim">{r.year}</span>
-                        <span className="truncate text-xs font-semibold text-text">{formatMoney(r.amount)}</span>
-                        <YearStatusDropdown status={r.status} editable={canEditNow} onChange={(s) => onChangeStatus(r.year, s)} />
-                      </div>
-                      {r.status === "pending" && (
-                        <PendingReasonInput
-                          year={r.year}
-                          reason={refundYearPendingReason[r.year] ?? ""}
-                          editable={canEditReason}
-                          onCommit={(reason) => onChangeReason(r.year, reason)}
-                        />
-                      )}
+                <>
+                  <div className="flex items-center justify-between px-1 pb-1.5">
+                    <span className="text-xs font-semibold text-text">{t("refundStatus.title")}</span>
+                    {clickOpen && canManageOptions && (
+                      <button
+                        onClick={() => setManaging(true)}
+                        className="text-text-faint transition hover:text-text"
+                        title={t("refundStatus.manageTitle")}
+                        aria-label={t("refundStatus.manageTitle")}
+                      >
+                        <Settings size={13} />
+                      </button>
+                    )}
+                  </div>
+                  {rows.length === 0 ? (
+                    <div className="px-1 py-3 text-center text-xs text-text-faint">{t("refundStatus.empty")}</div>
+                  ) : (
+                    <div className="flex flex-col gap-1.5">
+                      {rows.map((r) => (
+                        <div key={r.year} className="flex flex-col gap-1 rounded-lg px-1.5 py-1">
+                          <div className="grid grid-cols-[36px_1fr_auto] items-center gap-2">
+                            <span className="text-xs font-medium text-text-dim">{r.year}</span>
+                            <span className="truncate text-xs font-semibold text-text">{formatMoney(r.amount)}</span>
+                            <YearStatusDropdown
+                              status={r.status}
+                              statusOptions={statusOptions}
+                              editable={canEditNow}
+                              onChange={(s) => onChangeStatus(r.year, s)}
+                            />
+                          </div>
+                          {r.status === "pending" && (
+                            <PendingReasonInput
+                              year={r.year}
+                              reason={refundYearPendingReason[r.year] ?? ""}
+                              editable={canEditReason}
+                              onCommit={(reason) => onChangeReason(r.year, reason)}
+                            />
+                          )}
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  )}
+                </>
               )}
             </div>
           </>,
@@ -277,4 +461,18 @@ export function CaseRefundStatusButton({
         )}
     </span>
   );
+}
+
+function hexToRgba15(hex: string): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},0.15)`;
+}
+
+function rgbaToHex(rgba: string): string {
+  const m = rgba.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+  if (!m) return "#ff9900";
+  const [, r, g, b] = m;
+  return `#${[r, g, b].map((v) => Number(v).toString(16).padStart(2, "0")).join("")}`;
 }

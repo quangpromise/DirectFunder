@@ -1,10 +1,10 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { DEFAULT_COLUMNS, DEFAULT_FEATURE_PERMISSIONS } from "@/lib/rbac";
+import { DEFAULT_COLLECTING_COLUMNS, DEFAULT_COLUMNS, DEFAULT_FEATURE_PERMISSIONS, DEFAULT_REFUND_YEAR_STATUS_OPTIONS } from "@/lib/rbac";
 import { INITIAL_CASES, INITIAL_NOTIFICATIONS, INITIAL_USERS } from "@/lib/mock-data";
 import { getFullName, primarySsn } from "@/lib/client-name";
 import { summarizeCheckInitial } from "@/lib/check-initial";
-import { REFUND_STATUS_LABEL, DEFAULT_REFUND_YEAR_STATUS } from "@/lib/refund-status";
+import { DEFAULT_REFUND_YEAR_STATUS, findRefundStatusOption } from "@/lib/refund-status";
 import { api, syncInBackground, type ClientProfilePayload } from "@/lib/api-client";
 import type { ParsedCaseRow } from "@/lib/excel";
 import {
@@ -12,6 +12,7 @@ import {
   CaseRecord,
   CheckInitialValue,
   ClientEmailTemplate,
+  CollectingRecord,
   ColumnDef,
   ColumnType,
   CpaEmailDefaults,
@@ -114,11 +115,22 @@ interface AppState {
   /** Mẫu Subject/Body cố định cho tính năng "Gửi email cho khách hàng" (popup Edit Hồ sơ)
    * — null = Admin chưa cấu hình, dùng DEFAULT_CLIENT_EMAIL_SUBJECT/BODY. */
   clientEmailTemplate: ClientEmailTemplate | null;
+  /** Danh sách trạng thái cho popup "Refund by years" (nút mắt cạnh cột Case) — Quản lý
+   * thêm/sửa/xoá được qua CaseRefundStatusButton (xem addRefundYearStatusOption/
+   * updateRefundYearStatusOption/removeRefundYearStatusOption bên dưới). Mặc định
+   * DEFAULT_REFUND_YEAR_STATUS_OPTIONS (rbac.ts) nếu Admin chưa từng đổi. */
+  refundYearStatusOptions: SelectOption[];
   deletionHistory: DeletedRowRecord[];
   editHistory: EditHistoryRecord[];
   /** Bảng tin "Rules" (tab riêng sau Orders) — nạp từ server ở hydrateFromServer, KHÔNG
    * persist localStorage (giống cases/users, luôn tin dữ liệu server mới nhất). */
   rules: RuleRecord[];
+  /** Dữ liệu tab "Collecting" (bảng độc lập với bảng Hồ sơ) — nạp từ server ở
+   * hydrateFromServer, KHÔNG persist localStorage (giống cases/rules). */
+  collectingRecords: CollectingRecord[];
+  /** Cấu hình cột riêng cho tab "Collecting" — mặc định DEFAULT_COLLECTING_COLUMNS (rbac.ts)
+   * nếu Admin chưa từng đổi qua ColumnSettingsDialog. */
+  collectingColumns: ColumnDef[];
 
   /** true khi đã hydrate xong dữ liệu thật từ server ít nhất 1 lần trong phiên này. */
   hydrated: boolean;
@@ -153,6 +165,13 @@ interface AppState {
   updateSsn: (caseId: string, slot: 0 | 1, value: string | null) => void;
   updateRefundYearStatus: (caseId: string, year: string, status: RefundYearStatus) => void;
   updateRefundYearPendingReason: (caseId: string, year: string, reason: string) => void;
+  /** Thêm/sửa/xoá trạng thái trong AppConfig.refundYearStatusOptions — chỉ Admin (manager)
+   * dùng qua nút bánh răng trong CaseRefundStatusButton (xem canManageOptions ở cases/page.tsx).
+   * Option id "pending" là id đặc biệt, removeRefundYearStatusOption() tự chặn xoá nó
+   * (server cũng chặn, xem PUT /api/config) dù vẫn đổi tên/màu tự do được. */
+  addRefundYearStatusOption: (option: Omit<SelectOption, "id">) => void;
+  updateRefundYearStatusOption: (optionId: string, patch: Partial<Omit<SelectOption, "id">>) => void;
+  removeRefundYearStatusOption: (optionId: string) => void;
   /** Foreground action (giống sendCpaEmail) — lưu toàn bộ nội dung popup "Edit Hồ sơ"
    * (ClientProfileDialog) trong 1 lần gọi, server tự tính lại money/caseLabel từ
    * refunds và trả về giá trị đã tính để đồng bộ local state chính xác. */
@@ -182,7 +201,26 @@ interface AppState {
   updateColumnOption: (columnId: string, optionId: string, patch: Partial<Omit<SelectOption, "id">>) => void;
   removeColumnOption: (columnId: string, optionId: string) => void;
 
-  assignCase: (caseId: string, toUserId: string | null, field: "assignedTo" | "assignedProcessor") => void;
+  /** Tab "Collecting" — CRUD dòng + quản lý cột, cùng cơ chế với bảng Hồ sơ ở trên nhưng
+   * tách state/API riêng (collectingColumns/collectingRecords, /api/collecting[/[id]]). */
+  updateCollectingCell: (rowId: string, columnKey: string, value: string | number | boolean | null) => void;
+  addCollectingRow: () => void;
+  deleteCollectingRow: (rowId: string) => void;
+  reorderCollectingRow: (fromId: string, toId: string) => void;
+  addCollectingColumn: (label: string, type: ColumnType, options?: Omit<SelectOption, "id">[]) => void;
+  removeCollectingColumn: (columnId: string) => void;
+  renameCollectingColumn: (columnId: string, label: string) => void;
+  setCollectingColumnEditableBy: (columnId: string, roles: Role[]) => void;
+  addCollectingColumnOption: (columnId: string, option: Omit<SelectOption, "id">) => void;
+  updateCollectingColumnOption: (columnId: string, optionId: string, patch: Partial<Omit<SelectOption, "id">>) => void;
+  removeCollectingColumnOption: (columnId: string, optionId: string) => void;
+  reorderCollectingColumn: (fromId: string, toId: string) => void;
+
+  assignCase: (
+    caseId: string,
+    toUserId: string | null,
+    field: "assignedTo" | "assignedProcessor" | "assignedTo2" | "assignedProcessor2"
+  ) => void;
   markNotificationRead: (id: string) => void;
   markAllNotificationsRead: () => void;
 
@@ -301,7 +339,9 @@ export const useAppStore = create<AppState>()(
             state.featurePermissions,
             state.cpaEmailDefaults,
             state.googleSheetConfig ?? undefined,
-            state.clientEmailTemplate ?? undefined
+            state.clientEmailTemplate ?? undefined,
+            state.refundYearStatusOptions,
+            state.collectingColumns
           )
         );
       }
@@ -322,9 +362,12 @@ export const useAppStore = create<AppState>()(
       cpaSenderEmail: "",
       googleSheetConfig: null,
       clientEmailTemplate: null,
+      refundYearStatusOptions: DEFAULT_REFUND_YEAR_STATUS_OPTIONS,
       deletionHistory: [],
       editHistory: [],
       rules: [],
+      collectingRecords: [],
+      collectingColumns: DEFAULT_COLLECTING_COLUMNS,
 
       login: async (email, password) => {
         try {
@@ -344,11 +387,12 @@ export const useAppStore = create<AppState>()(
       // .claude/rules/deployment-database-sync.md) — bản trong localStorage chỉ còn là
       // cache hiển thị tạm trước khi hydrate xong, luôn bị ghi đè bởi dữ liệu server.
       hydrateFromServer: async () => {
-        const [users, cases, config, rules] = await Promise.all([
+        const [users, cases, config, rules, collectingRecords] = await Promise.all([
           api.listUsers(),
           api.listCases(),
           api.getConfig(),
           api.listRules(),
+          api.listCollecting(),
         ]);
         set({
           users,
@@ -359,7 +403,10 @@ export const useAppStore = create<AppState>()(
           cpaSenderEmail: config.cpaSenderEmail ?? "",
           googleSheetConfig: config.googleSheetConfig ?? null,
           clientEmailTemplate: config.clientEmailTemplate ?? null,
+          refundYearStatusOptions: config.refundYearStatusOptions ?? DEFAULT_REFUND_YEAR_STATUS_OPTIONS,
+          collectingColumns: config.collectingColumns ?? DEFAULT_COLLECTING_COLUMNS,
           rules,
+          collectingRecords,
           hydrated: true,
         });
       },
@@ -604,6 +651,9 @@ export const useAppStore = create<AppState>()(
           // trong bảng của leader cho tới khi được gán cho ai đó trong nhóm.
           assignedTo: creatorRole === "agent" ? creatorId : null,
           assignedProcessor: creatorRole === "processor" ? creatorId : null,
+          // Slot 2 luôn bắt đầu trống — chỉ slot 1 tự gán cho người tạo (hành vi cũ).
+          assignedTo2: null,
+          assignedProcessor2: null,
           createdBy: creatorId,
           ssn: [null, null],
           descriptionReplies: [],
@@ -753,9 +803,14 @@ export const useAppStore = create<AppState>()(
       },
 
       updateRefundYearStatus: (caseId, year, status) => {
-        const kase = get().cases.find((c) => c.id === caseId);
+        const state0 = get();
+        const kase = state0.cases.find((c) => c.id === caseId);
         const oldStatus = kase?.refundYearStatus?.[year] ?? DEFAULT_REFUND_YEAR_STATUS;
-        if (kase) logEdit(caseId, `Refund ${year}`, REFUND_STATUS_LABEL[oldStatus], REFUND_STATUS_LABEL[status]);
+        if (kase) {
+          const oldLabel = findRefundStatusOption(state0.refundYearStatusOptions, oldStatus).label;
+          const newLabel = findRefundStatusOption(state0.refundYearStatusOptions, status).label;
+          logEdit(caseId, `Refund ${year}`, oldLabel, newLabel);
+        }
         set((state) => ({
           cases: state.cases.map((c) =>
             c.id === caseId
@@ -933,6 +988,180 @@ export const useAppStore = create<AppState>()(
         syncConfig();
       },
 
+      // ==== Tab "Collecting" — cùng cơ chế CRUD dòng + quản lý cột với bảng Hồ sơ ở trên,
+      // tách state/API riêng (collectingColumns/collectingRecords, /api/collecting[/[id]]).
+      updateCollectingCell: (rowId, columnKey, value) => {
+        set((state) => ({
+          collectingRecords: state.collectingRecords.map((r) =>
+            r.id === rowId ? { ...r, custom: { ...r.custom, [columnKey]: value }, updatedAt: new Date().toISOString() } : r
+          ),
+        }));
+        syncInBackground("updateCollectingCell", api.patchCollecting(rowId, { custom: { [columnKey]: value } }));
+      },
+
+      addCollectingRow: () => {
+        const id = uniqueId("cl");
+        const optimistic: CollectingRecord = {
+          id,
+          custom: {},
+          sortOrder: -Date.now(),
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        set((s) => ({ collectingRecords: [optimistic, ...s.collectingRecords] }));
+        api.createCollecting(optimistic).then(
+          (serverRow) => {
+            set((s) => ({ collectingRecords: s.collectingRecords.map((r) => (r.id === id ? serverRow : r)) }));
+          },
+          (err) => {
+            console.error("[sync:addCollectingRow] Tạo dòng thất bại, hoàn tác dòng tạm:", err);
+            set((s) => ({ collectingRecords: s.collectingRecords.filter((r) => r.id !== id) }));
+          }
+        );
+      },
+
+      deleteCollectingRow: (rowId) => {
+        set((state) => ({ collectingRecords: state.collectingRecords.filter((r) => r.id !== rowId) }));
+        syncInBackground("deleteCollectingRow", api.deleteCollecting(rowId));
+      },
+
+      reorderCollectingRow: (fromId, toId) => {
+        let newSortOrder: number | null = null;
+        set((state) => {
+          if (fromId === toId) return {};
+          const list = [...state.collectingRecords];
+          const fromIdx = list.findIndex((r) => r.id === fromId);
+          const toIdx = list.findIndex((r) => r.id === toId);
+          if (fromIdx === -1 || toIdx === -1) return {};
+          const [moved] = list.splice(fromIdx, 1);
+          list.splice(toIdx, 0, moved);
+
+          const movedIdx = list.findIndex((r) => r.id === fromId);
+          const prev = list[movedIdx - 1];
+          const next = list[movedIdx + 1];
+          if (prev && next) newSortOrder = (prev.sortOrder + next.sortOrder) / 2;
+          else if (prev) newSortOrder = prev.sortOrder + 1000;
+          else if (next) newSortOrder = next.sortOrder - 1000;
+          else newSortOrder = moved.sortOrder;
+
+          list[movedIdx] = { ...moved, sortOrder: newSortOrder };
+          return { collectingRecords: list };
+        });
+        if (newSortOrder !== null) {
+          syncInBackground("reorderCollectingRow", api.patchCollecting(fromId, { sortOrder: newSortOrder }));
+        }
+      },
+
+      addCollectingColumn: (label, type, options) => {
+        set((state) => {
+          const key = uniqueId("clcol");
+          const col: ColumnDef = {
+            id: key,
+            key,
+            label,
+            type,
+            editableBy: ["manager"],
+            custom: true,
+            width: 140,
+            options: type === "select" ? (options ?? []).map((o) => ({ ...o, id: uniqueId("opt") })) : undefined,
+          };
+          return { collectingColumns: [...state.collectingColumns, col] };
+        });
+        syncConfig();
+      },
+
+      removeCollectingColumn: (columnId) => {
+        set((state) => ({ collectingColumns: state.collectingColumns.filter((c) => c.id !== columnId) }));
+        syncConfig();
+      },
+
+      renameCollectingColumn: (columnId, label) => {
+        set((state) => ({
+          collectingColumns: state.collectingColumns.map((c) => (c.id === columnId ? { ...c, label } : c)),
+        }));
+        syncConfig();
+      },
+
+      setCollectingColumnEditableBy: (columnId, roles) => {
+        set((state) => ({
+          collectingColumns: state.collectingColumns.map((c) => (c.id === columnId ? { ...c, editableBy: roles } : c)),
+        }));
+        syncConfig();
+      },
+
+      addCollectingColumnOption: (columnId, option) => {
+        set((state) => ({
+          collectingColumns: state.collectingColumns.map((c) =>
+            c.id === columnId
+              ? { ...c, options: [...(c.options ?? []), { ...option, id: uniqueId("opt") }] }
+              : c
+          ),
+        }));
+        syncConfig();
+      },
+
+      updateCollectingColumnOption: (columnId, optionId, patch) => {
+        set((state) => ({
+          collectingColumns: state.collectingColumns.map((c) =>
+            c.id === columnId
+              ? { ...c, options: (c.options ?? []).map((o) => (o.id === optionId ? { ...o, ...patch } : o)) }
+              : c
+          ),
+        }));
+        syncConfig();
+      },
+
+      removeCollectingColumnOption: (columnId, optionId) => {
+        set((state) => ({
+          collectingColumns: state.collectingColumns.map((c) =>
+            c.id === columnId ? { ...c, options: (c.options ?? []).filter((o) => o.id !== optionId) } : c
+          ),
+        }));
+        syncConfig();
+      },
+
+      reorderCollectingColumn: (fromId, toId) => {
+        set((state) => {
+          if (fromId === toId) return {};
+          const cols = [...state.collectingColumns];
+          const fromIdx = cols.findIndex((c) => c.id === fromId);
+          const toIdx = cols.findIndex((c) => c.id === toId);
+          if (fromIdx === -1 || toIdx === -1) return {};
+          const [moved] = cols.splice(fromIdx, 1);
+          cols.splice(toIdx, 0, moved);
+          return { collectingColumns: cols };
+        });
+        syncConfig();
+      },
+      // ==== hết tab "Collecting" ====
+
+      addRefundYearStatusOption: (option) => {
+        set((state) => ({
+          refundYearStatusOptions: [...state.refundYearStatusOptions, { ...option, id: uniqueId("refstatus") }],
+        }));
+        syncConfig();
+      },
+
+      updateRefundYearStatusOption: (optionId, patch) => {
+        set((state) => ({
+          refundYearStatusOptions: state.refundYearStatusOptions.map((o) =>
+            o.id === optionId ? { ...o, ...patch } : o
+          ),
+        }));
+        syncConfig();
+      },
+
+      // Id "pending" gắn liền logic nhấp nháy đỏ + ô nhập lý do (hasPendingRefundYear trong
+      // refund-status.ts) — chặn xoá ngay từ client (server cũng tự chặn, xem PUT
+      // /api/config) để tránh optimistic update rồi bị server từ chối gây lệch state.
+      removeRefundYearStatusOption: (optionId) => {
+        if (optionId === "pending") return;
+        set((state) => ({
+          refundYearStatusOptions: state.refundYearStatusOptions.filter((o) => o.id !== optionId),
+        }));
+        syncConfig();
+      },
+
       // toUserId = null nghĩa là "để trống" (bỏ giao việc) — chỉ tạo notification khi
       // thực sự giao cho ai đó, bỏ giao thì không cần báo.
       assignCase: (caseId, toUserId, field) => {
@@ -940,7 +1169,14 @@ export const useAppStore = create<AppState>()(
         const fromUserId = state.currentUserId ?? "u-admin";
         const fromUser = state.users.find((u) => u.id === fromUserId);
         const targetCase = state.cases.find((c) => c.id === caseId);
-        const roleLabel = field === "assignedProcessor" ? "Processor" : "Agent";
+        const roleLabel =
+          field === "assignedProcessor"
+            ? "Processor"
+            : field === "assignedProcessor2"
+              ? "Processor 2"
+              : field === "assignedTo2"
+                ? "Agent 2"
+                : "Agent";
         set((s) => ({
           cases: s.cases.map((c) =>
             c.id === caseId ? { ...c, [field]: toUserId, updatedAt: new Date().toISOString() } : c

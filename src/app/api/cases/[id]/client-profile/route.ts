@@ -55,7 +55,14 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/cases/[
 
   const target = await prisma.case.findUnique({
     where: { id },
-    select: { assignedTo: true, assignedProcessor: true, createdBy: true, custom: true },
+    select: {
+      assignedTo: true,
+      assignedProcessor: true,
+      assignedTo2: true,
+      assignedProcessor2: true,
+      createdBy: true,
+      custom: true,
+    },
   });
   if (!target) return NextResponse.json({ error: "Không tìm thấy hồ sơ" }, { status: 404 });
   if (

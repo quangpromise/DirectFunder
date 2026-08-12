@@ -49,6 +49,10 @@ export const ASSIGNABLE_FEATURES = [
   "sendToGoogleSheet",
   "sendClientEmail",
   "manageRules",
+  "addCollectingColumn",
+  "editCollectingColumn",
+  "addCollectingRow",
+  "deleteCollectingRow",
 ] as const;
 export type FeatureKey = (typeof ASSIGNABLE_FEATURES)[number];
 
@@ -65,6 +69,10 @@ export const FEATURE_LABEL: Record<Language, Record<FeatureKey, string>> = {
     sendToGoogleSheet: "Gửi dòng dữ liệu lên Google Sheet",
     sendClientEmail: "Gửi email cho khách hàng",
     manageRules: "Thêm / sửa / xóa Rules",
+    addCollectingColumn: "Thêm cột mới (tab Collecting)",
+    editCollectingColumn: "Sửa / xóa cột (tab Collecting)",
+    addCollectingRow: "Thêm dòng mới (tab Collecting)",
+    deleteCollectingRow: "Xóa dòng (tab Collecting)",
   },
   en: {
     addColumn: "Add new column",
@@ -78,6 +86,10 @@ export const FEATURE_LABEL: Record<Language, Record<FeatureKey, string>> = {
     sendToGoogleSheet: "Send row to Google Sheet",
     sendClientEmail: "Send email to client",
     manageRules: "Add / edit / delete Rules",
+    addCollectingColumn: "Add new column (Collecting tab)",
+    editCollectingColumn: "Edit / delete columns (Collecting tab)",
+    addCollectingRow: "Add new row (Collecting tab)",
+    deleteCollectingRow: "Delete row (Collecting tab)",
   },
 };
 
@@ -183,8 +195,10 @@ export interface CheckInitialValue {
 }
 
 /** Trạng thái xử lý của 1 năm refund — chọn qua dropdown trong popup nút mắt cạnh cột
- * "Case" (CaseRefundStatusButton). Xem src/lib/refund-status.ts cho màu sắc/nhãn/mặc định. */
-export type RefundYearStatus = "preProcessing" | "processing" | "pending" | "cpaReview";
+ * "Case" (CaseRefundStatusButton). Là id của 1 SelectOption trong AppConfig.refundYearStatusOptions
+ * (Quản lý thêm/sửa/xoá được qua UI, xem DEFAULT_REFUND_YEAR_STATUS_OPTIONS trong rbac.ts) —
+ * KHÔNG còn là union cố định, chỉ còn alias của string để phân biệt ý nghĩa tham số. */
+export type RefundYearStatus = string;
 
 export interface SelectOption {
   id: string;
@@ -301,6 +315,11 @@ export interface CaseRecord {
   assignedTo: string | null;
   /** Người phụ trách vai trò Processor cho hồ sơ này. */
   assignedProcessor: string | null;
+  /** Slot Agent thứ 2 — cùng chức năng/quyền với assignedTo, chỉ khác không tự động gán
+   * cho người tạo hồ sơ (xem addRow trong app-store.ts). */
+  assignedTo2: string | null;
+  /** Slot Processor thứ 2 — cùng chức năng/quyền với assignedProcessor. */
+  assignedProcessor2: string | null;
   custom: Record<string, string | number | boolean | null | CheckInitialValue>;
   /** ISO datetime lần gần nhất đã "Send row to Google Sheet" (gửi thật hoặc bấm "Mark as
    * sent" đánh dấu thủ công) — null = chưa gửi/vừa xác nhận "muốn gửi lại". Lưu ở server
@@ -324,6 +343,19 @@ export interface CaseRecord {
   /** Id người tạo hồ sơ này — dùng để Agent Leader/Processor Leader tự sửa được hồ sơ
    * do chính mình thêm vào, kể cả khi chưa gán cho thành viên nào trong nhóm. */
   createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** 1 dòng trong tab "Collecting" — bảng dữ liệu kiểu Excel độc lập với bảng Hồ sơ (không
+ * liên kết Case). Mọi cột (kể cả cột mặc định lẫn cột Admin tự thêm) đều lưu trong `custom`,
+ * cấu trúc cột lấy từ AppConfig.collectingColumns (state.collectingColumns trong store) —
+ * xem DEFAULT_COLLECTING_COLUMNS trong rbac.ts. */
+export interface CollectingRecord {
+  id: string;
+  custom: Record<string, string | number | boolean | null>;
+  /** Thứ tự hiển thị dòng (kéo-thả) — cùng cơ chế fractional indexing với Case.sortOrder. */
+  sortOrder: number;
   createdAt: string;
   updatedAt: string;
 }

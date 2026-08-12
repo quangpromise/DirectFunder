@@ -38,6 +38,8 @@ const ALLOWED_FIELDS = new Set([
   "ssn",
   "assignedTo",
   "assignedProcessor",
+  "assignedTo2",
+  "assignedProcessor2",
   "custom",
   "sortOrder",
   "refundYearStatus",
@@ -58,7 +60,7 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/cases/
   if (me.role === "agent_leader" || me.role === "processor_leader") {
     const target = await prisma.case.findUnique({
       where: { id },
-      select: { assignedTo: true, assignedProcessor: true, createdBy: true },
+      select: { assignedTo: true, assignedProcessor: true, assignedTo2: true, assignedProcessor2: true, createdBy: true },
     });
     if (!target || !canEditCase(me.role, me.id, target, me.teamMemberIds)) {
       return NextResponse.json({ error: "Không có quyền sửa hồ sơ này" }, { status: 403 });

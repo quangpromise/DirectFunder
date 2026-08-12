@@ -4,7 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LogOut, Menu, X, Table2, Users, ShieldCheck, ClipboardList, ChevronDown } from "lucide-react";
+import { LogOut, Menu, X, Table2, Users, ShieldCheck, ClipboardList, Coins, ChevronDown } from "lucide-react";
 import { useAppStore, useCurrentUser } from "@/store/app-store";
 import { Avatar } from "@/components/avatar";
 import { AvatarUpload } from "@/components/avatar-upload";
@@ -37,6 +37,15 @@ const PRIMARY_NAV: { href: string; labelKey: string; icon: typeof Table2; roles:
     labelKey: "nav.orders",
     icon: ClipboardList,
     roles: ["agent", "processor", "support", "agent_leader", "processor_leader"],
+  },
+  // Tab mới (2026-08-12), độc lập hoàn toàn với bảng Hồ sơ — bảng thu hồi công nợ dạng
+  // Excel. Roles hiện chỉ Quản lý + Kế toán (nhóm liên quan trực tiếp tới thu tiền/phí)
+  // — thu hẹp/mở rộng khi tính năng/phân công cụ thể cho tab này được xác định.
+  {
+    href: "/dashboard/collecting",
+    labelKey: "nav.collecting",
+    icon: Coins,
+    roles: ["manager", "accounting"],
   },
 ];
 const ADMIN_NAV: { href: string; labelKey: string; icon: typeof Table2; roles: Role[] | "all" }[] = [

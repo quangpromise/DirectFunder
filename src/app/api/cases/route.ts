@@ -26,6 +26,8 @@ export function toCaseRecord(row: {
   ssn: Prisma.JsonValue;
   assignedTo: string | null;
   assignedProcessor: string | null;
+  assignedTo2: string | null;
+  assignedProcessor2: string | null;
   createdBy: string | null;
   custom: Prisma.JsonValue;
   sheetSentAt: Date | null;
@@ -57,6 +59,8 @@ export function toCaseRecord(row: {
     ssn: row.ssn as unknown as CaseRecord["ssn"],
     assignedTo: row.assignedTo,
     assignedProcessor: row.assignedProcessor,
+    assignedTo2: row.assignedTo2,
+    assignedProcessor2: row.assignedProcessor2,
     createdBy: row.createdBy,
     custom: row.custom as unknown as CaseRecord["custom"],
     sheetSentAt: row.sheetSentAt ? row.sheetSentAt.toISOString() : null,
@@ -80,7 +84,13 @@ export async function GET() {
       canViewCase(
         me.role,
         me.id,
-        { assignedTo: c.assignedTo, assignedProcessor: c.assignedProcessor, createdBy: c.createdBy },
+        {
+          assignedTo: c.assignedTo,
+          assignedProcessor: c.assignedProcessor,
+          assignedTo2: c.assignedTo2,
+          assignedProcessor2: c.assignedProcessor2,
+          createdBy: c.createdBy,
+        },
         me.teamMemberIds
       )
     );
@@ -145,6 +155,8 @@ export async function POST(request: NextRequest) {
       ssn: (body.ssn ?? [null, null]) as unknown as Prisma.InputJsonValue,
       assignedTo: body.assignedTo ?? null,
       assignedProcessor: body.assignedProcessor ?? null,
+      assignedTo2: body.assignedTo2 ?? null,
+      assignedProcessor2: body.assignedProcessor2 ?? null,
       createdBy: body.createdBy ?? me.id,
       custom: (body.custom ?? {}) as unknown as Prisma.InputJsonValue,
       // Client (app-store.ts addRow) đã tự tính sẵn -Date.now() cho dòng tạm hiển thị
@@ -179,6 +191,8 @@ export async function POST(request: NextRequest) {
       ssn: [null, null],
       assignedTo: me.role === "agent" ? me.id : null,
       assignedProcessor: null,
+      assignedTo2: null,
+      assignedProcessor2: null,
       createdBy: me.id,
       // Cột "Case" hiển thị (custom field caseLabel) giờ là số đếm tự động năm Refund >
       // 0 (xem rbac.ts) — hồ sơ mới chưa có refund nào nên mặc định 0, không còn "1" như

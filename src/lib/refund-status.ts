@@ -1,33 +1,28 @@
-import { RefundYearStatus } from "./types";
+import { RefundYearStatus, SelectOption } from "./types";
 import { REFUND_YEARS } from "./refund";
 
 /** Năm có refund > 0 nhưng chưa từng chọn trạng thái -> mặc định "Pre-processing" (chưa
- * bắt đầu xử lý), khác "processing" (đang xử lý dở) — theo yêu cầu 2026-08-11. */
+ * bắt đầu xử lý), khác "processing" (đang xử lý dở) — theo yêu cầu 2026-08-11. Id này phải
+ * khớp 1 id trong AppConfig.refundYearStatusOptions (xem DEFAULT_REFUND_YEAR_STATUS_OPTIONS
+ * trong rbac.ts) — nếu Quản lý lỡ xoá option "preProcessing", findRefundStatusOption bên
+ * dưới vẫn tự dựng badge fallback thay vì crash. */
 export const DEFAULT_REFUND_YEAR_STATUS: RefundYearStatus = "preProcessing";
 
-/** Nhãn tiếng Anh cố định (giống quy ước CHECK_INITIAL_ITEMS) — dùng cho Edit History,
- * KHÔNG dùng cho UI hiển thị (UI dùng key i18n status.pre_processing/processing/pending/
- * cpa_review đã có sẵn cho cột Status chính, để đồng bộ chữ Việt/Anh, xem
- * CaseRefundStatusButton). */
-export const REFUND_STATUS_LABEL: Record<RefundYearStatus, string> = {
-  preProcessing: "Pre-processing",
-  processing: "Processing",
-  pending: "Pending",
-  cpaReview: "CPA Review",
+/** Option xám trung tính dùng khi 1 status id không còn khớp option nào trong danh sách
+ * hiện tại (Quản lý đã xoá/đổi id) — tránh crash thay vì throw hay ẩn badge. */
+const FALLBACK_OPTION: SelectOption = {
+  id: "__unknown",
+  label: "—",
+  bg: "rgba(148,163,184,0.15)",
+  color: "#cbd5e1",
 };
 
-/** Màu badge riêng cho tri-state này (không dùng chung màu Order Status) — Pre-processing
- * dùng xanh dương giống option "pre_processing" ở cột Status chính (đồng bộ ý nghĩa);
- * Pending cố ý chọn đỏ để khớp ý nghĩa với hiệu ứng nhấp nháy đỏ của nút mắt khi có năm
- * Pending. */
-export const REFUND_STATUS_COLOR: Record<RefundYearStatus, { bg: string; color: string }> = {
-  preProcessing: { bg: "rgba(59,130,246,0.15)", color: "#93c5fd" },
-  processing: { bg: "rgba(245,158,11,0.15)", color: "#fcd34d" },
-  pending: { bg: "rgba(239,68,68,0.15)", color: "#fca5a5" },
-  cpaReview: { bg: "rgba(168,85,247,0.15)", color: "#d8b4fe" },
-};
-
-export const REFUND_STATUS_OPTIONS: RefundYearStatus[] = ["preProcessing", "processing", "pending", "cpaReview"];
+/** Tra SelectOption (label/màu) theo status id từ danh sách hiện tại (AppConfig.refundYearStatusOptions,
+ * Quản lý cấu hình được qua CaseRefundStatusButton) — dùng chung cho badge tĩnh, dropdown,
+ * và Edit History. */
+export function findRefundStatusOption(options: SelectOption[], statusId: string): SelectOption {
+  return options.find((o) => o.id === statusId) ?? { ...FALLBACK_OPTION, id: statusId, label: statusId };
+}
 
 export interface RefundYearRow {
   year: string;
@@ -56,7 +51,9 @@ export function refundYearRows(
 }
 
 /** true nếu có ít nhất 1 năm refund > 0 đang ở trạng thái "Pending" — nút mắt nhấp nháy
- * đỏ khi true, xanh lá đứng yên khi false (xem CaseRefundStatusButton). */
+ * đỏ khi true, xanh lá đứng yên khi false (xem CaseRefundStatusButton). Id "pending" là id
+ * đặc biệt cố định trong code (KHÔNG xoá được qua UI quản lý options), không phụ thuộc label
+ * Quản lý đặt tên gì. */
 export function hasPendingRefundYear(
   refunds: Record<string, number>,
   refundYearStatus: Record<string, RefundYearStatus>

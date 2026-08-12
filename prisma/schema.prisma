@@ -74,6 +74,11 @@ model Case {
   ssn                Json
   assignedTo         String?
   assignedProcessor  String?
+  /// Slot Agent/Processor thứ 2 — cùng chức năng/quyền hệt assignedTo/assignedProcessor
+  /// (thêm 2026-08-12, xem AssignMenu thứ 2 trong cases/page.tsx), chỉ khác không tự động
+  /// gán cho người tạo hồ sơ (addRow chỉ tự gán slot 1, slot 2 luôn bắt đầu trống).
+  assignedTo2        String?
+  assignedProcessor2 String?
   /// Id người tạo hồ sơ — dùng cho Agent Leader/Processor Leader tự sửa hồ sơ do mình
   /// thêm vào dù chưa gán cho ai trong nhóm.
   createdBy          String?
@@ -128,6 +133,17 @@ model AppConfig {
   /// cố định cho tính năng "Gửi email cho khách hàng" (popup Edit Hồ sơ). null/thiếu field
   /// = dùng DEFAULT_CLIENT_EMAIL_SUBJECT/BODY trong src/lib/client-email-template.ts.
   clientEmailTemplate Json?
+  /// SelectOption[] — danh sách trạng thái tuỳ chỉnh cho popup "Refund by years" (nút mắt
+  /// cạnh cột Case, CaseRefundStatusButton). Quản lý thêm/sửa/xoá qua UI, xem
+  /// DEFAULT_REFUND_YEAR_STATUS_OPTIONS trong rbac.ts cho giá trị mặc định khi null/thiếu.
+  /// Option id "pending" là id đặc biệt gắn với logic nhấp nháy đỏ + ô nhập lý do
+  /// (hasPendingRefundYear) — không thể xoá qua UI dù đổi tên/màu tự do.
+  refundYearStatusOptions Json?
+  /// ColumnDef[] — cấu hình cột riêng cho tab "Collecting" (bảng thu hồi công nợ, tách
+  /// hoàn toàn khỏi bảng Hồ sơ) — cùng cơ chế thêm/sửa/xoá cột qua ColumnSettingsDialog
+  /// với `columns` ở trên, chỉ khác đối tượng áp dụng. null/thiếu = dùng
+  /// DEFAULT_COLLECTING_COLUMNS trong rbac.ts.
+  collectingColumns  Json?
   updatedAt          DateTime @updatedAt
 
   @@map("app_config")
@@ -147,4 +163,20 @@ model Rule {
   deletedBy String?
 
   @@map("rules")
+}
+
+/// Bảng "Collecting" (tab điều hướng riêng, sau Orders) — bảng dữ liệu kiểu Excel giống
+/// bảng Hồ sơ nhưng độc lập hoàn toàn (khách hàng/case riêng, không liên kết tới Case).
+/// Mọi giá trị cột lưu chung trong `custom` (JSON, key = ColumnDef.key) — KHÔNG có field
+/// cố định nào khác giống Case (status/clients/...) vì cột ở tab này hoàn toàn cấu hình
+/// được qua AppConfig.collectingColumns, chưa có hành vi đặc biệt riêng cột nào (tính
+/// năng cụ thể sẽ bổ sung sau, hiện tại chỉ là khung bảng + inline edit).
+model CollectingRecord {
+  id        String   @id @default(cuid())
+  custom    Json     @default("{}")
+  sortOrder Float
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("collecting_records")
 }

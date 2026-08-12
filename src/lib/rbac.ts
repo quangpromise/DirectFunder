@@ -1,4 +1,4 @@
-import { CaseRecord, ColumnDef, FeatureKey, FeaturePermissions, Role } from "./types";
+import { CaseRecord, ColumnDef, FeatureKey, FeaturePermissions, Role, SelectOption } from "./types";
 import { CHECK_INITIAL_COLUMN_ID } from "./check-initial";
 
 /**
@@ -211,6 +211,65 @@ export const DEFAULT_COLUMNS: ColumnDef[] = [
 ];
 
 /**
+ * Cột mặc định cho tab "Collecting" (bảng thu hồi công nợ, độc lập với bảng Hồ sơ) — lưu
+ * trong AppConfig.collectingColumns, Quản lý thêm/sửa/xoá/đổi quyền tự do qua cùng cơ chế
+ * ColumnSettingsDialog với bảng Hồ sơ. Mọi cột đều `custom: true` (giá trị lưu trong
+ * CollectingRecord.custom, không có field cố định riêng nào khác). `editableBy` mặc định
+ * chỉ "manager" cho tới khi có yêu cầu phân quyền cụ thể hơn — Quản lý tự mở rộng qua nút
+ * cài đặt (⚙) trên từng cột, không cần sửa code (2026-08-12: theo yêu cầu "tính năng sẽ
+ * thông báo sau", đây chỉ là khung bảng + cột, chưa gắn logic nghiệp vụ riêng nào).
+ */
+export const DEFAULT_COLLECTING_COLUMNS: ColumnDef[] = [
+  { id: "date1", key: "date1", label: "Date", type: "date", editableBy: ["manager"], custom: true, width: 106 },
+  { id: "confirmedBy", key: "confirmedBy", label: "Confirmed By", type: "text", editableBy: ["manager"], custom: true, width: 130 },
+  { id: "name", key: "name", label: "Name", type: "text", editableBy: ["manager"], custom: true, width: 150 },
+  { id: "phone", key: "phone", label: "Phone", type: "phone", editableBy: ["manager"], custom: true, width: 120 },
+  { id: "program", key: "program", label: "Program", type: "text", editableBy: ["manager"], custom: true, width: 110 },
+  { id: "taxOffset", key: "taxOffset", label: "Tax Offset", type: "text", editableBy: ["manager"], custom: true, width: 100 },
+  { id: "acct", key: "acct", label: "Acct", type: "text", editableBy: ["manager"], custom: true, width: 90 },
+  { id: "agent1", key: "agent1", label: "Agent 1", type: "text", editableBy: ["manager"], custom: true, width: 100 },
+  { id: "agent2", key: "agent2", label: "Agent 2", type: "text", editableBy: ["manager"], custom: true, width: 100 },
+  { id: "collector", key: "collector", label: "Collector", type: "text", editableBy: ["manager"], custom: true, width: 110 },
+  { id: "year1", key: "year1", label: "Year", type: "text", editableBy: ["manager"], custom: true, width: 72 },
+  { id: "qualAmount", key: "qualAmount", label: "Qual. Amount", type: "currency", editableBy: ["manager"], custom: true, width: 116 },
+  { id: "approvedAmt", key: "approvedAmt", label: "Approved amt", type: "currency", editableBy: ["manager"], custom: true, width: 116 },
+  { id: "upfrontFees", key: "upfrontFees", label: "Upfront fees", type: "currency", editableBy: ["manager"], custom: true, width: 110 },
+  { id: "totalCollected", key: "totalCollected", label: "Total Collected", type: "currency", editableBy: ["manager"], custom: true, width: 124 },
+  { id: "instalAmount", key: "instalAmount", label: "Instal. Amount", type: "currency", editableBy: ["manager"], custom: true, width: 116 },
+  { id: "pmtMethod", key: "pmtMethod", label: "Pmt method", type: "text", editableBy: ["manager"], custom: true, width: 106 },
+  { id: "note", key: "note", label: "Note", type: "text", editableBy: ["manager"], custom: true, width: 170 },
+  { id: "tips", key: "tips", label: "Tips", type: "currency", editableBy: ["manager"], custom: true, width: 90 },
+  { id: "var", key: "var", label: "VAR", type: "text", editableBy: ["manager"], custom: true, width: 90 },
+  { id: "totalActualFees", key: "totalActualFees", label: "Total Actual fees", type: "currency", editableBy: ["manager"], custom: true, width: 126 },
+  { id: "serviceFee", key: "serviceFee", label: "Service fee", type: "currency", editableBy: ["manager"], custom: true, width: 104 },
+  { id: "cpaFillingFee", key: "cpaFillingFee", label: "CPA filling fee", type: "currency", editableBy: ["manager"], custom: true, width: 116 },
+  { id: "receiptCheckNo", key: "receiptCheckNo", label: "Receipt/Check #", type: "text", editableBy: ["manager"], custom: true, width: 126 },
+  { id: "receiptCheckAmt", key: "receiptCheckAmt", label: "Receipt/Check Amt.", type: "currency", editableBy: ["manager"], custom: true, width: 130 },
+  { id: "cont1", key: "cont1", label: "Cont. 1", type: "text", editableBy: ["manager"], custom: true, width: 96 },
+  { id: "cont2", key: "cont2", label: "Cont. 2", type: "text", editableBy: ["manager"], custom: true, width: 96 },
+  { id: "cont3", key: "cont3", label: "Cont. 3", type: "text", editableBy: ["manager"], custom: true, width: 96 },
+  { id: "ic", key: "ic", label: "IC", type: "text", editableBy: ["manager"], custom: true, width: 72 },
+  { id: "year2", key: "year2", label: "Year", type: "text", editableBy: ["manager"], custom: true, width: 72 },
+  { id: "checkUploaded", key: "checkUploaded", label: "Check Uploaded", type: "boolean", editableBy: ["manager"], custom: true, width: 118 },
+  { id: "checker", key: "checker", label: "Checker", type: "text", editableBy: ["manager"], custom: true, width: 106 },
+  { id: "date2", key: "date2", label: "Date", type: "date", editableBy: ["manager"], custom: true, width: 106 },
+];
+
+/**
+ * Danh sách trạng thái mặc định cho popup "Refund by years" (nút mắt cạnh cột Case) —
+ * lưu trong AppConfig.refundYearStatusOptions, Quản lý thêm/sửa/xoá tự do qua UI (xem
+ * CaseRefundStatusButton) giống cơ chế options của cột kiểu select. Option id "pending"
+ * là id đặc biệt được code tham chiếu trực tiếp (nhấp nháy đỏ + ô nhập lý do, xem
+ * hasPendingRefundYear trong refund-status.ts) — KHÔNG thể xoá qua UI dù đổi tên/màu tự do.
+ */
+export const DEFAULT_REFUND_YEAR_STATUS_OPTIONS: SelectOption[] = [
+  { id: "preProcessing", label: "Pre-processing", bg: "rgba(59,130,246,0.15)", color: "#93c5fd" },
+  { id: "processing", label: "Processing", bg: "rgba(245,158,11,0.15)", color: "#fcd34d" },
+  { id: "pending", label: "Pending", bg: "rgba(239,68,68,0.15)", color: "#fca5a5" },
+  { id: "cpaReview", label: "CPA Review", bg: "rgba(168,85,247,0.15)", color: "#d8b4fe" },
+];
+
+/**
  * Quyền theo tính năng (không gắn với cột cụ thể): admin cấu hình được qua
  * trang /dashboard/permissions. "manager" luôn được phép, bất kể cấu hình,
  * để tránh admin tự khóa quyền của chính mình.
@@ -240,6 +299,15 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermissions = {
   // hasFeature() không cần liệt kê), Admin có thể cấp thêm cho role khác qua trang Phân
   // quyền. Mọi user đã đăng nhập đều XEM được tab Rules bất kể quyền này (không giới hạn xem).
   manageRules: [],
+  // Thêm/sửa/xoá cột và thêm/xoá dòng ở tab "Collecting" — mặc định CHỈ Quản lý (mảng rỗng,
+  // Manager luôn được qua hasFeature() không cần liệt kê), Admin cấp thêm cho role khác qua
+  // trang Phân quyền khi tính năng/phân công cụ thể cho tab này được xác định (2026-08-12).
+  // Mọi user đã đăng nhập đều XEM được tab này bất kể quyền này (không giới hạn xem) — trừ
+  // khi Admin thu hẹp `roles` của mục nav ở top-nav.tsx.
+  addCollectingColumn: [],
+  editCollectingColumn: [],
+  addCollectingRow: [],
+  deleteCollectingRow: [],
 };
 
 /** Quyền sửa từng cột hoàn toàn theo cấu hình editableBy — kể cả với Admin. */
@@ -263,33 +331,40 @@ export const ASSIGNABLE_ROLES: Role[] = [
 ];
 
 /**
- * Agent chỉ thấy hồ sơ được gán cho mình ở cột Agent; Processor chỉ thấy hồ sơ
- * được gán cho mình ở cột Processor. Agent Leader/Processor Leader thấy hồ sơ của
- * các thành viên trong nhóm mình phụ trách (teamMemberIds, do Admin gán) CỘNG hồ sơ
- * gán TRỰC TIẾP cho chính leader (vì leader cũng có thể được chọn trong danh sách
- * assign cột Agent/Processor), CỘNG THÊM hồ sơ do chính leader tự thêm vào (createdBy)
- * dù chưa gán cho ai — để hồ sơ vừa tạo không biến mất khỏi bảng của họ. Các role còn
- * lại (Quản lý, Kế toán, Support) thấy toàn bộ hồ sơ.
+ * Agent chỉ thấy hồ sơ được gán cho mình ở cột Agent (slot 1 HOẶC slot 2 — "Agent 2" có
+ * cùng chức năng/quyền với "Agent", thêm 2026-08-12); Processor tương tự ở cột Processor
+ * (2 slot). Agent Leader/Processor Leader thấy hồ sơ của các thành viên trong nhóm mình
+ * phụ trách (teamMemberIds, do Admin gán) CỘNG hồ sơ gán TRỰC TIẾP cho chính leader (vì
+ * leader cũng có thể được chọn trong danh sách assign cột Agent/Processor, cả 2 slot),
+ * CỘNG THÊM hồ sơ do chính leader tự thêm vào (createdBy) dù chưa gán cho ai — để hồ sơ
+ * vừa tạo không biến mất khỏi bảng của họ. Các role còn lại (Quản lý, Kế toán, Support)
+ * thấy toàn bộ hồ sơ. assignedTo2/assignedProcessor2 optional trong Pick — caller chưa
+ * kịp select 2 field mới vẫn type-check được (coi như chưa gán slot 2, an toàn).
  */
 export function canViewCase(
   role: Role,
   userId: string,
-  kase: Pick<CaseRecord, "assignedTo" | "assignedProcessor"> & Partial<Pick<CaseRecord, "createdBy">>,
+  kase: Pick<CaseRecord, "assignedTo" | "assignedProcessor"> &
+    Partial<Pick<CaseRecord, "createdBy" | "assignedTo2" | "assignedProcessor2">>,
   teamMemberIds?: string[]
 ): boolean {
-  if (role === "agent") return kase.assignedTo === userId;
-  if (role === "processor") return kase.assignedProcessor === userId;
+  if (role === "agent") return kase.assignedTo === userId || kase.assignedTo2 === userId;
+  if (role === "processor") return kase.assignedProcessor === userId || kase.assignedProcessor2 === userId;
   if (role === "agent_leader") {
     return (
       kase.assignedTo === userId ||
+      kase.assignedTo2 === userId ||
       (kase.assignedTo != null && teamMemberIds?.includes(kase.assignedTo)) ||
+      (kase.assignedTo2 != null && teamMemberIds?.includes(kase.assignedTo2)) ||
       kase.createdBy === userId
     );
   }
   if (role === "processor_leader") {
     return (
       kase.assignedProcessor === userId ||
+      kase.assignedProcessor2 === userId ||
       (kase.assignedProcessor != null && teamMemberIds?.includes(kase.assignedProcessor)) ||
+      (kase.assignedProcessor2 != null && teamMemberIds?.includes(kase.assignedProcessor2)) ||
       kase.createdBy === userId
     );
   }
@@ -306,7 +381,8 @@ export function canViewCase(
 export function canEditCase(
   role: Role,
   userId: string,
-  kase: Pick<CaseRecord, "assignedTo" | "assignedProcessor" | "createdBy">,
+  kase: Pick<CaseRecord, "assignedTo" | "assignedProcessor" | "createdBy"> &
+    Partial<Pick<CaseRecord, "assignedTo2" | "assignedProcessor2">>,
   teamMemberIds?: string[]
 ): boolean {
   if (role === "agent_leader" || role === "processor_leader") {
