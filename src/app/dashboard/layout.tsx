@@ -20,10 +20,27 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // phải 1 div con) để các phần render qua portal (dropdown, dialog...) cũng ăn đúng
   // theme. Trang Login tự xoá attribute này khi mount nên luôn giữ nguyên nền tối cố
   // định bất kể lựa chọn theme đã lưu.
+  //
+  // Tắt transition-colors trên toàn trang trong đúng 1 frame lúc đổi theme (class
+  // "theme-switching", xem globals.css) — nếu không, hàng trăm ô trong bảng Hồ sơ (mỗi
+  // ô có transition-colors cho hiệu ứng hover) sẽ đồng loạt chạy animation đổi màu cùng
+  // lúc, gây giật/lag rõ rệt. Double rAF đảm bảo style đã tính lại với transition tắt
+  // trước khi bật lại, không ảnh hưởng hiệu ứng hover bình thường.
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
+    const root = document.documentElement;
+    root.classList.add("theme-switching");
+    root.dataset.theme = theme;
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        root.classList.remove("theme-switching");
+      });
+    });
     return () => {
-      delete document.documentElement.dataset.theme;
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+      root.classList.remove("theme-switching");
+      delete root.dataset.theme;
     };
   }, [theme]);
 

@@ -100,6 +100,15 @@
   border-color: var(--border);
 }
 
+/* Tắt mọi transition trong đúng 1 frame lúc đổi Dark/Light (gắn/gỡ bởi
+   DashboardLayout) — tránh hàng trăm ô trong bảng Hồ sơ đồng loạt animate đổi màu
+   cùng lúc gây giật. Không ảnh hưởng hiệu ứng hover bình thường vì chỉ tồn tại trong
+   1 frame rồi tự gỡ. */
+.theme-switching,
+.theme-switching * {
+  transition: none !important;
+}
+
 html {
   color-scheme: dark;
 }
