@@ -2,8 +2,26 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
 import { canEditCase, canEditColumn, hasFeature } from "@/lib/rbac";
-import type { ColumnDef, FeaturePermissions } from "@/lib/types";
+import { getFullName, primarySsn } from "@/lib/client-name";
+import { broadcastCaseChanged, broadcastNotification } from "@/lib/pusher-server";
+import { toNotificationRecord } from "@/app/api/notifications/route";
+import type { ClientNameEntry, ColumnDef, FeaturePermissions, OrderRecord } from "@/lib/types";
 import type { Prisma } from "@prisma/client";
+
+/** Nhãn vai trò hiện trong nội dung thông báo — khớp đúng chữ dùng ở assignCase cũ trong
+ * app-store.ts (đã chuyển logic tạo thông báo xuống đây, xem PATCH bên dưới). */
+const ASSIGN_FIELD_ROLE_LABEL: Record<string, string> = {
+  assignedTo: "Agent",
+  assignedTo2: "Agent 2",
+  assignedProcessor: "Processor",
+  assignedProcessor2: "Processor 2",
+};
+
+function caseRefLabel(c: { clients: [ClientNameEntry, ClientNameEntry]; ssn: [string | null, string | null] }): string {
+  const name = getFullName(c);
+  const ssn = primarySsn(c);
+  return ssn ? `${name} (SSN: ${ssn})` : name;
+}
 
 /** Ánh xạ tên field của Case (Prisma) sang `key` của ColumnDef tương ứng — dùng để
  * kiểm tra quyền editableBy theo cột khi field đó có cột cấu hình. Field không có
@@ -50,6 +68,7 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/cases/
   const me = await requireUser();
   if (!me) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
   const { id } = await ctx.params;
+  const socketId = request.headers.get("x-pusher-socket-id");
 
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object") return NextResponse.json({ error: "Payload không hợp lệ" }, { status: 400 });
@@ -69,6 +88,29 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/cases/
 
   const config = await prisma.appConfig.findUnique({ where: { id: "singleton" } });
   const columns = (config?.columns as ColumnDef[] | undefined) ?? [];
+
+  // Cần trạng thái "trước khi sửa" để so sánh & tạo thông báo (giao Agent/Processor/Order,
+  // Order chuyển Done) — chỉ fetch khi body thực sự đổi 1 trong các field liên quan, để
+  // không tốn thêm round-trip DB cho mọi lần sửa ô thông thường (status/description/...).
+  // Logic tạo thông báo này trước đây nằm ở client (assignCase/assignOrderSupport/
+  // updateOrderStatus trong app-store.ts) — chuyển hẳn xuống đây để người được giao việc
+  // thực sự nhận được thông báo trên máy của họ (server mới biết toUserId là AI để bắn
+  // Pusher tới đúng kênh riêng của họ, xem broadcastNotification).
+  const notifyFields = ["assignedTo", "assignedTo2", "assignedProcessor", "assignedProcessor2", "orders"];
+  const before = notifyFields.some((f) => f in body)
+    ? await prisma.case.findUnique({
+        where: { id },
+        select: {
+          clients: true,
+          ssn: true,
+          assignedTo: true,
+          assignedTo2: true,
+          assignedProcessor: true,
+          assignedProcessor2: true,
+          orders: true,
+        },
+      })
+    : null;
 
   const data: Prisma.CaseUpdateInput = {};
   for (const [field, value] of Object.entries(body)) {
@@ -118,10 +160,75 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/cases/
   }
 
   const row = await prisma.case.update({ where: { id }, data });
+
+  if (before) {
+    const refLabel = caseRefLabel({
+      clients: before.clients as unknown as [ClientNameEntry, ClientNameEntry],
+      ssn: before.ssn as unknown as [string | null, string | null],
+    });
+    const beforeRec = before as unknown as Record<string, string | null>;
+    const rowRec = row as unknown as Record<string, string | null>;
+
+    for (const field of Object.keys(ASSIGN_FIELD_ROLE_LABEL)) {
+      if (!(field in body)) continue;
+      const newVal = rowRec[field];
+      if (newVal && newVal !== beforeRec[field]) {
+        const notif = await prisma.notification.create({
+          data: {
+            type: "assigned",
+            toUserId: newVal,
+            fromUserId: me.id,
+            caseId: id,
+            message: `${me.name} đã giao cho bạn hồ sơ ${refLabel} vai trò ${ASSIGN_FIELD_ROLE_LABEL[field]}`,
+          },
+        });
+        await broadcastNotification(newVal, toNotificationRecord(notif), socketId);
+      }
+    }
+
+    if ("orders" in body && Array.isArray(body.orders)) {
+      const oldOrders = (before.orders as unknown as OrderRecord[]) ?? [];
+      for (const newOrder of body.orders as OrderRecord[]) {
+        const oldOrder = oldOrders.find((o) => o.id === newOrder.id);
+        const orderLabel = newOrder.type === "orderTtsWit" ? "Order TTS & WIT" : "Order 8821";
+
+        if (newOrder.assignedSupport && newOrder.assignedSupport !== oldOrder?.assignedSupport) {
+          const notif = await prisma.notification.create({
+            data: {
+              type: "assigned",
+              toUserId: newOrder.assignedSupport,
+              fromUserId: me.id,
+              caseId: id,
+              message: `${me.name} đã giao cho bạn ${orderLabel} của hồ sơ ${refLabel}`,
+            },
+          });
+          await broadcastNotification(newOrder.assignedSupport, toNotificationRecord(notif), socketId);
+        }
+
+        // Order vừa chuyển sang Done (không tính đã Done từ trước) -> báo cho đúng người
+        // đã đặt order đó, bỏ qua nếu tự đặt tự hoàn tất (đúng logic cũ updateOrderStatus).
+        if (newOrder.status === "done" && oldOrder?.status !== "done" && newOrder.placedBy && newOrder.placedBy !== me.id) {
+          const notif = await prisma.notification.create({
+            data: {
+              type: "status_change",
+              toUserId: newOrder.placedBy,
+              fromUserId: me.id,
+              caseId: id,
+              message: `${me.name} đã hoàn tất ${orderLabel} của hồ sơ ${refLabel}`,
+            },
+          });
+          await broadcastNotification(newOrder.placedBy, toNotificationRecord(notif), socketId);
+        }
+      }
+    }
+  }
+
+  await broadcastCaseChanged(id, socketId);
+
   return NextResponse.json({ id: row.id, updatedAt: row.updatedAt.toISOString() });
 }
 
-export async function DELETE(_request: NextRequest, ctx: RouteContext<"/api/cases/[id]">) {
+export async function DELETE(request: NextRequest, ctx: RouteContext<"/api/cases/[id]">) {
   const me = await requireUser();
   if (!me) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
 
@@ -133,5 +240,6 @@ export async function DELETE(_request: NextRequest, ctx: RouteContext<"/api/case
 
   const { id } = await ctx.params;
   await prisma.case.delete({ where: { id } });
+  await broadcastCaseChanged(id, request.headers.get("x-pusher-socket-id"));
   return NextResponse.json({ ok: true });
 }

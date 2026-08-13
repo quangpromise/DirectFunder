@@ -15,6 +15,7 @@ export async function GET() {
       id: u.id,
       name: u.name,
       email: u.email,
+      username: u.username,
       role: u.role,
       avatarColor: u.avatarColor,
       avatarUrl: u.avatarUrl,
@@ -44,11 +45,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Email đã được sử dụng" }, { status: 409 });
   }
 
+  // Username KHÔNG còn là ô Admin tự gõ (2026-08-13) — tự lấy NGUYÊN Họ tên (lowercase, để
+  // đăng nhập không phân biệt hoa/thường) làm tên đăng nhập thay thế cho email. Trùng tên
+  // với tài khoản khác (không hiếm — Họ tên không có ràng buộc unique) thì bỏ qua, để
+  // username = null thay vì chặn tạo tài khoản mới — người dùng vẫn luôn đăng nhập được
+  // bằng email trong trường hợp đó.
+  const derivedUsername = String(name).trim().toLowerCase();
+  const usernameTaken = derivedUsername ? await prisma.user.findUnique({ where: { username: derivedUsername } }) : null;
   const passwordHash = await hashPassword(String(password));
   const user = await prisma.user.create({
     data: {
       name: String(name),
       email: String(email).trim().toLowerCase(),
+      username: usernameTaken ? null : derivedUsername || null,
       passwordHash,
       role: String(role),
       avatarColor: String(avatarColor),
@@ -61,6 +70,7 @@ export async function POST(request: NextRequest) {
       id: user.id,
       name: user.name,
       email: user.email,
+      username: user.username,
       role: user.role,
       avatarColor: user.avatarColor,
       avatarUrl: user.avatarUrl,

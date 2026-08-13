@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAppStore, useCurrentUser } from "@/store/app-store";
+import { useRealtime } from "@/hooks/use-realtime";
 import { TopNav } from "@/components/top-nav";
 import { StatusCelebrationOverlay } from "@/components/status-celebration-overlay";
 
@@ -56,6 +57,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [persistReady, currentUserId, router]);
+
+  // Chuông thông báo + bảng Hồ sơ/Order tự cập nhật khi người khác sửa (Pusher) — xem
+  // src/hooks/use-realtime.ts. No-op an toàn nếu chưa cấu hình Pusher.
+  useRealtime(persistReady ? user?.id : undefined);
 
   if (!persistReady || !user) return null;
 

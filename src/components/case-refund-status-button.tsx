@@ -13,6 +13,7 @@ import { darkenHex, withAlpha } from "@/lib/color";
 const MENU_MARGIN = 8;
 const MENU_WIDTH = 268;
 const MANAGE_WIDTH = 300;
+const YEAR_DROPDOWN_WIDTH = 144;
 
 function formatMoney(n: number): string {
   return `$${n.toLocaleString("en-US")}`;
@@ -32,7 +33,12 @@ function useStatusColor(option: SelectOption) {
 /** Dropdown chọn 1 trong các trạng thái đang cấu hình (statusOptions, Quản lý thêm/sửa/xoá
  * được — xem RefundStatusOptionsManager) cho 1 năm — không editable thì chỉ hiện badge
  * tĩnh. Đóng khi click ra ngoài (document mousedown), không cần overlay full màn hình vì
- * popup cha đã đứng trên mọi thứ khác (portal + fixed) nên clip/z-index không phải lo. */
+ * popup cha đã đứng trên mọi thứ khác (portal + fixed) nên clip/z-index không phải lo. Vị
+ * trí dùng `position: fixed` tính theo getBoundingClientRect (giống các dropdown khác trong
+ * app) — mở xổ SANG PHẢI từ mép trái nút (không còn right-0/mở sang trái) + tự lật LÊN TRÊN
+ * khi không đủ chỗ bên dưới, tránh bị khuất màn hình ở những hàng gần cuối popup cha (bug
+ * user báo cáo 2026-08-13 — trước đây luôn mở cố định xuống dưới/sang trái).
+ */
 function YearStatusDropdown({
   status,
   statusOptions,
@@ -45,7 +51,10 @@ function YearStatusDropdown({
   onChange: (status: RefundYearStatus) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ x: 0, y: 0 });
   const wrapRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const current = findRefundStatusOption(statusOptions, status);
   const { bg, color } = useStatusColor(current);
 
@@ -56,6 +65,20 @@ function YearStatusDropdown({
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [open]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const trigger = triggerRef.current;
+    const menu = menuRef.current;
+    if (!trigger || !menu) return;
+    const rect = trigger.getBoundingClientRect();
+    const menuHeight = menu.offsetHeight;
+    const spaceBelow = window.innerHeight - rect.bottom - MENU_MARGIN;
+    const openUpward = menuHeight > spaceBelow;
+    const y = openUpward ? rect.top - 4 - menuHeight : rect.bottom + 4;
+    const x = Math.min(rect.left, window.innerWidth - YEAR_DROPDOWN_WIDTH - MENU_MARGIN);
+    setPos((p) => (p.x === x && p.y === y ? p : { x, y }));
   }, [open]);
 
   if (!editable) {
@@ -72,6 +95,7 @@ function YearStatusDropdown({
   return (
     <div ref={wrapRef} className="relative shrink-0">
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((o) => !o)}
         className="inline-flex items-center gap-0.5 rounded-full border px-2 py-0.5 text-[10px] font-medium transition hover:brightness-110"
@@ -81,7 +105,11 @@ function YearStatusDropdown({
         <ChevronDown size={10} />
       </button>
       {open && (
-        <div className="popover absolute right-0 top-full z-10 mt-1 w-36 rounded-lg p-1 shadow-2xl shadow-black/60">
+        <div
+          ref={menuRef}
+          className="popover fixed z-[110] max-h-52 w-36 overflow-y-auto rounded-lg p-1 shadow-2xl shadow-black/60"
+          style={{ left: pos.x, top: pos.y }}
+        >
           {statusOptions.map((opt) => (
             <YearStatusOption
               key={opt.id}
@@ -228,7 +256,7 @@ function RefundStatusOptionsManager({
           <X size={14} />
         </button>
       </div>
-      <div className="flex flex-col gap-1.5">
+      <div className="flex max-h-64 flex-col gap-1.5 overflow-y-auto pr-0.5">
         {options.map((o) => {
           const protectedOption = o.id === "pending";
           return (
@@ -414,16 +442,31 @@ export function CaseRefundStatusButton({
                 <>
                   <div className="flex items-center justify-between px-1 pb-1.5">
                     <span className="text-xs font-semibold text-text">{t("refundStatus.title")}</span>
-                    {clickOpen && canManageOptions && (
-                      <button
-                        onClick={() => setManaging(true)}
-                        className="text-text-faint transition hover:text-text"
-                        title={t("refundStatus.manageTitle")}
-                        aria-label={t("refundStatus.manageTitle")}
-                      >
-                        <Settings size={13} />
-                      </button>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {clickOpen && canManageOptions && (
+                        <button
+                          onClick={() => setManaging(true)}
+                          className="text-text-faint transition hover:text-text"
+                          title={t("refundStatus.manageTitle")}
+                          aria-label={t("refundStatus.manageTitle")}
+                        >
+                          <Settings size={13} />
+                        </button>
+                      )}
+                      {/* Mở qua click không còn tự đóng khi rê chuột ra khỏi popup (yêu cầu
+                          2026-08-13) — phải bấm nút X này (hoặc bấm ra ngoài/bấm lại icon
+                          mắt) mới đóng, để không bị tắt giữa chừng lúc đang sửa nhiều năm. */}
+                      {clickOpen && (
+                        <button
+                          onClick={closePopup}
+                          className="text-text-faint transition hover:text-text"
+                          title={t("common.close")}
+                          aria-label={t("common.close")}
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
                   </div>
                   {rows.length === 0 ? (
                     <div className="px-1 py-3 text-center text-xs text-text-faint">{t("refundStatus.empty")}</div>

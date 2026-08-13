@@ -64,12 +64,12 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/users/
     }
     patch.teamMemberIds = body.teamMemberIds.map(String);
   }
-
   const user = await prisma.user.update({ where: { id }, data: patch });
   return NextResponse.json({
     id: user.id,
     name: user.name,
     email: user.email,
+    username: user.username,
     role: user.role,
     avatarColor: user.avatarColor,
     avatarUrl: user.avatarUrl,

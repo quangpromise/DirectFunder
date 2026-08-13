@@ -1,11 +1,13 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { History, MessageSquarePlus, X } from "lucide-react";
 import { DescriptionReply, User } from "@/lib/types";
 import { Avatar } from "@/components/avatar";
 import { useT } from "@/lib/i18n";
+
+const MENU_MARGIN = 8;
 
 function formatTime(iso: string): string {
   const d = new Date(iso);
@@ -37,9 +39,30 @@ export function DescriptionCell({
   const cellRef = useRef<HTMLDivElement>(null);
   const replyBtnRef = useRef<HTMLButtonElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const activeTriggerRef = useRef<HTMLElement | null>(null);
+  const activeAlignRight = useRef(false);
 
   const t = useT();
   const latest = replies.length > 0 ? replies[replies.length - 1].text : description;
+
+  // Đo lại vị trí sau khi popup render (biết chiều cao thật) và lật lên trên nếu không đủ
+  // chỗ bên dưới — tránh popup bị khuất màn hình khi ô nằm ở hàng gần cuối bảng.
+  useLayoutEffect(() => {
+    const open = historyOpen || replyOpen;
+    if (!open) return;
+    const trigger = activeTriggerRef.current;
+    const menu = menuRef.current;
+    if (!trigger || !menu) return;
+    const rect = trigger.getBoundingClientRect();
+    const menuHeight = menu.offsetHeight;
+    const spaceBelow = window.innerHeight - rect.bottom - MENU_MARGIN;
+    const spaceAbove = rect.top - MENU_MARGIN;
+    const openUpward = menuHeight > spaceBelow && spaceAbove > spaceBelow;
+    const x = activeAlignRight.current ? rect.right - 280 : rect.left;
+    const y = openUpward ? rect.top - 4 - menuHeight : rect.bottom + 4;
+    setPopoverPos((p) => (p.x === x && p.y === y ? p : { x, y }));
+  }, [historyOpen, replyOpen]);
 
   function authorName(id: string): string {
     return users.find((u) => u.id === id)?.name ?? t("desc.unknown");
@@ -52,6 +75,8 @@ export function DescriptionCell({
   function openHistory() {
     const rect = cellRef.current?.getBoundingClientRect();
     if (rect) setPopoverPos({ x: rect.left, y: rect.bottom + 4 });
+    activeTriggerRef.current = cellRef.current;
+    activeAlignRight.current = false;
     setReplyOpen(false);
     setHistoryOpen(true);
   }
@@ -66,6 +91,8 @@ export function DescriptionCell({
   function openReply() {
     const rect = replyBtnRef.current?.getBoundingClientRect();
     if (rect) setPopoverPos({ x: rect.right - 280, y: rect.bottom + 4 });
+    activeTriggerRef.current = replyBtnRef.current;
+    activeAlignRight.current = true;
     setHistoryOpen(false);
     setReplyDraft("");
     setReplyOpen(true);
@@ -125,6 +152,7 @@ export function DescriptionCell({
           <>
             <div className="fixed inset-0 z-[90]" onClick={closeHistory} />
             <div
+              ref={menuRef}
               className="popover fixed z-[100] flex max-h-80 w-80 flex-col rounded-xl p-3 shadow-2xl shadow-black/60"
               style={{ left: popoverPos.x, top: popoverPos.y }}
             >
@@ -189,7 +217,8 @@ export function DescriptionCell({
           <>
             <div className="fixed inset-0 z-[90]" onClick={() => setReplyOpen(false)} />
             <div
-              className="popover fixed z-[100] w-72 rounded-xl p-2.5 shadow-2xl shadow-black/60"
+              ref={menuRef}
+              className="popover fixed z-[100] max-h-80 w-72 overflow-y-auto rounded-xl p-2.5 shadow-2xl shadow-black/60"
               style={{ left: popoverPos.x, top: popoverPos.y }}
             >
               <div className="mb-1.5 flex items-center justify-between">

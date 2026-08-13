@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
 import { canViewCase, hasFeature } from "@/lib/rbac";
+import { broadcastCaseChanged } from "@/lib/pusher-server";
 import type { CaseRecord, ColumnDef, FeaturePermissions } from "@/lib/types";
 import type { Prisma } from "@prisma/client";
 
@@ -207,6 +208,8 @@ export async function POST(request: NextRequest) {
   const row = await prisma.case.create({
     data,
   });
+
+  await broadcastCaseChanged(row.id, request.headers.get("x-pusher-socket-id"));
 
   return NextResponse.json(toCaseRecord(row), { status: 201 });
 }

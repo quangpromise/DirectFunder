@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Trash2, GripVertical, Coins } from "lucide-react";
+import { Plus, Trash2, GripVertical, Coins, ShieldAlert } from "lucide-react";
 import { useAppStore, useCurrentUser } from "@/store/app-store";
 import { canEditColumn, hasFeature } from "@/lib/rbac";
 import { CollectingRecord, ColumnDef } from "@/lib/types";
@@ -46,6 +46,18 @@ export default function CollectingPage() {
   const [dragRowId, setDragRowId] = useState<string | null>(null);
 
   if (!user) return null;
+
+  // Xem tab này giờ cấu hình được qua trang Phân quyền (viewCollecting, 2026-08-13) — trước
+  // đây chỉ ẩn khỏi nav (top-nav.tsx roles hard-code), route vẫn truy cập trực tiếp được nếu
+  // biết URL. Chặn thẳng ở đây để đúng nghĩa "phân quyền xem", không chỉ ẩn UI.
+  if (!hasFeature(featurePermissions, "viewCollecting", user.role)) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
+        <ShieldAlert size={28} className="text-text-faint" />
+        <p className="text-sm text-text-dim">{t("users.accessDenied")}</p>
+      </div>
+    );
+  }
 
   const canAddColumnFeature = hasFeature(featurePermissions, "addCollectingColumn", user.role);
   const canEditColumnFeature = hasFeature(featurePermissions, "editCollectingColumn", user.role);

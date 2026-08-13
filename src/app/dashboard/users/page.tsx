@@ -1,12 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import { Plus, Trash2, ShieldAlert, X, Users, Key, CheckCircle2 } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Plus, Trash2, ShieldAlert, X, Users, Key, CheckCircle2, Search } from "lucide-react";
 import { useAppStore, useCurrentUser } from "@/store/app-store";
-import { ROLE_LABEL, Role, LEADER_MANAGES_ROLE } from "@/lib/types";
+import { ROLE_LABEL, Role, LEADER_MANAGES_ROLE, User } from "@/lib/types";
 import { ASSIGNABLE_ROLES } from "@/lib/rbac";
 import { AvatarUpload } from "@/components/avatar-upload";
-import { RoleBadge } from "@/components/role-badge";
 import { useT, useLanguage } from "@/lib/i18n";
 
 const PALETTE = ["#14b8a6", "#22c55e", "#3b82f6", "#eab308", "#06b6d4", "#ec4899"];
@@ -33,6 +32,7 @@ export default function UsersPage() {
   const [role, setRole] = useState<Role>("agent");
   const [teamMemberIds, setTeamMemberIds] = useState<string[]>([]);
   const [formError, setFormError] = useState("");
+  const [search, setSearch] = useState("");
   const [teamEditUserId, setTeamEditUserId] = useState<string | null>(null);
   const [resetPwUserId, setResetPwUserId] = useState<string | null>(null);
   const [resetPwValue, setResetPwValue] = useState(DEFAULT_NEW_USER_PASSWORD);
@@ -40,6 +40,24 @@ export default function UsersPage() {
   const [resetPwSuccess, setResetPwSuccess] = useState(false);
   const t = useT();
   const { language } = useLanguage();
+
+  // Lọc theo tên/email/username rồi nhóm theo vai trò (thứ tự cố định theo ASSIGNABLE_ROLES)
+  // để danh sách tài khoản dễ nhìn hơn khi số lượng tăng lên — mỗi nhóm là 1 khối tiêu đề +
+  // lưới card riêng, thay vì 1 lưới phẳng lẫn lộn mọi vai trò như trước. Đặt 2 useMemo này
+  // TRƯỚC early-return bên dưới — Hooks phải gọi theo đúng thứ tự cố định ở mọi lần render.
+  const filteredUsers = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return users;
+    return users.filter((u) => u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q));
+  }, [users, search]);
+
+  const groupedUsers = useMemo(
+    () =>
+      ASSIGNABLE_ROLES.map((r) => ({ role: r, list: filteredUsers.filter((u) => u.role === r) })).filter(
+        (g) => g.list.length > 0
+      ),
+    [filteredUsers]
+  );
 
   if (!user) return null;
 
@@ -63,6 +81,9 @@ export default function UsersPage() {
       setFormError(t("users.errEmailTaken"));
       return;
     }
+    // Username không còn là ô nhập riêng — server tự lấy NGUYÊN Họ tên làm username đăng
+    // nhập thay thế (xem POST /api/users), tự bỏ qua nếu trùng tên với tài khoản khác thay
+    // vì chặn tạo mới (đăng nhập bằng email vẫn luôn hoạt động).
     const ok = await addUser({
       name: name.trim(),
       email: email.trim(),
@@ -126,86 +147,66 @@ export default function UsersPage() {
           <h1 className="text-lg font-semibold tracking-tight">{t("users.title")}</h1>
           <p className="mt-0.5 text-xs text-text-faint">{users.length} {t("users.count")}</p>
         </div>
-        <button
-          onClick={() => setOpen(true)}
-          className="gradient-btn flex h-9 items-center gap-1.5 rounded-lg px-3.5 text-sm font-medium text-white shadow-lg shadow-blue-950/30"
-        >
-          <Plus size={14} />
-          {t("users.add")}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-text-faint" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t("users.search")}
+              className="h-9 w-56 rounded-lg border border-border bg-bg-elevated pl-8 pr-3 text-sm outline-none focus:border-accent"
+            />
+          </div>
+          <button
+            onClick={() => setOpen(true)}
+            className="gradient-btn flex h-9 items-center gap-1.5 rounded-lg px-3.5 text-sm font-medium text-white shadow-lg shadow-blue-950/30"
+          >
+            <Plus size={14} />
+            {t("users.add")}
+          </button>
+        </div>
       </div>
 
-      {/* Lưới co giãn theo số cột màn hình (giống bảng Phân quyền — gói gọn trong 1 khối
-          cuộn dọc max-h-[65vh]) thay vì hàng ngang cuộn ngang cũ — thêm bao nhiêu tài
-          khoản cũng luôn xem được hết trong 1 màn hình, chỉ cuộn dọc khi quá dài. */}
-      <div className="mt-5 max-h-[65vh] overflow-y-auto rounded-xl border border-border-strong p-3">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-        {users.map((u) => {
-          const isLastManager = u.role === "manager" && managerCount <= 1;
-          return (
-            <div
-              key={u.id}
-              className="flex min-w-0 flex-col gap-2.5 rounded-xl border border-border bg-surface p-4"
-            >
-              <div className="flex items-center gap-2.5">
-                <AvatarUpload
-                  name={u.name}
-                  color={u.avatarColor}
-                  url={u.avatarUrl}
-                  onChange={(url) => updateAvatar(u.id, url)}
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium">{u.name}</div>
-                  <div className="truncate text-xs text-text-faint">{u.email}</div>
-                </div>
+      {/* Nhóm theo vai trò (thứ tự cố định ASSIGNABLE_ROLES) — mỗi nhóm 1 tiêu đề + lưới
+          riêng, co giãn theo số cột màn hình. Card đã thu gọn (2026-08-13, bỏ ô Username
+          riêng + gộp các nút hành động thành 1 hàng icon) để nhiều tài khoản vừa trong 1
+          khung màn hình hơn, giảm bớt việc phải cuộn. */}
+      <div className="mt-5 max-h-[75vh] overflow-y-auto rounded-xl border border-border-strong p-3">
+        {groupedUsers.length === 0 && (
+          <div className="px-2 py-6 text-center text-sm text-text-faint">{t("users.noResults")}</div>
+        )}
+        <div className="flex flex-col gap-5">
+          {groupedUsers.map(({ role: groupRole, list }) => (
+            <div key={groupRole}>
+              <div className="mb-2 flex items-center gap-2 px-0.5">
+                <span className="text-xs font-semibold uppercase tracking-wide text-text-dim">
+                  {ROLE_LABEL[language][groupRole]}
+                </span>
+                <span className="rounded-full bg-surface px-1.5 py-0.5 text-[10px] font-medium text-text-faint">
+                  {list.length}
+                </span>
               </div>
-
-              <RoleBadge role={u.role} />
-
-              <div className="flex items-center gap-1.5">
-                <select
-                  value={u.role}
-                  onChange={(e) => updateUserRole(u.id, e.target.value as Role)}
-                  disabled={isLastManager}
-                  className="w-full min-w-0 rounded-lg border border-border bg-bg-elevated px-2.5 py-1.5 text-xs outline-none focus:border-accent disabled:opacity-50"
-                >
-                  {ASSIGNABLE_ROLES.map((r) => (
-                    <option key={r} value={r}>
-                      {ROLE_LABEL[language][r]}
-                    </option>
-                  ))}
-                </select>
-
-                <button
-                  onClick={() => removeUser(u.id)}
-                  disabled={isLastManager || u.id === user.id}
-                  title={isLastManager ? t("users.deleteLastManager") : u.id === user.id ? t("users.deleteSelf") : t("users.delete")}
-                  className="shrink-0 rounded-lg border border-border p-1.5 text-text-faint transition hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:text-text-faint"
-                >
-                  <Trash2 size={14} />
-                </button>
+              {/* flex-wrap (thay grid cột đều 2026-08-13) — mỗi card rộng VỪA ĐỦ theo nội
+                  dung của chính nó (chủ yếu là email, phần tử dài nhất trong card) thay vì
+                  bị kéo giãn bằng nhau theo số cột cố định, nên gói được nhiều card/hàng
+                  hơn khi tên/email ngắn. */}
+              <div className="flex flex-wrap gap-2">
+                {list.map((u) => (
+                  <UserCard
+                    key={u.id}
+                    u={u}
+                    isLastManager={u.role === "manager" && managerCount <= 1}
+                    isSelf={u.id === user.id}
+                    onRoleChange={(r) => updateUserRole(u.id, r)}
+                    onRemove={() => removeUser(u.id)}
+                    onAvatarChange={(url) => updateAvatar(u.id, url)}
+                    onOpenResetPassword={() => openResetPassword(u.id)}
+                    onOpenTeamEdit={() => setTeamEditUserId(u.id)}
+                  />
+                ))}
               </div>
-
-              <button
-                onClick={() => openResetPassword(u.id)}
-                className="flex items-center justify-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs text-text-dim transition hover:bg-surface-hover hover:text-text"
-              >
-                <Key size={13} />
-                {t("users.resetPassword")}
-              </button>
-
-              {LEADER_MANAGES_ROLE[u.role] && (
-                <button
-                  onClick={() => setTeamEditUserId(u.id)}
-                  className="flex items-center justify-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs text-text-dim transition hover:bg-surface-hover hover:text-text"
-                >
-                  <Users size={13} />
-                  {t("users.manageTeam")} ({(u.teamMemberIds ?? []).length})
-                </button>
-              )}
             </div>
-          );
-        })}
+          ))}
         </div>
       </div>
 
@@ -413,6 +414,95 @@ export default function UsersPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** 1 thẻ tài khoản — thu gọn (2026-08-13): bỏ ô Username riêng (username giờ tự lấy từ Họ
+ * tên ở server, không cần Admin tự gõ/sửa), gộp Reset mật khẩu/Quản lý nhóm/Xoá thành 1
+ * hàng icon thay vì 3 nút chữ đầy chiều rộng — để nhiều tài khoản vừa trong 1 khung màn
+ * hình hơn (yêu cầu 2026-08-13). Badge vai trò cũng bỏ (đã có tiêu đề nhóm theo vai trò ở
+ * component cha, hiện lại là dư thừa). */
+function UserCard({
+  u,
+  isLastManager,
+  isSelf,
+  onRoleChange,
+  onRemove,
+  onAvatarChange,
+  onOpenResetPassword,
+  onOpenTeamEdit,
+}: {
+  u: User;
+  isLastManager: boolean;
+  isSelf: boolean;
+  onRoleChange: (role: Role) => void;
+  onRemove: () => void;
+  onAvatarChange: (url: string | null) => void;
+  onOpenResetPassword: () => void;
+  onOpenTeamEdit: () => void;
+}) {
+  const t = useT();
+  const { language } = useLanguage();
+  const isTeamLead = Boolean(LEADER_MANAGES_ROLE[u.role]);
+
+  // Rộng CỐ ĐỊNH vừa đủ chứa email (phần tử dài nhất trong card, thường ~20-32 ký tự) thay
+  // vì co giãn theo số cột như grid cũ — dưới flex-wrap ở component cha, card hẹp lại tự
+  // xếp nhiều hơn/hàng khi màn hình rộng (2026-08-13).
+  return (
+    <div className="flex w-60 min-w-0 flex-col gap-2 rounded-lg border border-border bg-surface p-2.5">
+      <div className="flex items-center gap-2">
+        <AvatarUpload name={u.name} color={u.avatarColor} url={u.avatarUrl} size={28} onChange={onAvatarChange} />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-xs font-medium">{u.name}</div>
+          <div className="truncate text-[11px] text-text-faint">{u.email}</div>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-1">
+        <select
+          value={u.role}
+          onChange={(e) => onRoleChange(e.target.value as Role)}
+          disabled={isLastManager}
+          className="w-full min-w-0 rounded-md border border-border bg-bg-elevated px-1.5 py-1 text-[11px] outline-none focus:border-accent disabled:opacity-50"
+        >
+          {ASSIGNABLE_ROLES.map((r) => (
+            <option key={r} value={r}>
+              {ROLE_LABEL[language][r]}
+            </option>
+          ))}
+        </select>
+
+        <button
+          onClick={onOpenResetPassword}
+          title={t("users.resetPassword")}
+          aria-label={t("users.resetPassword")}
+          className="shrink-0 rounded-md border border-border p-1.5 text-text-faint transition hover:bg-surface-hover hover:text-text"
+        >
+          <Key size={13} />
+        </button>
+
+        {isTeamLead && (
+          <button
+            onClick={onOpenTeamEdit}
+            title={`${t("users.manageTeam")} (${(u.teamMemberIds ?? []).length})`}
+            aria-label={t("users.manageTeam")}
+            className="shrink-0 rounded-md border border-border p-1.5 text-text-faint transition hover:bg-surface-hover hover:text-text"
+          >
+            <Users size={13} />
+          </button>
+        )}
+
+        <button
+          onClick={onRemove}
+          disabled={isLastManager || isSelf}
+          title={isLastManager ? t("users.deleteLastManager") : isSelf ? t("users.deleteSelf") : t("users.delete")}
+          aria-label={t("users.delete")}
+          className="shrink-0 rounded-md border border-border p-1.5 text-text-faint transition hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:text-text-faint"
+        >
+          <Trash2 size={13} />
+        </button>
+      </div>
     </div>
   );
 }

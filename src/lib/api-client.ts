@@ -1,9 +1,12 @@
 import type {
+  AppNotification,
   CaseRecord,
   ClientEmailTemplate,
   CollectingRecord,
   ColumnDef,
   CpaEmailDefaults,
+  DeletedRowRecord,
+  EditHistoryRecord,
   FeaturePermissions,
   GoogleSheetConfig,
   Role,
@@ -11,13 +14,21 @@ import type {
   SelectOption,
   User,
 } from "./types";
+import { getSocketId } from "./pusher-client";
 
 class ApiError extends Error {}
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  // Gắn socket_id Pusher hiện tại (nếu có) — server đọc header này để loại trừ, không bắn
+  // lại tín hiệu/thông báo realtime cho chính người vừa thao tác (xem pusher-server.ts).
+  const socketId = getSocketId();
   const res = await fetch(url, {
     ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
+    headers: {
+      "Content-Type": "application/json",
+      ...(socketId ? { "X-Pusher-Socket-Id": socketId } : {}),
+      ...init?.headers,
+    },
   });
   if (!res.ok) {
     const body = await res.json().catch(() => null);
@@ -31,6 +42,7 @@ export interface ApiUser {
   id: string;
   name: string;
   email: string;
+  username?: string | null;
   role: Role;
   avatarColor: string;
   avatarUrl: string | null;
@@ -38,8 +50,9 @@ export interface ApiUser {
 }
 
 export const api = {
-  login: (email: string, password: string) =>
-    request<ApiUser>("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
+  /** identifier — email HOẶC username, server tự nhận diện (xem POST /api/auth/login). */
+  login: (identifier: string, password: string) =>
+    request<ApiUser>("/api/auth/login", { method: "POST", body: JSON.stringify({ identifier, password }) }),
   logout: () => request<{ ok: true }>("/api/auth/logout", { method: "POST" }),
   me: () => request<ApiUser>("/api/me"),
 
@@ -184,11 +197,24 @@ export const api = {
       { method: "POST", body: JSON.stringify(payload) }
     ),
 
+  listNotifications: () => request<AppNotification[]>("/api/notifications"),
+  markNotificationRead: (id: string) => request<{ ok: true }>(`/api/notifications/${id}`, { method: "PATCH" }),
+  markAllNotificationsRead: () => request<{ ok: true }>("/api/notifications/mark-all-read", { method: "POST" }),
+
   listRules: () => request<RuleRecord[]>("/api/rules"),
   createRule: (content: string) => request<RuleRecord>("/api/rules", { method: "POST", body: JSON.stringify({ content }) }),
   updateRule: (ruleId: string, content: string) =>
     request<RuleRecord>(`/api/rules/${ruleId}`, { method: "PATCH", body: JSON.stringify({ content }) }),
   deleteRule: (ruleId: string) => request<RuleRecord>(`/api/rules/${ruleId}`, { method: "DELETE" }),
+
+  // Lịch sử chỉnh sửa/xoá — server là nguồn thật DUY NHẤT (2026-08-13), mọi user xem được
+  // toàn bộ, không lọc theo người xem (xem GET /api/history/edits|deletions).
+  listEditHistory: () => request<EditHistoryRecord[]>("/api/history/edits"),
+  createEditHistoryEntry: (entry: Omit<EditHistoryRecord, "id" | "editedByUserId" | "editedAt">) =>
+    request<EditHistoryRecord>("/api/history/edits", { method: "POST", body: JSON.stringify(entry) }),
+  listDeletionHistory: () => request<DeletedRowRecord[]>("/api/history/deletions"),
+  createDeletionHistoryEntry: (caseSnapshot: CaseRecord) =>
+    request<DeletedRowRecord>("/api/history/deletions", { method: "POST", body: JSON.stringify({ caseSnapshot }) }),
 };
 
 export interface ClientProfilePayload {

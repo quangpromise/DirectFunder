@@ -33,6 +33,9 @@ export default function LoginPage() {
   const router = useRouter();
   const login = useAppStore((s) => s.login);
 
+  // Đăng nhập chấp nhận cả email lẫn username (xem POST /api/auth/login) — tên biến vẫn
+  // giữ "email" (khớp store.login(email, password)/tên trong recentAccounts) dù giờ mang ý
+  // nghĩa rộng hơn "identifier", tránh đổi tên xuyên suốt không cần thiết.
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -121,19 +124,19 @@ export default function LoginPage() {
           <div ref={emailWrapRef} className="relative">
             <label className="mb-1 block text-xs text-text-dim">{t("login.email")}</label>
             <input
-              type="email"
+              type="text"
               required
               autoFocus
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               onFocus={() => setShowSuggestions(true)}
               onClick={() => setShowSuggestions(true)}
-              placeholder="ten@directfunder.com"
+              placeholder="ten@directfunder.com hoặc Họ và Tên"
               autoComplete="off"
               className="w-full rounded-lg border border-border bg-bg-elevated px-3 py-2 text-sm outline-none transition focus:border-accent focus:ring-4 focus:ring-accent/15"
             />
             {showSuggestions && filteredSuggestions.length > 0 && (
-              <div className="popover absolute left-0 right-0 top-full z-20 mt-1.5 overflow-hidden rounded-lg shadow-2xl shadow-black/40">
+              <div className="popover absolute left-0 right-0 top-full z-20 mt-1.5 max-h-56 overflow-y-auto rounded-lg shadow-2xl shadow-black/40">
                 {filteredSuggestions.map((acc) => (
                   <button
                     key={acc}

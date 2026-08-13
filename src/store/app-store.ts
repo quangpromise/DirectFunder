@@ -1,12 +1,13 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { useShallow } from "zustand/shallow";
 import { DEFAULT_COLLECTING_COLUMNS, DEFAULT_COLUMNS, DEFAULT_FEATURE_PERMISSIONS, DEFAULT_REFUND_YEAR_STATUS_OPTIONS } from "@/lib/rbac";
 import { INITIAL_CASES, INITIAL_NOTIFICATIONS, INITIAL_USERS } from "@/lib/mock-data";
 import { getFullName, primarySsn } from "@/lib/client-name";
 import { summarizeCheckInitial } from "@/lib/check-initial";
 import { DEFAULT_REFUND_YEAR_STATUS, findRefundStatusOption } from "@/lib/refund-status";
 import { api, syncInBackground, type ClientProfilePayload } from "@/lib/api-client";
-import type { ParsedCaseRow } from "@/lib/excel";
+import type { ParsedCaseRow, DuplicateSsnInfo } from "@/lib/excel";
 import { formatSsn } from "@/lib/ssn";
 import {
   AppNotification,
@@ -44,6 +45,7 @@ function uniqueId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+
 /** Excel cho phép xuống dòng trong 1 ô (Alt+Enter) — dùng cho ô "Client Name"/"SSN" khi
  * nhập Excel: dòng 1 là khách hàng chính, dòng 2 (nếu có) là vợ/chồng (Spouse). */
 function splitCellLines(text: string): [string, string] {
@@ -64,15 +66,6 @@ function splitNameLastWord(fullName: string): { firstName: string; lastName: str
   return { firstName: trimmed.slice(0, idx).trim(), lastName: trimmed.slice(idx + 1).trim() };
 }
 
-/** Định danh hồ sơ dùng trong thông báo (bell) — theo quy ước dự án SSN là số duy nhất
- * đại diện cho mỗi hồ sơ, nên tham chiếu bằng SSN kèm tên Client thay vì mã hồ sơ (Case
- * Code). Xem workflow-conventions.md và primarySsn trong lib/client-name.ts. */
-function caseRefLabel(c: CaseRecord | undefined): string {
-  if (!c) return "";
-  const name = getFullName(c);
-  const ssn = primarySsn(c);
-  return ssn ? `${name} (SSN: ${ssn})` : name;
-}
 
 /**
  * Danh sách Status mặc định đã đổi theo thời gian. Khi đổi options mặc định, KHÔNG
@@ -166,6 +159,10 @@ interface AppState {
    * login thành công và mỗi lần dashboard mount (đảm bảo dữ liệu luôn khớp DB, không
    * chỉ dựa vào bản cache cũ trong localStorage). */
   hydrateFromServer: () => Promise<void>;
+  /** Nhận 1 thông báo đẩy realtime qua Pusher — xem src/hooks/use-realtime.ts. */
+  receiveNotification: (n: AppNotification) => void;
+  /** Nạp lại cases sau khi nhận tín hiệu "case:changed" qua Pusher. */
+  refetchCases: () => Promise<void>;
   setLanguage: (language: Language) => void;
   setTheme: (theme: Theme) => void;
   setNotificationSoundMuted: (muted: boolean) => void;
@@ -184,7 +181,7 @@ interface AppState {
     rows: ParsedCaseRow[],
     creatorId: string,
     creatorRole: Role
-  ) => Promise<{ success: number; failed: number; duplicateSsn: number }>;
+  ) => Promise<{ success: number; failed: number; duplicateSsn: number; duplicates: DuplicateSsnInfo[] }>;
   deleteRow: (caseId: string, deletedByUserId: string) => void;
   updateClientLink: (caseId: string, link: string | null) => void;
   updateSsn: (caseId: string, slot: 0 | 1, value: string | null) => void;
@@ -329,18 +326,25 @@ export const useAppStore = create<AppState>()(
         if (oldValue === newValue) return;
         const state = get();
         const kase = state.cases.find((c) => c.id === caseId);
+        const ssn = kase ? primarySsn(kase) : null;
+        const clientName = kase ? getFullName(kase) : "";
         const entry: EditHistoryRecord = {
           id: uniqueId("edit"),
           caseId,
-          ssn: kase ? primarySsn(kase) : null,
-          clientName: kase ? getFullName(kase) : "",
+          ssn,
+          clientName,
           fieldLabel,
           oldValue,
           newValue,
           editedByUserId: state.currentUserId ?? "",
           editedAt: new Date().toISOString(),
         };
+        // Optimistic local prepend (phản hồi tức thì) + ghi lên server để MỌI user khác đăng
+        // nhập đều xem được (2026-08-13) — server tự set editedByUserId/editedAt thật, entry
+        // optimistic ở trên chỉ dùng để hiện ngay trong lúc chờ, không đồng bộ lại id/thời
+        // gian chính xác từ response (đủ dùng, sai lệch vài trăm ms không đáng kể).
         set((s) => ({ editHistory: [entry, ...s.editHistory] }));
+        syncInBackground("logEdit", api.createEditHistoryEntry({ caseId, ssn, clientName, fieldLabel, oldValue, newValue }));
       }
 
       /** Đồng bộ lại field `orders` của 1 case lên server sau khi set() cục bộ đã xong
@@ -412,12 +416,22 @@ export const useAppStore = create<AppState>()(
       // .claude/rules/deployment-database-sync.md) — bản trong localStorage chỉ còn là
       // cache hiển thị tạm trước khi hydrate xong, luôn bị ghi đè bởi dữ liệu server.
       hydrateFromServer: async () => {
-        const [users, cases, config, rules, collectingRecords] = await Promise.all([
+        const [users, cases, config, rules, collectingRecords, notifications, editHistory, deletionHistory] = await Promise.all([
           api.listUsers(),
           api.listCases(),
           api.getConfig(),
           api.listRules(),
           api.listCollecting(),
+          // Trước đây notifications chỉ tồn tại local (tạo trong set(), không có API) —
+          // giờ server là nguồn thật duy nhất (xem prisma model Notification + PATCH
+          // /api/cases/[id]), luôn nạp lại mỗi lần vào dashboard giống users/cases/...
+          api.listNotifications(),
+          // Tương tự notifications — trước 2026-08-13 editHistory/deletionHistory chỉ tồn tại
+          // local (mỗi trình duyệt chỉ thấy thay đổi do CHÍNH nó thực hiện), giờ server là
+          // nguồn thật duy nhất nên MỌI user xem được TOÀN BỘ lịch sử (xem
+          // EditHistoryEntry/DeletedRowEntry trong schema.prisma).
+          api.listEditHistory(),
+          api.listDeletionHistory(),
         ]);
         set({
           users,
@@ -432,8 +446,26 @@ export const useAppStore = create<AppState>()(
           collectingColumns: config.collectingColumns ?? DEFAULT_COLLECTING_COLUMNS,
           rules,
           collectingRecords,
+          notifications,
+          editHistory,
+          deletionHistory,
           hydrated: true,
         });
+      },
+      /** Nhận 1 thông báo đẩy realtime qua Pusher (xem src/hooks/use-realtime.ts) — prepend
+       * vào đầu danh sách, dedupe theo id (phòng trường hợp Pusher gửi trùng hoặc đã có sẵn
+       * từ hydrateFromServer nếu 2 tab cùng mở). */
+      receiveNotification: (n) =>
+        set((state) => ({
+          notifications: state.notifications.some((existing) => existing.id === n.id)
+            ? state.notifications
+            : [n, ...state.notifications],
+        })),
+      /** Gọi lại khi nhận tín hiệu "case:changed" qua Pusher — GET /api/cases đã tự lọc
+       * RBAC nên chỉ cần thay nguyên state.cases, không cần merge tay từng dòng. */
+      refetchCases: async () => {
+        const cases = await api.listCases();
+        set({ cases });
       },
       setLanguage: (language) => set({ language }),
       setTheme: (theme) => set({ theme }),
@@ -533,13 +565,9 @@ export const useAppStore = create<AppState>()(
           const label = target.type === "order8821" ? "Order 8821 - Status" : "Order TTS & WIT - Status";
           logEdit(caseId, label, formatHistoryValue(target.status), formatHistoryValue(status));
         }
-        // Order vừa chuyển sang Done (không tính trường hợp đã Done từ trước rồi sửa lại
-        // giá trị khác) -> báo cho đúng tài khoản đã đặt order đó (target.placedBy), không
-        // phải người đang thao tác (Support) — bỏ qua nếu tự đặt tự hoàn tất.
-        const fromUserId = state.currentUserId ?? "u-admin";
-        const fromUser = state.users.find((u) => u.id === fromUserId);
-        const justCompleted = target && target.status !== "done" && status === "done";
-        const orderLabel = target?.type === "orderTtsWit" ? "Order TTS & WIT" : "Order 8821";
+        // Thông báo "đã hoàn tất order" khi order vừa chuyển sang Done giờ do server tạo
+        // (xem PATCH /api/cases/[id], so orders cũ/mới) + đẩy realtime tới đúng người đã
+        // đặt order đó (placedBy) — không tạo local ở đây nữa.
         set((s) => ({
           cases: s.cases.map((c) =>
             c.id === caseId
@@ -552,22 +580,6 @@ export const useAppStore = create<AppState>()(
                 }
               : c
           ),
-          notifications:
-            justCompleted && target?.placedBy && target.placedBy !== fromUserId
-              ? [
-                  {
-                    id: uniqueId("n"),
-                    type: "status_change",
-                    toUserId: target.placedBy,
-                    fromUserId,
-                    caseId,
-                    message: `${fromUser?.name ?? "Ai đó"} đã hoàn tất ${orderLabel} của hồ sơ ${caseRefLabel(kase)}`,
-                    read: false,
-                    createdAt: new Date().toISOString(),
-                  },
-                  ...s.notifications,
-                ]
-              : s.notifications,
         }));
         syncOrders(caseId);
       },
@@ -596,15 +608,10 @@ export const useAppStore = create<AppState>()(
       },
 
       // Giao tài khoản Support xử lý RIÊNG 1 lần order — tách biệt hoàn toàn giữa Order
-      // 8821 và Order TTS & WIT (không dùng chung Assign như trước). toUserId = null
-      // nghĩa là "để trống" (bỏ giao việc) — không tạo notification khi bỏ giao.
+      // 8821 và Order TTS & WIT (không dùng chung Assign như trước). Thông báo "đã giao
+      // order" giờ do server tạo (xem PATCH /api/cases/[id], so orders cũ/mới) + đẩy
+      // realtime tới đúng người được giao — không tạo local ở đây nữa.
       assignOrderSupport: (caseId, orderId, toUserId) => {
-        const state = get();
-        const fromUserId = state.currentUserId ?? "u-admin";
-        const fromUser = state.users.find((u) => u.id === fromUserId);
-        const targetCase = state.cases.find((c) => c.id === caseId);
-        const targetOrder = targetCase?.orders.find((o) => o.id === orderId);
-        const orderLabel = targetOrder?.type === "orderTtsWit" ? "Order TTS & WIT" : "Order 8821";
         set((s) => ({
           cases: s.cases.map((c) =>
             c.id === caseId
@@ -615,21 +622,6 @@ export const useAppStore = create<AppState>()(
                 }
               : c
           ),
-          notifications: toUserId
-            ? [
-                {
-                  id: uniqueId("n"),
-                  type: "assigned",
-                  toUserId,
-                  fromUserId,
-                  caseId,
-                  message: `${fromUser?.name ?? "Ai đó"} đã giao cho bạn ${orderLabel} của hồ sơ ${caseRefLabel(targetCase)}`,
-                  read: false,
-                  createdAt: new Date().toISOString(),
-                },
-                ...s.notifications,
-              ]
-            : s.notifications,
         }));
         syncOrders(caseId);
       },
@@ -728,27 +720,48 @@ export const useAppStore = create<AppState>()(
         // SSN đại diện duy nhất cho mỗi hồ sơ (xem workflow-conventions.md) — chuẩn hoá về
         // đúng dạng xxx-xx-xxxx như phần mềm đang dùng ở mọi nơi khác (formatSsn), rồi loại
         // các dòng có SSN (chính hoặc Spouse) trùng với hồ sơ đã có sẵn TRONG DB lẫn trùng
-        // nhau NGAY TRONG file vừa tải lên — không import những dòng đó, chỉ đếm lại để báo
-        // lỗi cho người dùng.
-        const existingSsns = new Set<string>();
+        // nhau NGAY TRONG file vừa tải lên — không import những dòng đó. Giữ lại luôn hồ sơ
+        // đang trùng (existingBySsn) để báo cho người import biết SSN đó hiện đang do ai phụ
+        // trách, thay vì chỉ báo 1 con số chung chung.
+        const existingBySsn = new Map<string, CaseRecord>();
         for (const c of state.cases) {
-          for (const s of c.ssn) if (s) existingSsns.add(s);
+          for (const s of c.ssn) if (s) existingBySsn.set(s, c);
         }
-        const seenInFile = new Set<string>();
+        const seenInFile = new Map<string, number>();
         const importable: { row: ParsedCaseRow; ssnPrimary: string; ssnSpouse: string }[] = [];
-        let duplicateSsn = 0;
-        for (const row of rows) {
+        const duplicates: DuplicateSsnInfo[] = [];
+        rows.forEach((row, fileIdx) => {
           const [ssnLine1, ssnLine2] = splitCellLines(row.ssn);
           const ssnPrimary = ssnLine1 ? formatSsn(ssnLine1) : "";
           const ssnSpouse = ssnLine2 ? formatSsn(ssnLine2) : "";
           const candidates = [ssnPrimary, ssnSpouse].filter(Boolean);
-          if (candidates.some((s) => existingSsns.has(s) || seenInFile.has(s))) {
-            duplicateSsn += 1;
-            continue;
+
+          for (const s of candidates) {
+            const existing = existingBySsn.get(s);
+            if (existing) {
+              const ownerId = existing.assignedTo ?? existing.assignedProcessor ?? existing.createdBy;
+              const ownerName = ownerId ? state.users.find((u) => u.id === ownerId)?.name : undefined;
+              duplicates.push({
+                ssn: s,
+                clientName: getFullName(existing) || "—",
+                owner: ownerName ? { type: "user", name: ownerName } : { type: "unassigned" },
+              });
+              return;
+            }
+            const seenAtRow = seenInFile.get(s);
+            if (seenAtRow !== undefined) {
+              const [firstLine] = splitCellLines(row.clientName);
+              duplicates.push({
+                ssn: s,
+                clientName: firstLine || "—",
+                owner: { type: "sameFile", rowNumber: seenAtRow },
+              });
+              return;
+            }
           }
-          for (const s of candidates) seenInFile.add(s);
+          for (const s of candidates) seenInFile.set(s, fileIdx + 1);
           importable.push({ row, ssnPrimary, ssnSpouse });
-        }
+        });
 
         // Dòng đầu file Excel phải nằm trên cùng bảng: gán sortOrder giảm dần theo thứ tự
         // dòng trong file (dòng 1 nhận giá trị âm nhất) trong cùng 1 mốc thời gian base, thay
@@ -827,12 +840,12 @@ export const useAppStore = create<AppState>()(
         if (created.length > 0) {
           set((s) => ({ cases: [...s.cases, ...created] }));
         }
-        return { success: created.length, failed, duplicateSsn };
+        return { success: created.length, failed, duplicateSsn: duplicates.length, duplicates };
       },
 
       deleteRow: (caseId, deletedByUserId) => {
+        const target = get().cases.find((c) => c.id === caseId);
         set((state) => {
-          const target = state.cases.find((c) => c.id === caseId);
           if (!target) return {};
           return {
             cases: state.cases.filter((c) => c.id !== caseId),
@@ -848,6 +861,9 @@ export const useAppStore = create<AppState>()(
           };
         });
         syncInBackground("deleteRow", api.deleteCase(caseId));
+        // Ghi lên server để MỌI user khác đăng nhập đều xem được (2026-08-13) — cùng lý do
+        // với logEdit ở trên, server tự set deletedByUserId/deletedAt thật.
+        if (target) syncInBackground("logDeletion", api.createDeletionHistoryEntry(target));
       },
 
       updateClientLink: (caseId, link) => {
@@ -1249,55 +1265,33 @@ export const useAppStore = create<AppState>()(
         syncConfig();
       },
 
-      // toUserId = null nghĩa là "để trống" (bỏ giao việc) — chỉ tạo notification khi
-      // thực sự giao cho ai đó, bỏ giao thì không cần báo.
+      // Thông báo "đã giao việc" giờ do server tạo (xem PATCH /api/cases/[id], so cũ/mới
+      // 4 field assign) + đẩy realtime qua Pusher tới đúng người được giao — không tạo
+      // local ở đây nữa (toUserId đằng nào cũng không phải người đang thao tác).
       assignCase: (caseId, toUserId, field) => {
-        const state = get();
-        const fromUserId = state.currentUserId ?? "u-admin";
-        const fromUser = state.users.find((u) => u.id === fromUserId);
-        const targetCase = state.cases.find((c) => c.id === caseId);
-        const roleLabel =
-          field === "assignedProcessor"
-            ? "Processor"
-            : field === "assignedProcessor2"
-              ? "Processor 2"
-              : field === "assignedTo2"
-                ? "Agent 2"
-                : "Agent";
         set((s) => ({
           cases: s.cases.map((c) =>
             c.id === caseId ? { ...c, [field]: toUserId, updatedAt: new Date().toISOString() } : c
           ),
-          notifications: toUserId
-            ? [
-                {
-                  id: uniqueId("n"),
-                  type: "assigned",
-                  toUserId,
-                  fromUserId,
-                  caseId,
-                  message: `${fromUser?.name ?? "Ai đó"} đã giao cho bạn hồ sơ ${caseRefLabel(targetCase)} vai trò ${roleLabel}`,
-                  read: false,
-                  createdAt: new Date().toISOString(),
-                },
-                ...s.notifications,
-              ]
-            : s.notifications,
         }));
         syncInBackground("assignCase", api.patchCase(caseId, { [field]: toUserId } as Partial<CaseRecord>));
       },
 
-      markNotificationRead: (id) =>
+      markNotificationRead: (id) => {
         set((state) => ({
           notifications: state.notifications.map((n) => (n.id === id ? { ...n, read: true } : n)),
-        })),
+        }));
+        syncInBackground("markNotificationRead", api.markNotificationRead(id));
+      },
 
-      markAllNotificationsRead: () =>
+      markAllNotificationsRead: () => {
         set((state) => ({
           notifications: state.notifications.map((n) =>
             n.toUserId === state.currentUserId ? { ...n, read: true } : n
           ),
-        })),
+        }));
+        syncInBackground("markAllNotificationsRead", api.markAllNotificationsRead());
+      },
 
       // Server tự sinh id thật (khác uniqueId cục bộ) + hash mật khẩu — phải đợi response
       // rồi mới thêm vào state để id luôn khớp với DB, tránh 2 nguồn id lệch nhau.
@@ -2127,8 +2121,14 @@ export const useAppStore = create<AppState>()(
   )
 );
 
+// Dùng useShallow (thay vì đọc thẳng state.users rồi .find()) — mỗi lần hydrateFromServer/
+// refetchCases chạy, mảng users được thay bằng mảng JSON mới hoàn toàn nên object user hiện
+// tại cũng luôn là instance MỚI dù giá trị thật không đổi, khiến MỌI nơi gọi useCurrentUser()
+// (TopNav, DashboardLayout — bọc quanh toàn bộ dashboard) re-render dù chẳng có gì thay đổi
+// thật. useShallow so sánh nông theo TỪNG FIELD của object trả về, chỉ trigger re-render khi
+// giá trị field thực sự khác, giảm hẳn re-render thừa khi có realtime cập nhật users/cases.
 export function useCurrentUser() {
-  const currentUserId = useAppStore((s) => s.currentUserId);
-  const users = useAppStore((s) => s.users);
-  return users.find((u) => u.id === currentUserId) ?? null;
+  return useAppStore(
+    useShallow((s) => s.users.find((u) => u.id === s.currentUserId) ?? null)
+  );
 }

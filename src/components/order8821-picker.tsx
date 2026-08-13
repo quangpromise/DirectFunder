@@ -80,7 +80,7 @@ export function Order8821Picker({
             <div className="fixed inset-0 z-[90]" onClick={() => setOpen(false)} />
             <div
               ref={menuRef}
-              className="popover fixed z-[100] w-44 rounded-xl p-1.5 shadow-2xl shadow-black/60"
+              className="popover fixed z-[100] max-h-56 w-44 overflow-y-auto rounded-xl p-1.5 shadow-2xl shadow-black/60"
               style={{ left: pos.x, top: pos.y }}
             >
               <div className="px-2 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-faint">

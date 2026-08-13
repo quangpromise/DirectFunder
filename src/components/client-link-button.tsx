@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link2, ExternalLink, X, Trash2, Pencil } from "lucide-react";
 import { useT } from "@/lib/i18n";
+
+const MENU_MARGIN = 8;
 
 function normalizeUrl(url: string): string {
   const trimmed = url.trim();
@@ -36,11 +38,28 @@ export function ClientLinkButton({
   const [popoverPos, setPopoverPos] = useState({ x: 0, y: 0 });
   const iconRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
   const t = useT();
 
   useEffect(() => setDraft(link ?? ""), [link]);
   useEffect(() => {
     if (editing) inputRef.current?.focus();
+  }, [editing]);
+
+  // Đo lại vị trí sau khi popup render (biết chiều cao thật) và lật lên trên nếu không đủ
+  // chỗ bên dưới — tránh popup bị khuất màn hình khi ô nằm ở hàng gần cuối bảng.
+  useLayoutEffect(() => {
+    if (!editing) return;
+    const trigger = iconRef.current;
+    const menu = popoverRef.current;
+    if (!trigger || !menu) return;
+    const rect = trigger.getBoundingClientRect();
+    const menuHeight = menu.offsetHeight;
+    const spaceBelow = window.innerHeight - rect.bottom - MENU_MARGIN;
+    const spaceAbove = rect.top - MENU_MARGIN;
+    const openUpward = menuHeight > spaceBelow && spaceAbove > spaceBelow;
+    const y = openUpward ? rect.top - 4 - menuHeight : rect.bottom + 4;
+    setPopoverPos((p) => (p.x === rect.left && p.y === y ? p : { x: rect.left, y }));
   }, [editing]);
 
   function handleEnter() {
@@ -155,7 +174,8 @@ export function ClientLinkButton({
           <>
             <div className="fixed inset-0 z-[90]" onClick={() => setEditing(false)} />
             <div
-              className="popover fixed z-[100] w-64 rounded-xl p-2.5 shadow-2xl shadow-black/60"
+              ref={popoverRef}
+              className="popover fixed z-[100] max-h-64 w-64 overflow-y-auto rounded-xl p-2.5 shadow-2xl shadow-black/60"
               style={{ left: popoverPos.x, top: popoverPos.y }}
             >
               <div className="mb-1.5 flex items-center justify-between">

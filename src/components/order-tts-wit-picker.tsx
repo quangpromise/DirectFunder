@@ -101,7 +101,7 @@ export function OrderTtsWitPicker({
             <div className="fixed inset-0 z-[90]" onClick={() => setOpen(false)} />
             <div
               ref={menuRef}
-              className="popover fixed z-[100] w-64 rounded-xl p-2.5 shadow-2xl shadow-black/60"
+              className="popover fixed z-[100] max-h-64 w-64 overflow-y-auto rounded-xl p-2.5 shadow-2xl shadow-black/60"
               style={{ left: pos.x, top: pos.y }}
             >
               <div className="px-0.5 pb-1 text-[10px] font-semibold uppercase tracking-wide text-text-faint">

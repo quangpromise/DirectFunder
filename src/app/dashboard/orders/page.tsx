@@ -9,7 +9,7 @@ import { CaseRecord, OrderRecord, OrderType } from "@/lib/types";
 import { getClientEntries, formatLastFirst, fullName } from "@/lib/client-name";
 import { formatSsn } from "@/lib/ssn";
 import { hasWaitingOrderForSsn, missingOrderClientFields } from "@/lib/orders";
-import { downloadOrderCaseTemplate, parseCaseExcelFile } from "@/lib/excel";
+import { downloadOrderCaseTemplate, parseCaseExcelFile, formatDuplicateSsnLines } from "@/lib/excel";
 import { ClientLinkButton } from "@/components/client-link-button";
 import { AssignMenu } from "@/components/assign-menu";
 import { OrderPlaceButton } from "@/components/order-place-button";
@@ -229,15 +229,16 @@ export default function OrdersPage() {
         await alertWarn(t("cases.import.emptyFile"), { title: t("cases.import.title") });
         return;
       }
-      const { success, failed, duplicateSsn } = await importCases(rows, user.id, user.role);
-      await alertWarn(
+      const { success, failed, duplicateSsn, duplicates } = await importCases(rows, user.id, user.role);
+      const lines = [
         t("cases.import.result", {
           success: String(success),
           failed: String(failed),
           duplicateSsn: String(duplicateSsn),
         }),
-        { title: t("cases.import.title") }
-      );
+        ...formatDuplicateSsnLines(duplicates, t),
+      ];
+      await alertWarn(lines.join("\n"), { title: t("cases.import.title") });
     } catch (err) {
       console.error("[import] Đọc file Excel thất bại:", err);
       await alertWarn(t("cases.import.parseError"), { title: t("cases.import.title") });

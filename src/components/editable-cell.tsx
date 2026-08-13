@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ColumnType, SelectOption } from "@/lib/types";
 import { OptionBadge } from "@/components/option-badge";
 import { CELL_NAV_ATTR, handleCellTab } from "@/lib/cell-nav";
 
 type Value = string | number | boolean | null;
+
+const MENU_MARGIN = 8;
 
 export function EditableCell({
   value,
@@ -142,9 +144,27 @@ function SelectCell({
   onCommit: (value: Value) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState({ x: 0, y: 0 });
+  const [pos, setPos] = useState({ x: 0, y: 0, maxHeight: 320 });
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const current = options.find((o) => o.id === value);
+
+  // Đo lại vị trí sau khi menu render (biết chiều cao thật) và lật lên trên nếu không đủ
+  // chỗ bên dưới — tránh popup bị khuất màn hình khi ô nằm ở hàng gần cuối bảng.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const trigger = triggerRef.current;
+    const menu = menuRef.current;
+    if (!trigger || !menu) return;
+    const rect = trigger.getBoundingClientRect();
+    const menuHeight = menu.offsetHeight;
+    const spaceBelow = window.innerHeight - rect.bottom - MENU_MARGIN;
+    const spaceAbove = rect.top - MENU_MARGIN;
+    const openUpward = menuHeight > spaceBelow && spaceAbove > spaceBelow;
+    const maxHeight = Math.max(120, openUpward ? spaceAbove : spaceBelow);
+    const y = openUpward ? rect.top - 4 - Math.min(menuHeight, maxHeight) : rect.bottom + 4;
+    setPos((p) => (p.x === rect.left && p.y === y && p.maxHeight === maxHeight ? p : { x: rect.left, y, maxHeight }));
+  }, [open, options.length]);
 
   const badge = current ? (
     <OptionBadge option={current} />
@@ -160,7 +180,7 @@ function SelectCell({
 
   function openMenu() {
     const rect = triggerRef.current?.getBoundingClientRect();
-    if (rect) setPos({ x: rect.left, y: rect.bottom + 4 });
+    if (rect) setPos({ x: rect.left, y: rect.bottom + 4, maxHeight: 320 });
     setOpen((o) => !o);
   }
 
@@ -180,8 +200,9 @@ function SelectCell({
           <>
             <div className="fixed inset-0 z-[90]" onClick={() => setOpen(false)} />
             <div
-              className="popover fixed z-[100] w-44 rounded-xl p-1.5 shadow-2xl shadow-black/60"
-              style={{ left: pos.x, top: pos.y }}
+              ref={menuRef}
+              className="popover fixed z-[100] w-44 overflow-y-auto rounded-xl p-1.5 shadow-2xl shadow-black/60"
+              style={{ left: pos.x, top: pos.y, maxHeight: pos.maxHeight }}
             >
               {options.map((o) => (
                 <button

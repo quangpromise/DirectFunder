@@ -49,6 +49,7 @@ export const ASSIGNABLE_FEATURES = [
   "sendToGoogleSheet",
   "sendClientEmail",
   "manageRules",
+  "viewCollecting",
   "addCollectingColumn",
   "editCollectingColumn",
   "addCollectingRow",
@@ -69,6 +70,7 @@ export const FEATURE_LABEL: Record<Language, Record<FeatureKey, string>> = {
     sendToGoogleSheet: "Gửi dòng dữ liệu lên Google Sheet",
     sendClientEmail: "Gửi email cho khách hàng",
     manageRules: "Thêm / sửa / xóa Rules",
+    viewCollecting: "Xem tab Collecting",
     addCollectingColumn: "Thêm cột mới (tab Collecting)",
     editCollectingColumn: "Sửa / xóa cột (tab Collecting)",
     addCollectingRow: "Thêm dòng mới (tab Collecting)",
@@ -86,6 +88,7 @@ export const FEATURE_LABEL: Record<Language, Record<FeatureKey, string>> = {
     sendToGoogleSheet: "Send row to Google Sheet",
     sendClientEmail: "Send email to client",
     manageRules: "Add / edit / delete Rules",
+    viewCollecting: "View Collecting tab",
     addCollectingColumn: "Add new column (Collecting tab)",
     editCollectingColumn: "Edit / delete columns (Collecting tab)",
     addCollectingRow: "Add new row (Collecting tab)",
@@ -152,6 +155,9 @@ export interface User {
   id: string;
   name: string;
   email: string;
+  /** Tên đăng nhập thay thế cho email — không bắt buộc, Admin đặt qua trang Quản lý tài
+   * khoản. null/undefined = chưa đặt, chỉ đăng nhập được bằng email. */
+  username?: string | null;
   /** Chỉ có giá trị khi TẠO tài khoản mới (gửi lên server để hash) — user lấy về từ
    * API không bao giờ có field này (server chỉ lưu passwordHash, không trả plaintext). */
   password?: string;
@@ -192,6 +198,10 @@ export interface CheckInitialValue {
   securityCheck: boolean;
   agentGuaranteesSc: boolean;
   bankInfo: boolean;
+  /** null = chưa chọn. "yes"/"no" tô đỏ/xanh; "collected" ("Đã thu phí tạm ứng") tô xanh +
+   * thêm hậu tố "(Collected)" vào nhãn — 3 lựa chọn loại trừ nhau, chọn qua 3 nút con hiện
+   * ra khi bấm vào nút "Back Tax Owed" (xem check-initial-cell.tsx). Thêm 2026-08-13. */
+  backTaxOwed: "yes" | "no" | "collected" | null;
 }
 
 /** Trạng thái xử lý của 1 năm refund — chọn qua dropdown trong popup nút mắt cạnh cột

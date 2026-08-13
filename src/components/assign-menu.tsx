@@ -2,7 +2,7 @@
 
 import { useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { UserPlus, X } from "lucide-react";
+import { Search, UserPlus, X } from "lucide-react";
 import { User } from "@/lib/types";
 import { Avatar } from "@/components/avatar";
 import { useT } from "@/lib/i18n";
@@ -29,11 +29,19 @@ export function AssignMenu({
 }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState({ x: 0, y: 0, maxHeight: 320 });
+  const [search, setSearch] = useState("");
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const assignedUser = users.find((u) => u.id === assignedTo);
   const t = useT();
   const { confirm, ConfirmDialogUI } = useConfirm();
+
+  // Lọc theo tên khi danh sách dài — hữu ích khi số tài khoản Agent/Processor/Support tăng
+  // lên, khỏi phải cuộn tìm thủ công trong menu cao tối đa 320px.
+  const filteredUsers = search.trim()
+    ? users.filter((u) => u.name.toLowerCase().includes(search.trim().toLowerCase()))
+    : users;
 
   // Sau khi menu render (biết chiều cao thật), tự đo lại và lật lên trên nếu không đủ
   // chỗ bên dưới — tránh bị khuất màn hình khi trigger nằm ở hàng cuối bảng.
@@ -50,7 +58,7 @@ export function AssignMenu({
     const maxHeight = Math.max(120, (openUpward ? spaceAbove : spaceBelow));
     const y = openUpward ? rect.top - 4 - Math.min(menuHeight, maxHeight) : rect.bottom + 4;
     setPos((p) => (p.x === rect.left && p.y === y && p.maxHeight === maxHeight ? p : { x: rect.left, y, maxHeight }));
-  }, [open, users.length]);
+  }, [open, filteredUsers.length]);
 
   async function selectUser(u: User) {
     setOpen(false);
@@ -80,7 +88,12 @@ export function AssignMenu({
   function openMenu() {
     const rect = triggerRef.current?.getBoundingClientRect();
     if (rect) setPos({ x: rect.left, y: rect.bottom + 4, maxHeight: 320 });
-    setOpen((o) => !o);
+    setSearch("");
+    setOpen((o) => {
+      const next = !o;
+      if (next) setTimeout(() => searchRef.current?.focus(), 0);
+      return next;
+    });
   }
 
   return (
@@ -111,31 +124,47 @@ export function AssignMenu({
             <div className="fixed inset-0 z-[90]" onClick={() => setOpen(false)} />
             <div
               ref={menuRef}
-              className="popover fixed z-[100] w-48 overflow-y-auto rounded-xl p-1.5 shadow-2xl shadow-black/60"
+              className="popover fixed z-[100] flex w-48 flex-col rounded-xl p-1.5 shadow-2xl shadow-black/60"
               style={{ left: pos.x, top: pos.y, maxHeight: pos.maxHeight }}
             >
-              <button
-                onClick={clearAssignment}
-                className="flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs text-text-faint transition hover:bg-surface-hover"
-              >
-                <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full border border-dashed border-border">
-                  <X size={12} />
-                </span>
-                <span className="min-w-0 flex-1 truncate">{t("assign.clear")}</span>
-              </button>
-              {users.map((u) => (
-                <button
-                  key={u.id}
-                  onClick={() => selectUser(u)}
-                  className="flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition hover:bg-surface-hover"
-                >
-                  <Avatar name={u.name} color={u.avatarColor} url={u.avatarUrl} size={22} />
-                  <span className="min-w-0 flex-1 truncate">{u.name}</span>
-                </button>
-              ))}
-              {users.length === 0 && (
-                <div className="px-2 py-2 text-xs text-text-faint">{t("assign.noMatching")}</div>
+              {users.length > 5 && (
+                <div className="relative mb-1 shrink-0">
+                  <Search size={12} className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-text-faint" />
+                  <input
+                    ref={searchRef}
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                    placeholder={t("assign.searchPlaceholder")}
+                    className="w-full rounded-md border border-border bg-bg-elevated py-1 pl-6 pr-2 text-xs outline-none focus:border-accent"
+                  />
+                </div>
               )}
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                <button
+                  onClick={clearAssignment}
+                  className="flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs text-text-faint transition hover:bg-surface-hover"
+                >
+                  <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full border border-dashed border-border">
+                    <X size={12} />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">{t("assign.clear")}</span>
+                </button>
+                {filteredUsers.map((u) => (
+                  <button
+                    key={u.id}
+                    onClick={() => selectUser(u)}
+                    className="flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition hover:bg-surface-hover"
+                  >
+                    <Avatar name={u.name} color={u.avatarColor} url={u.avatarUrl} size={22} />
+                    <span className="min-w-0 flex-1 truncate">{u.name}</span>
+                  </button>
+                ))}
+                {filteredUsers.length === 0 && (
+                  <div className="px-2 py-2 text-xs text-text-faint">{t("assign.noMatching")}</div>
+                )}
+              </div>
             </div>
           </>,
           document.body

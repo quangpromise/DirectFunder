@@ -41,6 +41,40 @@ export interface ParsedCaseRow {
   clientLink: string | null;
 }
 
+/** Chi tiết 1 dòng bị bỏ qua khi nhập Excel do trùng SSN — dùng để hiển thị rõ trùng với
+ * hồ sơ của ai thay vì chỉ báo mỗi số lượng chung chung. `owner` tách 3 trường hợp: đã có
+ * người phụ trách (Agent/Processor/người tạo) trên hồ sơ cũ, hồ sơ cũ chưa gán ai, hoặc
+ * trùng với 1 dòng KHÁC ngay trong cùng file Excel vừa tải lên (chưa kịp tạo hồ sơ nào nên
+ * không có "chủ" để báo). */
+export interface DuplicateSsnInfo {
+  ssn: string;
+  clientName: string;
+  owner: { type: "user"; name: string } | { type: "unassigned" } | { type: "sameFile"; rowNumber: number };
+}
+
+const MAX_DUPLICATE_SSN_LINES = 10;
+
+/** Ghép danh sách hồ sơ bị bỏ qua do trùng SSN thành các dòng text hiển thị trong popup
+ * cảnh báo sau khi nhập Excel (nối vào sau dòng tóm tắt số lượng) — giới hạn số dòng hiện ra
+ * để tránh popup quá dài khi file có rất nhiều SSN trùng. */
+export function formatDuplicateSsnLines(
+  duplicates: DuplicateSsnInfo[],
+  t: (key: string, vars?: Record<string, string | number>) => string
+): string[] {
+  const lines = duplicates.slice(0, MAX_DUPLICATE_SSN_LINES).map((d) => {
+    const owner =
+      d.owner.type === "user"
+        ? d.owner.name
+        : d.owner.type === "sameFile"
+          ? t("cases.import.duplicateSameFile", { row: d.owner.rowNumber })
+          : t("cases.import.duplicateUnassigned");
+    return t("cases.import.duplicateLine", { ssn: d.ssn, client: d.clientName, owner });
+  });
+  const rest = duplicates.length - lines.length;
+  if (rest > 0) lines.push(t("cases.import.duplicateMore", { count: rest }));
+  return lines;
+}
+
 /** Đọc file Excel người dùng tải lên, bỏ qua dòng trống hoàn toàn (không có tên/phone/
  * địa chỉ) — không validate nghiêm ngặt ở đây, dữ liệu thiếu trường nào thì hồ sơ tạo ra
  * chỉ để trống trường đó, người dùng sửa tay lại sau trong bảng như hồ sơ thường.

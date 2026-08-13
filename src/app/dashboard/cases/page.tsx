@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Search, Plus, Trash2, FileText, DollarSign, GripVertical, ShieldAlert, Download, Upload, Layers, CheckCircle2, X, BarChart3 } from "lucide-react";
-import { downloadCaseTemplate, parseCaseExcelFile } from "@/lib/excel";
+import { Search, Plus, Trash2, FileText, DollarSign, GripVertical, ShieldAlert, Download, Upload, Layers, CheckCircle2, X, BarChart3, Maximize2, Minimize2 } from "lucide-react";
+import { downloadCaseTemplate, parseCaseExcelFile, formatDuplicateSsnLines } from "@/lib/excel";
 import { useAppStore, useCurrentUser } from "@/store/app-store";
 import { canEditCase, canEditColumn, canViewCase, hasFeature } from "@/lib/rbac";
 import { CaseRecord, CheckInitialValue, ColumnDef, CpaEmailDefaults, RefundYearStatus, SelectOption, User } from "@/lib/types";
@@ -69,10 +69,44 @@ type CaseStatusGroup = Exclude<CaseTab, "all">;
 const CANNOT_PROCESS_STATUS_IDS = new Set(["on_hold", "cancelled"]);
 const DONE_STATUS_IDS = new Set(["cpa_review", "approved"]);
 
+// Status nào hiện nút "Send row to Google Sheet"/"Send mail to CPA" — đổi từ allowlist sang
+// DENYLIST (2026-08-13, yêu cầu "trừ các status X, tất cả status khác đều thấy nút"): mọi
+// status ĐỀU hiện nút trừ nhóm liệt kê dưới đây (giai đoạn đầu xử lý hồ sơ, chưa tới lúc gửi
+// CPA/Google Sheet) — bao gồm cả status TÙY CHỈNH Admin thêm sau này (không cần sửa code mỗi
+// khi thêm status mới, khác cơ chế allowlist cũ). id các status TÙY CHỈNH dạng "opt-xxxxx"
+// random KHÁC NHAU giữa các environment nên vẫn phải so khớp theo LABEL (không thể hardcode
+// id) — chuẩn hoá cả 2 vế (lowercase, bỏ ký tự không phải chữ/số, bỏ "s" cuối) để khớp được
+// dù Admin gõ "Missing Doc"/"Missing Docs", "On-Hold"/"Onhold"... Nếu Admin đổi tên 1 trong
+// các status dưới đây, cần sửa lại danh sách này theo tên mới.
+const EXCLUDED_SEND_BUTTONS_STATUS_LABELS = new Set(
+  ["Pre-processing", "Processing", "Missing Doc", "Cancelled", "Onhold", "Disqualified", "Duplicate"].map(
+    normalizeStatusLabel
+  )
+);
+
+function normalizeStatusLabel(label: string): string {
+  return label
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "")
+    .replace(/s$/, "");
+}
+
 function getCaseTab(statusId: string): CaseStatusGroup {
   if (CANNOT_PROCESS_STATUS_IDS.has(statusId)) return "cannot_process";
   if (DONE_STATUS_IDS.has(statusId)) return "done";
   return "active";
+}
+
+// Màn hình Dashboard (view === "dashboard") tổng hợp theo CỘT "Case" (số năm có refund > 0
+// trên mỗi hồ sơ — đúng giá trị hiển thị ở cột "Case"/caseLabel, xem refundYearRows trong
+// refund-status.ts), KHÔNG đếm theo Client/hồ sơ (row) như trước 2026-08-13 — 1 hồ sơ có
+// nhiều năm refund > 0 giờ tính là nhiều "Case". Dùng chung 2 helper dưới đây cho mọi khối
+// (Tổng quan/Theo khoảng ngày/Theo thành viên) thay vì đếm `.length` mảng CaseRecord.
+function caseUnitCount(c: Pick<CaseRecord, "refunds" | "refundYearStatus">): number {
+  return refundYearRows(c.refunds, c.refundYearStatus).length;
+}
+function sumCaseUnits(list: Pick<CaseRecord, "refunds" | "refundYearStatus">[]): number {
+  return list.reduce((sum, c) => sum + caseUnitCount(c), 0);
 }
 
 function StatChip({
@@ -110,6 +144,34 @@ function StatChip({
   }
   return (
     <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5">{content}</div>
+  );
+}
+
+/** Ô tính nhanh "EC Qualification" (2026-08-13) — thuần công cụ tính tay tại chỗ, KHÔNG
+ * gắn với hồ sơ/dữ liệu nào (không lưu DB, không đồng bộ server) — chỉ giữ state cục bộ,
+ * mất khi rời trang. Nhập số tiền ($) -> tự chia cho 30% (nhân 10/3), làm tròn kết quả
+ * theo quy tắc thông thường (>= .5 làm tròn lên, < .5 làm tròn xuống — Math.round đã đúng
+ * hành vi này với số dương), hiện ngay bên phải ô nhập. */
+function EcQualificationBox() {
+  const [amount, setAmount] = useState("");
+  const numeric = Number(amount.replace(/[^0-9.]/g, ""));
+  const result = Number.isFinite(numeric) && numeric > 0 ? Math.round(numeric / 0.3) : 0;
+
+  return (
+    <div className="flex shrink-0 items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5">
+      <span className="whitespace-nowrap text-xs font-medium text-text-dim">EC Qualification</span>
+      <div className="relative">
+        <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-text-faint">$</span>
+        <input
+          value={amount}
+          onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))}
+          placeholder="0"
+          inputMode="decimal"
+          className="w-24 rounded-md border border-border bg-bg-elevated py-1 pl-5 pr-2 text-xs outline-none focus:border-accent"
+        />
+      </div>
+      <span className="shrink-0 text-sm font-semibold text-text">${result.toLocaleString("en-US")}</span>
+    </div>
   );
 }
 
@@ -253,6 +315,11 @@ export default function CasesPage() {
   // con mắt cột Case). "all" = không lọc. Reset khi đổi qua "Xem theo Clients" để tránh lọc
   // ẩn hồ sơ mà không có UI nào đang hiện trạng thái đang lọc.
   const [caseYearStatusFilter, setCaseYearStatusFilter] = useState<string>("all");
+  // Chế độ thu gọn — ẩn hàng nút List/Dashboard + lời chào và dãy chip tổng hợp, chỉ giữ
+  // lại hàng nút ngang hàng "Thêm dòng" (tải mẫu/nhập Excel/tìm kiếm/lọc/thêm dòng...) và
+  // bảng chính, để nhìn bảng dữ liệu rộng rãi hơn. Nút bật/tắt luôn nằm ở hàng "Thêm dòng"
+  // (hàng đó không bị ẩn) nên vẫn bấm lại được để hiện các phần đã ẩn.
+  const [tableFocusMode, setTableFocusMode] = useState(false);
   const [reportPeriod, setReportPeriod] = useState<ReportPeriod>("today");
   const [reportMonth, setReportMonth] = useState<string>(() => currentPhoenixMonth());
   const [reportYear, setReportYear] = useState<number>(() => currentPhoenixYear());
@@ -315,15 +382,16 @@ export default function CasesPage() {
         await alertWarn(t("cases.import.emptyFile"), { title: t("cases.import.title") });
         return;
       }
-      const { success, failed, duplicateSsn } = await importCases(rows, user.id, user.role);
-      await alertWarn(
+      const { success, failed, duplicateSsn, duplicates } = await importCases(rows, user.id, user.role);
+      const lines = [
         t("cases.import.result", {
           success: String(success),
           failed: String(failed),
           duplicateSsn: String(duplicateSsn),
         }),
-        { title: t("cases.import.title") }
-      );
+        ...formatDuplicateSsnLines(duplicates, t),
+      ];
+      await alertWarn(lines.join("\n"), { title: t("cases.import.title") });
     } catch (err) {
       console.error("[import] Đọc file Excel thất bại:", err);
       await alertWarn(t("cases.import.parseError"), { title: t("cases.import.title") });
@@ -334,7 +402,18 @@ export default function CasesPage() {
 
   const statusColumn = columns.find((c) => c.id === "status");
   const clientColumn = columns.find((c) => c.id === "clientName");
-  const statusOptions = statusColumn?.options ?? [];
+  // Bọc trong useMemo riêng (thay vì `statusColumn?.options ?? []` trực tiếp) — nếu không,
+  // React Compiler không chứng minh được tham chiếu mảng ổn định qua các lần render (đặc
+  // biệt khi statusColumn undefined, `?? []` tạo mảng rỗng MỚI mỗi lần), khiến nó bỏ qua tối
+  // ưu memo hoá cho sendButtonsStatusIds bên dưới.
+  const statusOptions = useMemo(() => statusColumn?.options ?? [], [statusColumn]);
+  const sendButtonsStatusIds = useMemo(
+    () =>
+      new Set(
+        statusOptions.filter((o) => !EXCLUDED_SEND_BUTTONS_STATUS_LABELS.has(normalizeStatusLabel(o.label))).map((o) => o.id)
+      ),
+    [statusOptions]
+  );
   const STATUS_COL_WIDTH = statusColumn?.width ?? 112;
   const STATUS_LEFT = GRIP_COL_WIDTH;
   const CLIENT_LEFT = STATUS_LEFT + STATUS_COL_WIDTH;
@@ -430,6 +509,19 @@ export default function CasesPage() {
     return { byStatus, totalYears, totalYearsMoney };
   }, [visibleCases]);
 
+  // Bản "theo Case" của stats.byTab — dùng riêng cho màn hình Dashboard (view === "dashboard",
+  // 2026-08-13: tổng hợp theo cột Case, không theo Client/hồ sơ như stats ở trên, vốn vẫn
+  // giữ nguyên vì còn phục vụ chế độ "Xem theo Client" của dãy chip tổng hợp phía trên bảng).
+  const caseUnitByTab = useMemo(() => {
+    const byTab: Record<CaseTab, number> = { all: 0, cannot_process: 0, active: 0, done: 0 };
+    for (const c of visibleCases) {
+      const units = caseUnitCount(c);
+      byTab[getCaseTab(c.status)] += units;
+      byTab.all += units;
+    }
+    return byTab;
+  }, [visibleCases]);
+
   // Khoảng ngày hiện tại + khoảng liền trước để so sánh (MoM/YoY/DoD tùy chế độ) — tính
   // chung qua resolveReportRange (xem src/lib/report-period.ts) theo period đang chọn.
   const { start: dashRangeStart, end: dashRangeEnd, prevStart, prevEnd } = useMemo(
@@ -479,9 +571,11 @@ export default function CasesPage() {
   const newInRangeMoney = useMemo(() => newInRange.reduce((sum, c) => sum + c.money, 0), [newInRange]);
   const newInPrevRangeMoney = useMemo(() => newInPrevRange.reduce((sum, c) => sum + c.money, 0), [newInPrevRange]);
 
+  // Đếm theo cột Case (số năm có refund > 0), không theo số hồ sơ — đồng bộ với cách tính
+  // mới của toàn màn hình Dashboard (2026-08-13, xem caseUnitCount).
   const newByStatusInRange = useMemo(() => {
     const map: Record<string, number> = {};
-    for (const c of newInRange) map[c.status] = (map[c.status] ?? 0) + 1;
+    for (const c of newInRange) map[c.status] = (map[c.status] ?? 0) + caseUnitCount(c);
     return map;
   }, [newInRange]);
 
@@ -506,9 +600,9 @@ export default function CasesPage() {
         c.assignedTo2 === u.id ||
         c.assignedProcessor === u.id ||
         c.assignedProcessor2 === u.id;
-      const newCount = newInRange.filter(isMine).length;
-      const processingCount = visibleCases.filter((c) => isMine(c) && getCaseTab(c.status) === "active").length;
-      const completedCount = completedInRange.filter(isMine).length;
+      const newCount = sumCaseUnits(newInRange.filter(isMine));
+      const processingCount = sumCaseUnits(visibleCases.filter((c) => isMine(c) && getCaseTab(c.status) === "active"));
+      const completedCount = sumCaseUnits(completedInRange.filter(isMine));
       return { id: u.id, name: u.name, role: u.role, newCount, processingCount, completedCount };
     });
   }, [users, visibleCases, newInRange, completedInRange, viewerRole, user?.id, user?.teamMemberIds]);
@@ -561,6 +655,7 @@ export default function CasesPage() {
     <div className="flex h-full flex-col">
       {ConfirmDialogUI}
       {AlertDialogUI}
+      {!tableFocusMode && (
       <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3 sm:px-6">
         <div className="flex shrink-0 gap-1.5 rounded-lg border border-border bg-surface p-1">
           <button
@@ -593,31 +688,37 @@ export default function CasesPage() {
           )}
         </h1>
       </div>
-      {view === "list" && (
+      )}
+      {view === "list" && !tableFocusMode && (
       <div className="flex flex-col gap-3 border-b border-border px-4 py-3 sm:px-6">
         {/* Chọn cách đếm dãy chip bên dưới — "case" (mặc định): đếm theo từng năm refund
             (dữ liệu popup mắt cột Case), "client": đếm theo hồ sơ như trước đây. Luôn hiện
-            (không chỉ desktop) vì áp dụng cho cả 2 cách hiển thị thống kê bên dưới. */}
-        <div className="flex shrink-0 gap-1 self-start rounded-lg border border-border bg-surface p-1">
-          <button
-            onClick={() => {
-              setCaseSummaryMode("client");
-              setCaseYearStatusFilter("all");
-            }}
-            className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
-              caseSummaryMode === "client" ? "gradient-btn text-white" : "text-text-faint hover:text-text-dim"
-            }`}
-          >
-            {t("cases.summaryMode.client")}
-          </button>
-          <button
-            onClick={() => setCaseSummaryMode("case")}
-            className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
-              caseSummaryMode === "case" ? "gradient-btn text-white" : "text-text-faint hover:text-text-dim"
-            }`}
-          >
-            {t("cases.summaryMode.case")}
-          </button>
+            (không chỉ desktop) vì áp dụng cho cả 2 cách hiển thị thống kê bên dưới. Ô tính
+            "EC Qualification" (2026-08-13) đặt ngang hàng, đẩy sang góc phải bằng
+            justify-between — thuần công cụ tính tay, không liên quan bộ đếm case/client. */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex shrink-0 gap-1 self-start rounded-lg border border-border bg-surface p-1">
+            <button
+              onClick={() => {
+                setCaseSummaryMode("client");
+                setCaseYearStatusFilter("all");
+              }}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
+                caseSummaryMode === "client" ? "gradient-btn text-white" : "text-text-faint hover:text-text-dim"
+              }`}
+            >
+              {t("cases.summaryMode.client")}
+            </button>
+            <button
+              onClick={() => setCaseSummaryMode("case")}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
+                caseSummaryMode === "case" ? "gradient-btn text-white" : "text-text-faint hover:text-text-dim"
+              }`}
+            >
+              {t("cases.summaryMode.case")}
+            </button>
+          </div>
+          <EcQualificationBox />
         </div>
 
         <div className="hidden flex-wrap items-center gap-2 sm:flex">
@@ -709,6 +810,15 @@ export default function CasesPage() {
       <>
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 sm:px-6">
         <div className="hidden items-center gap-1.5 sm:flex">
+          <button
+            onClick={() => setTableFocusMode((v) => !v)}
+            title={tableFocusMode ? t("cases.focusMode.show") : t("cases.focusMode.hide")}
+            className="flex h-7 items-center gap-1 rounded-md border border-border bg-surface px-2 text-xs text-text-dim transition hover:bg-surface-hover hover:text-text"
+          >
+            {tableFocusMode ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
+            {tableFocusMode ? t("cases.focusMode.show") : t("cases.focusMode.hide")}
+          </button>
+
           <button
             onClick={downloadCaseTemplate}
             title={t("cases.downloadTemplate")}
@@ -906,15 +1016,17 @@ export default function CasesPage() {
           <div className="sticky top-0 z-20 border-b-2 border-b-accent bg-table-head-bg" style={{ gridRow: "1" }} />
 
           {/* Body rows */}
-          {filtered.map((row) => (
+          {filtered.map((row, rowIndex) => (
             <RowCells
               key={row.id}
               row={row}
+              rowIndex={rowIndex}
               highlighted={row.id === highlightId}
               allCases={cases}
               columns={columns}
               otherColumns={otherColumns}
               statusColumn={statusColumn}
+              sendButtonsStatusIds={sendButtonsStatusIds}
               clientColumn={clientColumn}
               statusLeft={STATUS_LEFT}
               clientLeft={CLIENT_LEFT}
@@ -973,14 +1085,14 @@ export default function CasesPage() {
         <div className="flex-1 space-y-3 overflow-auto bg-black/20 px-4 py-3 sm:px-6">
           <ReportPanel title={t("cases.dashboard.overviewTitle")} description={t("cases.dashboard.overviewDesc")}>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-              <ReportStatCard icon={Layers} label={t("common.total")} value={String(stats.total)} tone="accent" />
+              <ReportStatCard icon={Layers} label={t("common.total")} value={String(caseYearStats.totalYears)} tone="accent" />
               <ReportStatCard
                 icon={DollarSign}
                 label={t("common.value")}
                 value={`$${stats.totalMoney.toLocaleString("en-US")}`}
                 tone="accent"
               />
-              <ReportStatCard icon={CheckCircle2} label={t("cases.tab.done")} value={String(stats.byTab.done)} tone="emerald" />
+              <ReportStatCard icon={CheckCircle2} label={t("cases.tab.done")} value={String(caseUnitByTab.done)} tone="emerald" />
             </div>
           </ReportPanel>
 
@@ -1002,9 +1114,9 @@ export default function CasesPage() {
               <ReportStatCard
                 icon={Plus}
                 label={t("cases.dashboard.newCases")}
-                value={String(newInRange.length)}
+                value={String(sumCaseUnits(newInRange))}
                 tone="amber"
-                growthPercent={growthPercent(newInRange.length, newInPrevRange.length)}
+                growthPercent={growthPercent(sumCaseUnits(newInRange), sumCaseUnits(newInPrevRange))}
                 growthLabel={t(growthLabelKey)}
               />
               <ReportStatCard
@@ -1018,9 +1130,9 @@ export default function CasesPage() {
               <ReportStatCard
                 icon={CheckCircle2}
                 label={t("cases.dashboard.completedCases")}
-                value={String(completedInRange.length)}
+                value={String(sumCaseUnits(completedInRange))}
                 tone="emerald"
-                growthPercent={growthPercent(completedInRange.length, completedInPrevRange.length)}
+                growthPercent={growthPercent(sumCaseUnits(completedInRange), sumCaseUnits(completedInPrevRange))}
                 growthLabel={t(growthLabelKey)}
               />
             </div>
@@ -1105,11 +1217,13 @@ export default function CasesPage() {
 
 function RowCells({
   row,
+  rowIndex,
   highlighted,
   allCases,
   columns,
   otherColumns,
   statusColumn,
+  sendButtonsStatusIds,
   clientColumn,
   statusLeft,
   clientLeft,
@@ -1150,11 +1264,13 @@ function RowCells({
   onRowDragEnd,
 }: {
   row: CaseRecord;
+  rowIndex: number;
   highlighted: boolean;
   allCases: CaseRecord[];
   columns: ColumnDef[];
   otherColumns: ColumnDef[];
   statusColumn: ColumnDef | undefined;
+  sendButtonsStatusIds: Set<string>;
   clientColumn: ColumnDef | undefined;
   statusLeft: number;
   clientLeft: number;
@@ -1257,6 +1373,10 @@ function RowCells({
     <div
       data-row-id={row.id}
       className={`group contents ${dragRowId === row.id ? "opacity-40" : ""} ${highlighted ? "row-highlight" : ""}`}
+      // Zebra striping — --row-bg kế thừa xuyên "display: contents" (element này không tạo
+      // box riêng nên không tự vẽ được background) xuống mọi cell con bên dưới, mỗi cell
+      // đọc lại qua class bg-[var(--row-bg)] (xem globals.css cho định nghĩa --row-alt-bg).
+      style={{ "--row-bg": rowIndex % 2 === 0 ? "var(--bg)" : "var(--row-alt-bg)" } as React.CSSProperties}
     >
       <div
         draggable
@@ -1267,13 +1387,13 @@ function RowCells({
           onRowDrop();
         }}
         onDragEnd={onRowDragEnd}
-        className="sticky z-10 flex cursor-grab items-center justify-center border-b border-r border-border bg-bg text-text-faint transition-colors group-hover:bg-surface-hover active:cursor-grabbing"
+        className="sticky z-10 flex cursor-grab items-center justify-center border-b border-r border-border bg-[var(--row-bg)] text-text-faint transition-colors group-hover:bg-surface-hover active:cursor-grabbing"
         style={{ left: 0 }}
       >
         <GripVertical size={13} />
       </div>
       <div
-        className="sticky z-10 flex h-full min-w-0 items-center justify-center border-b border-r border-border bg-bg transition-colors group-hover:bg-surface-hover"
+        className="sticky z-10 flex h-full min-w-0 items-center justify-center border-b border-r border-border bg-[var(--row-bg)] transition-colors group-hover:bg-surface-hover"
         style={{ left: statusLeft }}
       >
         {statusColumn && (
@@ -1285,7 +1405,7 @@ function RowCells({
             onCommit={(v) => updateCell(row.id, "status", v, false)}
           />
         )}
-        {row.status === "cpa_review" && (canSendToSheetFeature || canSendCpaEmailFeature) && (
+        {sendButtonsStatusIds.has(row.status) && (canSendToSheetFeature || canSendCpaEmailFeature) && (
           // -translate-x-1 — dịch sang trái 1 chút, tránh nằm sát nút Edit Hồ sơ ở cột
           // Client Name ngay bên phải, dễ bấm nhầm.
           <div className="flex -translate-x-1 flex-col gap-0.5">
@@ -1318,7 +1438,7 @@ function RowCells({
         )}
       </div>
       <div
-        className="sticky z-10 border-b border-r border-border bg-bg transition-colors group-hover:bg-surface-hover"
+        className="sticky z-10 border-b border-r border-border bg-[var(--row-bg)] transition-colors group-hover:bg-surface-hover"
         style={{ left: clientLeft }}
       >
         <ClientNameCell
@@ -1342,7 +1462,7 @@ function RowCells({
         // editable=false tại đây bất kể quyền editableBy của cột (editableBy vẫn giữ
         // nguyên, dùng làm nguồn phân quyền CHO POPUP, không phải cho ô ngoài bảng này).
         col.id === "ssn" ? (
-          <div key={col.id} className="flex h-full items-center justify-center border-b border-r border-border transition-colors group-hover:bg-surface-hover">
+          <div key={col.id} className="flex h-full items-center justify-center border-b border-r border-border bg-[var(--row-bg)] transition-colors group-hover:bg-surface-hover">
             <SsnCell
               value={row.ssn}
               editable={false}
@@ -1355,7 +1475,7 @@ function RowCells({
           // giống cách SsnCell hiện 2 số SSN, khoá read-only hoàn toàn (sửa qua popup).
           <div
             key={col.id}
-            className="flex h-full flex-col items-center justify-center gap-0.5 border-b border-r border-border py-1 text-center text-[11px] font-semibold text-text transition-colors group-hover:bg-surface-hover"
+            className="flex h-full flex-col items-center justify-center gap-0.5 border-b border-r border-border bg-[var(--row-bg)] py-1 text-center text-[11px] font-semibold text-text transition-colors group-hover:bg-surface-hover"
           >
             <span>{row.phone || <span className="font-normal text-text-faint">—</span>}</span>
             {row.phone2 && <span>{row.phone2}</span>}
@@ -1363,7 +1483,7 @@ function RowCells({
         ) : col.id === "description" ? (
           <div
             key={col.id}
-            className="flex h-full items-center justify-center border-b border-r border-border transition-colors group-hover:bg-surface-hover"
+            className="flex h-full items-center justify-center border-b border-r border-border bg-[var(--row-bg)] transition-colors group-hover:bg-surface-hover"
           >
             <DescriptionCell
               description={row.description}
@@ -1376,7 +1496,7 @@ function RowCells({
             />
           </div>
         ) : col.id === "order" ? (
-          <div key={col.id} className="border-b border-r border-border transition-colors group-hover:bg-surface-hover">
+          <div key={col.id} className="border-b border-r border-border bg-[var(--row-bg)] transition-colors group-hover:bg-surface-hover">
             <OrderCell
               editable={canEditColumn(user.role, col) && canEditRow}
               onOrder8821={async (slots) => {
@@ -1422,7 +1542,7 @@ function RowCells({
         ) : col.id === "caseLabel" ? (
           <div
             key={col.id}
-            className="flex h-full items-center justify-center gap-1 border-b border-r border-border px-1 transition-colors group-hover:bg-surface-hover"
+            className="flex h-full items-center justify-center gap-1 border-b border-r border-border bg-[var(--row-bg)] px-1 transition-colors group-hover:bg-surface-hover"
           >
             <span className="text-[11px] font-semibold text-text">
               {typeof row.custom[col.key] === "number" || typeof row.custom[col.key] === "string"
@@ -1444,7 +1564,7 @@ function RowCells({
             />
           </div>
         ) : col.id === CHECK_INITIAL_COLUMN_ID ? (
-          <div key={col.id} className="flex h-full items-center border-b border-r border-border transition-colors group-hover:bg-surface-hover">
+          <div key={col.id} className="flex h-full items-center border-b border-r border-border bg-[var(--row-bg)] transition-colors group-hover:bg-surface-hover">
             <CheckInitialCell
               value={row.custom[col.key] as CheckInitialValue | undefined}
               editable={canEditColumn(user.role, col) && canEditRow}
@@ -1454,7 +1574,7 @@ function RowCells({
         ) : (
           <div
             key={col.id}
-            className="flex h-full items-center justify-center border-b border-r border-border transition-colors group-hover:bg-surface-hover"
+            className="flex h-full items-center justify-center border-b border-r border-border bg-[var(--row-bg)] transition-colors group-hover:bg-surface-hover"
           >
             <EditableCell
               value={
@@ -1478,7 +1598,7 @@ function RowCells({
           </div>
         )
       )}
-      <div className="flex h-full min-w-0 flex-col divide-y divide-border border-b border-r border-border transition-colors group-hover:bg-surface-hover">
+      <div className="flex h-full min-w-0 flex-col divide-y divide-border border-b border-r border-border bg-[var(--row-bg)] transition-colors group-hover:bg-surface-hover">
         <div className="flex min-h-0 flex-1 items-center gap-0.5">
           <span className="w-3 shrink-0 text-center text-[9px] font-semibold text-text-faint">1</span>
           <AssignMenu
@@ -1498,7 +1618,7 @@ function RowCells({
           />
         </div>
       </div>
-      <div className="flex h-full min-w-0 items-center gap-0.5 border-b border-r border-border transition-colors group-hover:bg-surface-hover">
+      <div className="flex h-full min-w-0 items-center gap-0.5 border-b border-r border-border bg-[var(--row-bg)] transition-colors group-hover:bg-surface-hover">
         <AssignMenu
           users={processorUsers}
           assignedTo={row.assignedProcessor}
@@ -1506,7 +1626,7 @@ function RowCells({
           onAssign={(uid) => assignCase(row.id, uid, "assignedProcessor")}
         />
       </div>
-      <div className="border-b border-border transition-colors group-hover:bg-surface-hover">
+      <div className="border-b border-border bg-[var(--row-bg)] transition-colors group-hover:bg-surface-hover">
         {canDeleteRowFeature && (
           <button
             onClick={async () => {

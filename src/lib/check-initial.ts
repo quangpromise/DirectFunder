@@ -24,13 +24,20 @@ export const EMPTY_CHECK_INITIAL: CheckInitialValue = {
   securityCheck: false,
   agentGuaranteesSc: false,
   bankInfo: false,
+  backTaxOwed: null,
 };
 
 /** Tóm tắt giá trị thành chuỗi "EL, Bank Information" (chỉ liệt kê mục đã tick) — dùng cho
  * Edit History và khi Admin lỡ chọn cột này để đẩy lên Google Sheet (giá trị gốc là object,
- * không hiển thị được trực tiếp). Rỗng nếu chưa tick mục nào/chưa có giá trị. */
+ * không hiển thị được trực tiếp). Rỗng nếu chưa tick mục nào/chưa có giá trị. "Back Tax
+ * Owed" (thêm 2026-08-13) không nằm trong CHECK_INITIAL_ITEMS (không phải boolean đơn
+ * giản) nên tóm tắt riêng, nối thêm vào cuối. */
 export function summarizeCheckInitial(value: unknown): string {
   if (!value || typeof value !== "object") return "";
   const v = value as Partial<CheckInitialValue>;
-  return CHECK_INITIAL_ITEMS.filter((item) => v[item.key]).map((item) => item.label).join(", ");
+  const parts = CHECK_INITIAL_ITEMS.filter((item) => v[item.key]).map((item) => item.label);
+  if (v.backTaxOwed === "yes") parts.push("Back Tax Owed (Yes)");
+  else if (v.backTaxOwed === "no") parts.push("Back Tax Owed (No)");
+  else if (v.backTaxOwed === "collected") parts.push("Back Tax Owed (Collected)");
+  return parts.join(", ");
 }

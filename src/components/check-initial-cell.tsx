@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Check } from "lucide-react";
 import { CheckInitialValue } from "@/lib/types";
 import { CHECK_INITIAL_ITEMS, EMPTY_CHECK_INITIAL } from "@/lib/check-initial";
@@ -11,6 +12,9 @@ import { darkenHex } from "@/lib/color";
  * màu badge (pastel chọn để đọc trên nền tối, cần đậm hơn trên nền sáng), để nhất quán ý
  * nghĩa "đã tick/đạt" xuyên suốt app. */
 const APPROVED_GREEN = "#86efac";
+/** Tông đỏ cùng độ đậm/nhạt với APPROVED_GREEN (khớp badge "cancelled" trong DEFAULT_COLUMNS)
+ * — dùng cho "Back Tax Owed: Yes" (2026-08-13). */
+const WARNING_RED = "#fca5a5";
 
 /** Ô cột "Check Initial" — 5 checkbox độc lập (EL before/after 07/16, Security Check,
  * Agent guarantees SC, Bank Information), mỗi ô tick/bỏ tick lưu ngay lập tức (giống
@@ -39,7 +43,9 @@ export function CheckInitialCell({
 }) {
   const theme = useAppStore((s) => s.theme);
   const checkedColor = theme === "light" ? darkenHex(APPROVED_GREEN, 0.4) : APPROVED_GREEN;
+  const warningColor = theme === "light" ? darkenHex(WARNING_RED, 0.35) : WARNING_RED;
   const current = value ?? EMPTY_CHECK_INITIAL;
+  const [backTaxExpanded, setBackTaxExpanded] = useState(false);
 
   function toggle(key: keyof CheckInitialValue) {
     if (!editable) return;
@@ -65,6 +71,14 @@ export function CheckInitialCell({
     onCommit(next);
   }
 
+  /** Chọn 1 trong 3 nút con Yes/No/Collected Upfront Fee — tự thu gọn lại panel sau khi
+   * chọn (bấm lại nút "Back Tax Owed" để mở ra đổi lựa chọn khác). */
+  function pickBackTaxOwed(next: CheckInitialValue["backTaxOwed"]) {
+    if (!editable) return;
+    onCommit({ ...current, backTaxOwed: next });
+    setBackTaxExpanded(false);
+  }
+
   const visibleItems = CHECK_INITIAL_ITEMS.filter((item) => {
     if (item.key === "elAfter0716" && current.elBefore0716) return false;
     if (item.key === "elBefore0716" && current.elAfter0716) return false;
@@ -83,7 +97,7 @@ export function CheckInitialCell({
           thụt vào trong, cả khối vẫn nằm đúng 1 vị trí, được căn giữa nhờ justify-center
           của div cha. Nút bị ẩn LOẠI HẲN khỏi mảng render (không giữ chỗ) nên không để lại
           khoảng trống dọc — EL/Bank Information co sát lại bình thường. */}
-      <div className="flex flex-col gap-0.5" style={{ width: 128 }}>
+      <div className="flex flex-col gap-0.5" style={{ width: 168 }}>
         {visibleItems.map((item) => {
           const checked = Boolean(current[item.key]);
           return (
@@ -108,6 +122,86 @@ export function CheckInitialCell({
             </button>
           );
         })}
+
+        {/* "Back Tax Owed" (thêm 2026-08-13) — bấm vào nút chính để mở/đóng 3 nút con
+            Yes/No/Collected Upfront Fee, KHÔNG tự đặt giá trị (khác 5 checkbox boolean ở
+            trên). Yes tô đỏ, No tô xanh, Collected Upfront Fee tô xanh + thêm hậu tố
+            "(Collected)" vào nhãn. */}
+        <div>
+          <button
+            type="button"
+            title="Back Tax Owed"
+            disabled={!editable}
+            onClick={() => editable && setBackTaxExpanded((v) => !v)}
+            className={`flex w-full items-center gap-1 text-[10px] font-medium leading-tight transition disabled:cursor-default ${
+              editable ? "cursor-pointer" : "cursor-default"
+            } ${current.backTaxOwed ? "" : "text-text-dim"}`}
+            style={
+              current.backTaxOwed === "yes"
+                ? { color: warningColor }
+                : current.backTaxOwed === "no" || current.backTaxOwed === "collected"
+                  ? { color: checkedColor }
+                  : undefined
+            }
+          >
+            <span
+              className="flex h-3 w-3 shrink-0 items-center justify-center rounded-sm border border-border-strong"
+              style={
+                current.backTaxOwed === "yes"
+                  ? { borderColor: warningColor, backgroundColor: `${warningColor}33` }
+                  : current.backTaxOwed === "no" || current.backTaxOwed === "collected"
+                    ? { borderColor: checkedColor, backgroundColor: `${checkedColor}33` }
+                    : undefined
+              }
+            >
+              {current.backTaxOwed === "yes" && <Check size={9} strokeWidth={3.5} style={{ color: warningColor }} />}
+              {(current.backTaxOwed === "no" || current.backTaxOwed === "collected") && (
+                <Check size={9} strokeWidth={3.5} style={{ color: checkedColor }} />
+              )}
+            </span>
+            <span className="truncate">Back Tax Owed{current.backTaxOwed === "collected" ? " (Collected)" : ""}</span>
+          </button>
+          {backTaxExpanded && editable && (
+            <div className="mt-0.5 flex flex-wrap gap-1 pl-4">
+              <button
+                type="button"
+                onClick={() => pickBackTaxOwed("yes")}
+                className="rounded-full border px-1.5 py-0.5 text-[9px] font-medium leading-none transition hover:brightness-110"
+                style={
+                  current.backTaxOwed === "yes"
+                    ? { borderColor: warningColor, backgroundColor: `${warningColor}33`, color: warningColor }
+                    : { borderColor: "var(--border-strong)" }
+                }
+              >
+                Yes
+              </button>
+              <button
+                type="button"
+                onClick={() => pickBackTaxOwed("no")}
+                className="rounded-full border px-1.5 py-0.5 text-[9px] font-medium leading-none transition hover:brightness-110"
+                style={
+                  current.backTaxOwed === "no"
+                    ? { borderColor: checkedColor, backgroundColor: `${checkedColor}33`, color: checkedColor }
+                    : { borderColor: "var(--border-strong)" }
+                }
+              >
+                No
+              </button>
+              <button
+                type="button"
+                onClick={() => pickBackTaxOwed("collected")}
+                className="rounded-full border px-1.5 py-0.5 text-[9px] font-medium leading-none transition hover:brightness-110"
+                style={
+                  current.backTaxOwed === "collected"
+                    ? { borderColor: checkedColor, backgroundColor: `${checkedColor}33`, color: checkedColor }
+                    : { borderColor: "var(--border-strong)" }
+                }
+              >
+                Collected Upfront Fee
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

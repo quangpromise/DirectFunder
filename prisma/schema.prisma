@@ -14,6 +14,10 @@ model User {
   id           String   @id @default(cuid())
   name         String
   email        String   @unique
+  /// Tên đăng nhập thay thế cho email (không bắt buộc) — Admin đặt trong trang Quản lý tài
+  /// khoản. Đăng nhập chấp nhận CẢ email lẫn username (xem POST /api/auth/login), lưu
+  /// lowercase giống email để so khớp không phân biệt hoa/thường.
+  username     String?  @unique
   passwordHash String
   role         String
   avatarColor  String
@@ -179,4 +183,56 @@ model CollectingRecord {
   updatedAt DateTime @updatedAt
 
   @@map("collecting_records")
+}
+
+/// Thông báo trong app (chuông) — trước đây được tạo hoàn toàn ở client (Zustand `set()`),
+/// không có bảng DB nào, nên người được giao việc (toUserId) không bao giờ thực sự nhận
+/// được thông báo trên máy của họ (chỉ tồn tại trong trình duyệt người thao tác). Giờ tạo
+/// server-side (xem PATCH /api/cases/[id]) + đẩy realtime qua Pusher (src/lib/pusher-server.ts,
+/// kênh `private-notifications-{toUserId}`).
+model Notification {
+  id         String   @id @default(cuid())
+  /// "assigned" | "status_change" | "mention"
+  type       String
+  toUserId   String
+  fromUserId String
+  caseId     String
+  message    String
+  read       Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@index([toUserId, createdAt])
+  @@map("notifications")
+}
+
+/// Lịch sử chỉnh sửa 1 ô dữ liệu (mọi cột) — trước 2026-08-13 chỉ tồn tại client-side
+/// (Zustand persist, xem comment đầu file), mỗi trình duyệt chỉ thấy thay đổi do CHÍNH nó
+/// thực hiện. Giờ ghi lên server để MỌI user đăng nhập đều xem được toàn bộ lịch sử (không
+/// giới hạn chỉ xem thay đổi của chính mình) — xem GET/POST /api/history/edits.
+model EditHistoryEntry {
+  id             String   @id @default(cuid())
+  caseId         String
+  /// SSN đại diện tại thời điểm sửa (primarySsn) — null nếu hồ sơ chưa có SSN nào.
+  ssn            String?
+  clientName     String
+  fieldLabel     String
+  oldValue       String
+  newValue       String
+  editedByUserId String
+  editedAt       DateTime @default(now())
+
+  @@index([editedAt])
+  @@map("edit_history_entries")
+}
+
+/// Lịch sử xoá hồ sơ — cùng lý do/thời điểm chuyển sang server với EditHistoryEntry ở trên.
+model DeletedRowEntry {
+  id              String   @id @default(cuid())
+  /// Snapshot đầy đủ CaseRecord tại thời điểm xoá (JSON, giữ nguyên định dạng client).
+  caseSnapshot    Json
+  deletedByUserId String
+  deletedAt       DateTime @default(now())
+
+  @@index([deletedAt])
+  @@map("deleted_row_entries")
 }

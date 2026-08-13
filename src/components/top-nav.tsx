@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { LogOut, Menu, X, Table2, Users, ShieldCheck, ClipboardList, Coins, ChevronDown } from "lucide-react";
 import { useAppStore, useCurrentUser } from "@/store/app-store";
+import { hasFeature } from "@/lib/rbac";
 import { Avatar } from "@/components/avatar";
 import { AvatarUpload } from "@/components/avatar-upload";
 import { RoleBadge } from "@/components/role-badge";
@@ -15,7 +16,7 @@ import { NotificationBell } from "@/components/notification-bell";
 import { RulesPanel } from "@/components/rules-panel";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { ThemeSwitcher } from "@/components/theme-switcher";
-import { Role } from "@/lib/types";
+import { FeatureKey, Role } from "@/lib/types";
 import { useT } from "@/lib/i18n";
 
 // "Rules" KHÔNG còn là 1 route riêng trong danh sách này nữa — đã đổi thành dropdown
@@ -24,7 +25,7 @@ import { useT } from "@/lib/i18n";
 // mảng phẳng) để chèn <RulesPanel variant="tab"/> vào GIỮA 2 nhóm khi render (xem TopNav bên
 // dưới) — đảm bảo thứ tự luôn đúng "Cases -> Orders -> Rules -> (Tài khoản/Phân quyền nếu
 // có)" theo yêu cầu 2026-08-11, bất kể role đang đăng nhập thấy bao nhiêu tab trong mỗi nhóm.
-const PRIMARY_NAV: { href: string; labelKey: string; icon: typeof Table2; roles: Role[] | "all" }[] = [
+const PRIMARY_NAV: { href: string; labelKey: string; icon: typeof Table2; roles: Role[] | "all"; feature?: FeatureKey }[] = [
   // Support chỉ làm việc trên tab Order — không hiện tab Hồ sơ với nhóm này.
   {
     href: "/dashboard/cases",
@@ -39,13 +40,14 @@ const PRIMARY_NAV: { href: string; labelKey: string; icon: typeof Table2; roles:
     roles: ["agent", "processor", "support", "agent_leader", "processor_leader"],
   },
   // Tab mới (2026-08-12), độc lập hoàn toàn với bảng Hồ sơ — bảng thu hồi công nợ dạng
-  // Excel. Roles hiện chỉ Quản lý + Kế toán (nhóm liên quan trực tiếp tới thu tiền/phí)
-  // — thu hẹp/mở rộng khi tính năng/phân công cụ thể cho tab này được xác định.
+  // Excel. roles: "all" + feature "viewCollecting" (2026-08-13) — Admin cấu hình nhóm nào
+  // xem được qua trang Phân quyền thay vì hard-code, xem DEFAULT_FEATURE_PERMISSIONS.
   {
     href: "/dashboard/collecting",
     labelKey: "nav.collecting",
     icon: Coins,
-    roles: ["manager", "accounting"],
+    roles: "all",
+    feature: "viewCollecting",
   },
 ];
 const ADMIN_NAV: { href: string; labelKey: string; icon: typeof Table2; roles: Role[] | "all" }[] = [
@@ -55,6 +57,7 @@ const ADMIN_NAV: { href: string; labelKey: string; icon: typeof Table2; roles: R
 
 export function TopNav() {
   const user = useCurrentUser();
+  const featurePermissions = useAppStore((s) => s.featurePermissions);
   const pathname = usePathname();
   const logout = useAppStore((s) => s.logout);
   const updateAvatar = useAppStore((s) => s.updateAvatar);
@@ -65,7 +68,11 @@ export function TopNav() {
 
   if (!user) return null;
 
-  const primaryItems = PRIMARY_NAV.filter((item) => item.roles === "all" || item.roles.includes(user.role));
+  const primaryItems = PRIMARY_NAV.filter(
+    (item) =>
+      (item.roles === "all" || item.roles.includes(user.role)) &&
+      (!item.feature || hasFeature(featurePermissions, item.feature, user.role))
+  );
   const adminItems = ADMIN_NAV.filter((item) => item.roles === "all" || item.roles.includes(user.role));
 
   // Dùng chung cho cả hàng tab desktop lẫn danh sách trong menu hamburger mobile (2 nơi gọi
@@ -162,7 +169,7 @@ export function TopNav() {
           {profileOpen && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setProfileOpen(false)} />
-              <div className="popover absolute right-0 z-50 mt-2 w-56 rounded-xl p-2 shadow-2xl shadow-black/60">
+              <div className="popover absolute right-0 z-50 mt-2 max-h-[80vh] w-56 overflow-y-auto rounded-xl p-2 shadow-2xl shadow-black/60">
                 <div className="flex items-center gap-2.5 px-2 py-2">
                   <AvatarUpload
                     name={user.name}

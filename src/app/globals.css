@@ -35,6 +35,15 @@
   --status-denied: #ef4444;
   --status-completed: #6b7280;
 
+  /* Nền hàng xen kẽ (zebra striping) cho bảng dữ liệu — hàng lẻ dùng --bg như cũ, hàng
+     chẵn dùng --row-alt-bg (nhỉnh sáng hơn 1 chút, KHÔNG dùng thẳng --bg-elevated vì bước
+     nhảy độ sáng đó dành cho card/dialog/input "nổi hẳn lên", quá mạnh cho hiệu ứng zebra
+     chỉ cần đủ để mắt phân biệt được từng hàng). Đặt qua CSS custom property --row-bg trên
+     mỗi hàng (style inline, xem RowCells trong cases/page.tsx) — biến kế thừa được xuyên
+     qua `display: contents` nên mọi cell con trong hàng đọc đúng giá trị dù bản thân hàng
+     không tạo box riêng. */
+  --row-alt-bg: #131316;
+
   /* Ảnh nền theo theme (áp dụng ở mọi màn hình TRỪ trang Login — xem
      DashboardLayout/ThemeSwitcher) + lớp phủ tối để chữ/bảng dữ liệu luôn đủ tương phản
      dù ảnh nền có vùng sáng/tối khác nhau. */
@@ -64,6 +73,8 @@
 
   --app-bg-image: url("/theme-light.avif");
   --app-bg-overlay: rgba(221, 226, 234, 0.9);
+
+  --row-alt-bg: #eef1f6;
 }
 
 @theme inline {
