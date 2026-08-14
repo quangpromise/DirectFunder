@@ -6,6 +6,7 @@ import { useAppStore } from "@/store/app-store";
 import type { AppNotification } from "@/lib/types";
 
 const CASES_CHANNEL = "private-cases";
+const CPA_REVIEW_CHANNEL = "private-cpa-review";
 
 /** Subscribe realtime (Pusher) cho toàn dashboard — gọi 1 lần ở layout, cạnh
  * hydrateFromServer(). No-op nếu chưa đăng nhập hoặc Pusher chưa được cấu hình
@@ -31,6 +32,13 @@ export function useRealtime(userId: string | undefined): void {
         useAppStore.getState().refetchCases();
       }, 500);
     }
+    let cpaReviewDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+    function onCpaReviewChanged() {
+      if (cpaReviewDebounceTimer) clearTimeout(cpaReviewDebounceTimer);
+      cpaReviewDebounceTimer = setTimeout(() => {
+        useAppStore.getState().refetchCpaReview();
+      }, 500);
+    }
     function onNotification(n: AppNotification) {
       useAppStore.getState().receiveNotification(n);
     }
@@ -38,15 +46,21 @@ export function useRealtime(userId: string | undefined): void {
     const casesChannel = pusher.subscribe(CASES_CHANNEL);
     casesChannel.bind("case:changed", onCaseChanged);
 
+    const cpaReviewChannel = pusher.subscribe(CPA_REVIEW_CHANNEL);
+    cpaReviewChannel.bind("cpaReview:changed", onCpaReviewChanged);
+
     const notifChannelName = `private-notifications-${userId}`;
     const notifChannel = pusher.subscribe(notifChannelName);
     notifChannel.bind("notification:new", onNotification);
 
     return () => {
       if (debounceTimer) clearTimeout(debounceTimer);
+      if (cpaReviewDebounceTimer) clearTimeout(cpaReviewDebounceTimer);
       casesChannel.unbind("case:changed", onCaseChanged);
+      cpaReviewChannel.unbind("cpaReview:changed", onCpaReviewChanged);
       notifChannel.unbind("notification:new", onNotification);
       pusher.unsubscribe(CASES_CHANNEL);
+      pusher.unsubscribe(CPA_REVIEW_CHANNEL);
       pusher.unsubscribe(notifChannelName);
     };
   }, [userId]);

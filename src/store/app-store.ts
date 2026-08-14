@@ -2,6 +2,9 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { useShallow } from "zustand/shallow";
 import { DEFAULT_COLLECTING_COLUMNS, DEFAULT_COLUMNS, DEFAULT_FEATURE_PERMISSIONS, DEFAULT_REFUND_YEAR_STATUS_OPTIONS } from "@/lib/rbac";
+import { CPA_REVIEW_STATUS_OPTIONS } from "@/lib/cpa-review-columns";
+import { currentMonthKey } from "@/lib/cpa-review-month";
+import { todayIsoDate } from "@/lib/date-format";
 import { INITIAL_CASES, INITIAL_NOTIFICATIONS, INITIAL_USERS } from "@/lib/mock-data";
 import { getFullName, primarySsn } from "@/lib/client-name";
 import { summarizeCheckInitial } from "@/lib/check-initial";
@@ -15,6 +18,7 @@ import {
   CheckInitialValue,
   ClientEmailTemplate,
   CollectingRecord,
+  CpaReviewRecord,
   ColumnDef,
   ColumnType,
   CpaEmailDefaults,
@@ -22,6 +26,7 @@ import {
   EditHistoryRecord,
   FeatureKey,
   FeaturePermissions,
+  CpaReviewSheetConfig,
   GoogleSheetConfig,
   Language,
   OrderRecord,
@@ -126,6 +131,18 @@ interface AppState {
   /** Sheet đích + cột nào/thứ tự nào được đẩy khi bấm nút "Send" ở cột Status (chỉ hiện
    * khi status = cpa_review) — null = Admin chưa cấu hình, nút Send báo lỗi rõ ràng. */
   googleSheetConfig: GoogleSheetConfig | null;
+  /** Trạng thái kết nối Sheet "CPA Review" theo TỪNG THÁNG (Record<"YYYY-MM", config>, thêm
+   * 2026-08-14 — mỗi tháng 1 Sheet/kết nối riêng, xem deployment-database-sync.md mục 4.22).
+   * Thiếu key = tháng đó chưa kết nối. Không có webhookSecret/rowIndex (server lược bỏ khỏi
+   * GET /api/config, chỉ trả 1 lần lúc connect). Ghi qua connectCpaReviewSheet/
+   * resyncCpaReviewSheet/updateCpaReviewNameMapping/disconnectCpaReviewSheet (action riêng,
+   * KHÔNG qua setGoogleSheetConfig/syncConfig chung vì route đích khác, có gọi Sheets API
+   * thật). */
+  cpaReviewSheetConfig: Record<string, Omit<CpaReviewSheetConfig, "webhookSecret" | "rowIndex">>;
+  /** Tháng đang chọn trên tab CPA Review ("YYYY-MM") — mặc định tháng hiện tại, đổi qua bộ
+   * chọn tháng (CpaReviewMonthPicker). Quyết định bảng nào hiện ra + dòng mới thêm/kết nối
+   * Sheet áp dụng cho tháng nào. Thêm 2026-08-14. */
+  cpaReviewSelectedMonth: string;
   /** Mẫu Subject/Body cố định cho tính năng "Gửi email cho khách hàng" (popup Edit Hồ sơ)
    * — null = Admin chưa cấu hình, dùng DEFAULT_CLIENT_EMAIL_SUBJECT/BODY. */
   clientEmailTemplate: ClientEmailTemplate | null;
@@ -142,9 +159,16 @@ interface AppState {
   /** Dữ liệu tab "Collecting" (bảng độc lập với bảng Hồ sơ) — nạp từ server ở
    * hydrateFromServer, KHÔNG persist localStorage (giống cases/rules). */
   collectingRecords: CollectingRecord[];
+  /** Dữ liệu tab "CPA Review" (bảng độc lập hoàn toàn, không liên kết Case — yêu cầu
+   * 2026-08-14) — nạp từ server ở hydrateFromServer, KHÔNG persist localStorage. */
+  cpaReviewRecords: CpaReviewRecord[];
   /** Cấu hình cột riêng cho tab "Collecting" — mặc định DEFAULT_COLLECTING_COLUMNS (rbac.ts)
    * nếu Admin chưa từng đổi qua ColumnSettingsDialog. */
   collectingColumns: ColumnDef[];
+  /** Danh sách trạng thái (Status) mỗi khối năm của tab "CPA Review" — Quản lý (hoặc role
+   * được cấp feature "manageCpaReviewSheet") thêm/sửa/xoá + đổi màu qua UI, mặc định
+   * CPA_REVIEW_STATUS_OPTIONS (cpa-review-columns.ts) nếu chưa từng đổi. Thêm 2026-08-14. */
+  cpaReviewStatusOptions: SelectOption[];
 
   /** true khi đã hydrate xong dữ liệu thật từ server ít nhất 1 lần trong phiên này. */
   hydrated: boolean;
@@ -163,6 +187,10 @@ interface AppState {
   receiveNotification: (n: AppNotification) => void;
   /** Nạp lại cases sau khi nhận tín hiệu "case:changed" qua Pusher. */
   refetchCases: () => Promise<void>;
+  /** Nạp lại cpaReviewRecords sau khi nhận tín hiệu "cpaReview:changed" qua Pusher — kể cả
+   * thay đổi đến từ webhook Google Sheet (Sheet -> App), trước đây KHÔNG có cơ chế nào báo
+   * cho tab đang mở biết để tự cập nhật, chỉ thấy sau khi F5 tay. */
+  refetchCpaReview: () => Promise<void>;
   setLanguage: (language: Language) => void;
   setTheme: (theme: Theme) => void;
   setNotificationSoundMuted: (muted: boolean) => void;
@@ -187,6 +215,7 @@ interface AppState {
   updateSsn: (caseId: string, slot: 0 | 1, value: string | null) => void;
   updateRefundYearStatus: (caseId: string, year: string, status: RefundYearStatus) => void;
   updateRefundYearPendingReason: (caseId: string, year: string, reason: string) => void;
+  updateRefundYearEfileDate: (caseId: string, year: string, date: string | null) => void;
   /** Thêm/sửa/xoá trạng thái trong AppConfig.refundYearStatusOptions — chỉ Admin (manager)
    * dùng qua nút bánh răng trong CaseRefundStatusButton (xem canManageOptions ở cases/page.tsx).
    * Option id "pending" là id đặc biệt, removeRefundYearStatusOption() tự chặn xoá nó
@@ -194,6 +223,12 @@ interface AppState {
   addRefundYearStatusOption: (option: Omit<SelectOption, "id">) => void;
   updateRefundYearStatusOption: (optionId: string, patch: Partial<Omit<SelectOption, "id">>) => void;
   removeRefundYearStatusOption: (optionId: string) => void;
+  /** Cùng pattern add/update/removeRefundYearStatusOption ở trên nhưng cho danh sách Status
+   * của tab "CPA Review" (mỗi khối năm) — không có id nào bị khoá xoá (khác "pending" ở
+   * refund), tự do thêm/sửa/xoá. Thêm 2026-08-14. */
+  addCpaReviewStatusOption: (option: Omit<SelectOption, "id">) => void;
+  updateCpaReviewStatusOption: (optionId: string, patch: Partial<Omit<SelectOption, "id">>) => void;
+  removeCpaReviewStatusOption: (optionId: string) => void;
   /** Foreground action (giống sendCpaEmail) — lưu toàn bộ nội dung popup "Edit Hồ sơ"
    * (ClientProfileDialog) trong 1 lần gọi, server tự tính lại money/caseLabel từ
    * refunds và trả về giá trị đã tính để đồng bộ local state chính xác. */
@@ -229,6 +264,9 @@ interface AppState {
   addCollectingRow: () => void;
   deleteCollectingRow: (rowId: string) => void;
   reorderCollectingRow: (fromId: string, toId: string) => void;
+  updateCpaReviewCell: (rowId: string, key: string, value: string | number | boolean | null) => void;
+  addCpaReviewRow: () => void;
+  deleteCpaReviewRow: (rowId: string) => void;
   addCollectingColumn: (label: string, type: ColumnType, options?: Omit<SelectOption, "id">[]) => void;
   removeCollectingColumn: (columnId: string) => void;
   renameCollectingColumn: (columnId: string, label: string) => void;
@@ -277,6 +315,34 @@ interface AppState {
   markCpaEmailSent: (caseId: string, action: "manual" | "clear") => Promise<void>;
 
   setGoogleSheetConfig: (config: GoogleSheetConfig) => void;
+  /** Đổi tháng đang xem trên tab CPA Review — xem cpaReviewSelectedMonth. */
+  setCpaReviewSelectedMonth: (month: string) => void;
+  /** Dán link kết nối Sheet CPA Review cho 1 THÁNG cụ thể — trả về webhookSecret + đoạn Apps
+   * Script mẫu (chỉ lấy được đúng lần này, xem api-client.ts connectCpaReviewSheet). */
+  connectCpaReviewSheet: (
+    link: string,
+    month: string
+  ) => Promise<
+    | {
+        ok: true;
+        month: string;
+        sheetId: string;
+        gid: string;
+        tabName: string;
+        importedCount: number;
+        distinctNames: string[];
+        webhookSecret: string;
+        webhookUrl: string;
+        appsScript: string;
+      }
+    | { ok: false; error: string }
+  >;
+  resyncCpaReviewSheet: (month: string) => Promise<{ ok: true; pushed: number } | { ok: false; error: string }>;
+  updateCpaReviewNameMapping: (
+    nameToUserId: Record<string, string>,
+    month: string
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
+  disconnectCpaReviewSheet: (month: string) => Promise<void>;
   /** Foreground action, cùng lý do với sendCpaEmail — gửi có thể fail rõ ràng (chưa cấu
    * hình Sheet, token Google hết hạn, không có quyền Editor...). needsGoogleAuth:true khi
    * user chưa/không còn kết nối Google — UI (SendToSheetButton) sẽ tự mở popup
@@ -290,6 +356,18 @@ interface AppState {
    * markCaseSheetSent trong api-client.ts). Cập nhật local case.sheetSentAt theo giá trị
    * server trả về. */
   markCaseSheetSent: (caseId: string, action: "manual" | "clear") => Promise<void>;
+  /** Nút "Test Sheet" cạnh Status (thêm 2026-08-14) — tương tự sendCaseRowToSheet (kể cả
+   * popup chọn năm) nhưng tạo 1 dòng MỚI trong tab "CPA Review" (tháng hiện tại) thay vì
+   * gửi Sheet cá nhân, dùng buildCpaReviewCustomFromCase để map dữ liệu. Foreground vì có
+   * thể fail rõ ràng (lỗi mạng/server). */
+  sendCaseRowToCpaReview: (
+    caseId: string,
+    reviewYears: string[]
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
+  /** Đánh dấu "Đã gửi" tab CPA Review thủ công (manual) hoặc xoá đánh dấu khi xác nhận
+   * "muốn gửi lại" (clear) — cùng ngữ nghĩa với markCaseSheetSent, xem
+   * POST /api/cases/[id]/test-cpa-review-sheet. */
+  markCaseCpaReviewTestSent: (caseId: string, action: "manual" | "clear") => Promise<void>;
   /** Mở popup OAuth Google (window.open), lắng nghe postMessage "google-oauth-done" từ
    * /api/auth/google/callback, resolve true/false theo kết quả — poll popup.closed làm
    * timeout dự phòng nếu user đóng popup tay mà không hoàn tất. */
@@ -370,7 +448,8 @@ export const useAppStore = create<AppState>()(
             state.googleSheetConfig ?? undefined,
             state.clientEmailTemplate ?? undefined,
             state.refundYearStatusOptions,
-            state.collectingColumns
+            state.collectingColumns,
+            state.cpaReviewStatusOptions
           )
         );
       }
@@ -390,13 +469,17 @@ export const useAppStore = create<AppState>()(
       cpaEmailDefaults: { to: [], cc: [] },
       cpaSenderEmail: "",
       googleSheetConfig: null,
+      cpaReviewSheetConfig: {},
+      cpaReviewSelectedMonth: currentMonthKey(),
       clientEmailTemplate: null,
       refundYearStatusOptions: DEFAULT_REFUND_YEAR_STATUS_OPTIONS,
       deletionHistory: [],
       editHistory: [],
       rules: [],
       collectingRecords: [],
+      cpaReviewRecords: [],
       collectingColumns: DEFAULT_COLLECTING_COLUMNS,
+      cpaReviewStatusOptions: CPA_REVIEW_STATUS_OPTIONS,
 
       login: async (email, password) => {
         try {
@@ -416,12 +499,14 @@ export const useAppStore = create<AppState>()(
       // .claude/rules/deployment-database-sync.md) — bản trong localStorage chỉ còn là
       // cache hiển thị tạm trước khi hydrate xong, luôn bị ghi đè bởi dữ liệu server.
       hydrateFromServer: async () => {
-        const [users, cases, config, rules, collectingRecords, notifications, editHistory, deletionHistory] = await Promise.all([
+        const [users, cases, config, rules, collectingRecords, cpaReviewRecords, notifications, editHistory, deletionHistory] =
+          await Promise.all([
           api.listUsers(),
           api.listCases(),
           api.getConfig(),
           api.listRules(),
           api.listCollecting(),
+          api.listCpaReview(),
           // Trước đây notifications chỉ tồn tại local (tạo trong set(), không có API) —
           // giờ server là nguồn thật duy nhất (xem prisma model Notification + PATCH
           // /api/cases/[id]), luôn nạp lại mỗi lần vào dashboard giống users/cases/...
@@ -441,11 +526,14 @@ export const useAppStore = create<AppState>()(
           cpaEmailDefaults: config.cpaEmailDefaults ?? { to: [], cc: [] },
           cpaSenderEmail: config.cpaSenderEmail ?? "",
           googleSheetConfig: config.googleSheetConfig ?? null,
+          cpaReviewSheetConfig: config.cpaReviewSheetConfig ?? {},
           clientEmailTemplate: config.clientEmailTemplate ?? null,
           refundYearStatusOptions: config.refundYearStatusOptions ?? DEFAULT_REFUND_YEAR_STATUS_OPTIONS,
           collectingColumns: config.collectingColumns ?? DEFAULT_COLLECTING_COLUMNS,
+          cpaReviewStatusOptions: config.cpaReviewStatusOptions ?? CPA_REVIEW_STATUS_OPTIONS,
           rules,
           collectingRecords,
+          cpaReviewRecords,
           notifications,
           editHistory,
           deletionHistory,
@@ -467,6 +555,10 @@ export const useAppStore = create<AppState>()(
         const cases = await api.listCases();
         set({ cases });
       },
+      refetchCpaReview: async () => {
+        const cpaReviewRecords = await api.listCpaReview();
+        set({ cpaReviewRecords });
+      },
       setLanguage: (language) => set({ language }),
       setTheme: (theme) => set({ theme }),
       setNotificationSoundMuted: (muted) => set({ notificationSoundMuted: muted }),
@@ -484,13 +576,23 @@ export const useAppStore = create<AppState>()(
         // set lại) -> trigger overlay video ăn mừng (StatusCelebrationOverlay đọc field
         // này, tự ẩn sau 4 giây).
         const justEnteredCpaReview = !isCustom && columnKey === "status" && value === "cpa_review" && oldRaw !== "cpa_review";
+        // "Processing Date" tự động lấy theo LẦN GẦN NHẤT status chuyển sang "processing"
+        // (yêu cầu 2026-08-14) — cập nhật optimistic ở đây để popup "Edit Hồ sơ" thấy ngay
+        // giá trị mới không cần đợi refetch, khớp đúng logic server ở PATCH /api/cases/[id]
+        // (chỉ set khi đây là 1 lần CHUYỂN TRẠNG THÁI thật, không phải chọn lại giá trị cũ).
+        const justEnteredProcessing = !isCustom && columnKey === "status" && value === "processing" && oldRaw !== "processing";
         set((s) => ({
           cases: s.cases.map((c) => {
             if (c.id !== caseId) return c;
             if (isCustom) {
               return { ...c, custom: { ...c.custom, [columnKey]: value }, updatedAt: new Date().toISOString() };
             }
-            return { ...c, [columnKey]: value, updatedAt: new Date().toISOString() };
+            return {
+              ...c,
+              [columnKey]: value,
+              ...(justEnteredProcessing ? { processingDate: todayIsoDate() } : null),
+              updatedAt: new Date().toISOString(),
+            };
           }),
           celebration: justEnteredCpaReview ? Date.now() : s.celebration,
         }));
@@ -681,12 +783,17 @@ export const useAppStore = create<AppState>()(
           custom: { caseLabel: 0 },
           sheetSentAt: null,
           cpaEmailSentAt: null,
+          cpaReviewTestSentAt: null,
           // Số âm theo epoch-ms hiện tại -> luôn nhỏ hơn mọi sortOrder hiện có -> tự động
           // lên đầu bảng, khớp hành vi cũ "mới nhất lên đầu" (server tạo cũng tự tính
           // đúng công thức này nếu thiếu, xem POST /api/cases).
           sortOrder: -Date.now(),
           refundYearStatus: {},
           refundYearPendingReason: {},
+          refundYearEfileDate: {},
+          fcDate: null,
+          processingDate: null,
+          elDate: null,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
@@ -820,9 +927,14 @@ export const useAppStore = create<AppState>()(
               custom: { caseLabel: 0 },
               sheetSentAt: null,
               cpaEmailSentAt: null,
+              cpaReviewTestSentAt: null,
               sortOrder: baseSortOrder - (importable.length - index),
               refundYearStatus: {},
               refundYearPendingReason: {},
+              refundYearEfileDate: {},
+              fcDate: null,
+              processingDate: null,
+              elDate: null,
               createdAt: new Date().toISOString(),
               updatedAt: new Date().toISOString(),
             };
@@ -934,6 +1046,22 @@ export const useAppStore = create<AppState>()(
           ),
         }));
         syncInBackground("refundYearPendingReason", api.patchCase(caseId, { refundYearPendingReason: { [year]: reason } }));
+      },
+
+      // Ngày E-file riêng từng năm — cùng quyền sửa với refundYearStatus (editable theo
+      // cột "refunds"), dùng cho đồng bộ 2 chiều "CPA Review" với Google Sheet.
+      updateRefundYearEfileDate: (caseId, year, date) => {
+        const kase = get().cases.find((c) => c.id === caseId);
+        const oldDate = kase?.refundYearEfileDate?.[year] ?? "";
+        if (kase && oldDate !== (date ?? "")) logEdit(caseId, `Ngày E-file ${year}`, oldDate, date ?? "");
+        set((state) => ({
+          cases: state.cases.map((c) =>
+            c.id === caseId
+              ? { ...c, refundYearEfileDate: { ...c.refundYearEfileDate, [year]: date }, updatedAt: new Date().toISOString() }
+              : c
+          ),
+        }));
+        syncInBackground("refundYearEfileDate", api.patchCase(caseId, { refundYearEfileDate: { [year]: date } }));
       },
 
       // Foreground (giống sendCpaEmail/sendCaseRowToSheet) — server tự tính money/
@@ -1155,6 +1283,55 @@ export const useAppStore = create<AppState>()(
         }
       },
 
+      // Tab "CPA Review" — bảng độc lập hoàn toàn với Case (yêu cầu 2026-08-14, "không liên
+      // kết bất cứ gì"), cột cố định (không admin cấu hình như Collecting) — xem
+      // src/lib/cpa-review-columns.ts.
+      updateCpaReviewCell: (rowId, key, value) => {
+        set((state) => ({
+          cpaReviewRecords: state.cpaReviewRecords.map((r) =>
+            r.id === rowId ? { ...r, custom: { ...r.custom, [key]: value }, updatedAt: new Date().toISOString() } : r
+          ),
+        }));
+        syncInBackground("updateCpaReviewCell", api.patchCpaReview(rowId, { custom: { [key]: value } }));
+      },
+
+      addCpaReviewRow: () => {
+        const id = uniqueId("cpar");
+        const month = get().cpaReviewSelectedMonth;
+        // Nối vào cuối bảng (dòng trống tiếp theo), không lên đầu — server tự tính lại
+        // sortOrder thật khi lưu (xem nextAppendCpaReviewSortOrder), giá trị dưới đây chỉ để
+        // hiển thị đúng vị trí ngay lập tức trước khi có phản hồi server.
+        const monthMaxSortOrder = get()
+          .cpaReviewRecords.filter((r) => r.month === month)
+          .reduce((max, r) => Math.max(max, r.sortOrder), 0);
+        const optimistic: CpaReviewRecord = {
+          id,
+          month,
+          custom: {},
+          sortOrder: monthMaxSortOrder + 1,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        // Nối vào CUỐI mảng (không phải đầu) — mảng cpaReviewRecords vốn đã sắp theo
+        // sortOrder asc (từ GET /api/cpa-review), thêm optimistic vào cuối giữ đúng thứ tự
+        // hiển thị "dòng mới nằm dưới cùng" ngay lập tức, không cần sort lại toàn bộ.
+        set((s) => ({ cpaReviewRecords: [...s.cpaReviewRecords, optimistic] }));
+        api.createCpaReview(optimistic).then(
+          (serverRow) => {
+            set((s) => ({ cpaReviewRecords: s.cpaReviewRecords.map((r) => (r.id === id ? serverRow : r)) }));
+          },
+          (err) => {
+            console.error("[sync:addCpaReviewRow] Tạo dòng thất bại, hoàn tác dòng tạm:", err);
+            set((s) => ({ cpaReviewRecords: s.cpaReviewRecords.filter((r) => r.id !== id) }));
+          }
+        );
+      },
+
+      deleteCpaReviewRow: (rowId) => {
+        set((state) => ({ cpaReviewRecords: state.cpaReviewRecords.filter((r) => r.id !== rowId) }));
+        syncInBackground("deleteCpaReviewRow", api.deleteCpaReview(rowId));
+      },
+
       addCollectingColumn: (label, type, options) => {
         set((state) => {
           const key = uniqueId("clcol");
@@ -1261,6 +1438,32 @@ export const useAppStore = create<AppState>()(
         if (optionId === "pending") return;
         set((state) => ({
           refundYearStatusOptions: state.refundYearStatusOptions.filter((o) => o.id !== optionId),
+        }));
+        syncConfig();
+      },
+
+      // Cùng pattern add/update/removeRefundYearStatusOption ở trên — danh sách Status của
+      // tab "CPA Review" (thêm 2026-08-14, yêu cầu "cấu hình cho phép thêm sửa xóa và chỉnh
+      // màu text, background trong dropbox status"). Không có id nào bị khoá xoá.
+      addCpaReviewStatusOption: (option) => {
+        set((state) => ({
+          cpaReviewStatusOptions: [...state.cpaReviewStatusOptions, { ...option, id: uniqueId("cparstatus") }],
+        }));
+        syncConfig();
+      },
+
+      updateCpaReviewStatusOption: (optionId, patch) => {
+        set((state) => ({
+          cpaReviewStatusOptions: state.cpaReviewStatusOptions.map((o) =>
+            o.id === optionId ? { ...o, ...patch } : o
+          ),
+        }));
+        syncConfig();
+      },
+
+      removeCpaReviewStatusOption: (optionId) => {
+        set((state) => ({
+          cpaReviewStatusOptions: state.cpaReviewStatusOptions.filter((o) => o.id !== optionId),
         }));
         syncConfig();
       },
@@ -1401,6 +1604,60 @@ export const useAppStore = create<AppState>()(
         syncConfig();
       },
 
+      setCpaReviewSelectedMonth: (month) => set({ cpaReviewSelectedMonth: month }),
+
+      connectCpaReviewSheet: async (link, month) => {
+        try {
+          const result = await api.connectCpaReviewSheet(link, month);
+          set((state) => ({
+            cpaReviewSheetConfig: {
+              ...state.cpaReviewSheetConfig,
+              [month]: {
+                sheetId: result.sheetId,
+                gid: result.gid,
+                tabName: result.tabName,
+                nameToUserId: {},
+                connectedAt: new Date().toISOString(),
+                connectedByUserId: get().currentUserId ?? "",
+              },
+            },
+          }));
+          return result;
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Kết nối thất bại" } as const;
+        }
+      },
+      resyncCpaReviewSheet: async (month) => {
+        try {
+          return await api.resyncCpaReviewSheet(month);
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Đồng bộ lại thất bại" } as const;
+        }
+      },
+      updateCpaReviewNameMapping: async (nameToUserId, month) => {
+        try {
+          const result = await api.updateCpaReviewNameMapping(nameToUserId, month);
+          set((state) => {
+            const existing = state.cpaReviewSheetConfig[month];
+            if (!existing) return state;
+            return {
+              cpaReviewSheetConfig: { ...state.cpaReviewSheetConfig, [month]: { ...existing, nameToUserId: result.nameToUserId } },
+            };
+          });
+          return { ok: true } as const;
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Cập nhật thất bại" } as const;
+        }
+      },
+      disconnectCpaReviewSheet: async (month) => {
+        set((state) => {
+          const next = { ...state.cpaReviewSheetConfig };
+          delete next[month];
+          return { cpaReviewSheetConfig: next };
+        });
+        await api.disconnectCpaReviewSheet(month).catch((err) => console.error("disconnectCpaReviewSheet", err));
+      },
+
       // Foreground, cùng lý do sendCpaEmail — gửi có thể fail rõ ràng, cần await + báo
       // lỗi ngay. needsGoogleAuth:true khi server trả "GOOGLE_NOT_CONNECTED" (chưa kết
       // nối Google hoặc refresh_token đã bị server tự xoá do hết hạn/thu hồi).
@@ -1427,6 +1684,35 @@ export const useAppStore = create<AppState>()(
           cases: state.cases.map((c) => (c.id === caseId ? { ...c, sheetSentAt: result.sheetSentAt } : c)),
         }));
         logEdit(caseId, "Gửi dòng Google Sheet", "", action === "manual" ? "Đánh dấu đã gửi (thủ công)" : "Muốn gửi lại");
+      },
+
+      // Payload (custom) giờ dựng ở SERVER (buildCpaReviewCustomFromCase trong route) từ
+      // đúng dữ liệu Case mới nhất trên DB, không dựng ở client nữa — tránh lệch dữ liệu
+      // nếu case vừa được người khác sửa. Cùng route lưu luôn cpaReviewTestSentAt để nút
+      // giữ đúng trạng thái "đã gửi" qua reload, giống sheetSentAt/cpaEmailSentAt.
+      sendCaseRowToCpaReview: async (caseId, reviewYears) => {
+        try {
+          const result = await api.sendCaseRowToCpaReview(caseId, reviewYears);
+          set((s) => ({
+            cases: s.cases.map((c) => (c.id === caseId ? { ...c, cpaReviewTestSentAt: result.cpaReviewTestSentAt } : c)),
+            // Nối vào cuối (dòng trống tiếp theo) — record.sortOrder đã được server tính đúng
+            // (nextAppendCpaReviewSortOrder), mảng vẫn giữ thứ tự sortOrder asc.
+            cpaReviewRecords: [...s.cpaReviewRecords, result.record],
+          }));
+          logEdit(caseId, "Test Sheet (CPA Review)", "", "Đã gửi");
+          return { ok: true } as const;
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Gửi sang tab CPA Review thất bại";
+          return { ok: false, error: message } as const;
+        }
+      },
+
+      markCaseCpaReviewTestSent: async (caseId, action) => {
+        const result = await api.markCaseCpaReviewTestSent(caseId, action);
+        set((state) => ({
+          cases: state.cases.map((c) => (c.id === caseId ? { ...c, cpaReviewTestSentAt: result.cpaReviewTestSentAt } : c)),
+        }));
+        logEdit(caseId, "Test Sheet (CPA Review)", "", action === "manual" ? "Đánh dấu đã gửi (thủ công)" : "Muốn gửi lại");
       },
 
       connectGoogleAccount: () => {
@@ -1594,7 +1880,7 @@ export const useAppStore = create<AppState>()(
     },
     {
       name: "direct-funder-store-v10",
-      version: 27,
+      version: 28,
       migrate: (persisted, version) => {
         const state = persisted as PersistedShape;
         if (!state) return state as unknown as AppState;
@@ -2110,6 +2396,22 @@ export const useAppStore = create<AppState>()(
                   rec.refundYearPendingReason && typeof rec.refundYearPendingReason === "object"
                     ? rec.refundYearPendingReason
                     : {},
+              };
+            });
+          }
+        }
+
+        if (version < 28) {
+          // Cùng lỗi đã gặp ở version 27 nhưng cho refundYearEfileDate (thêm 2026-08-13,
+          // đồng bộ 2 chiều "CPA Review") — case cache cũ thiếu field này khiến
+          // refundYearEfileDate[year] đọc trên `undefined` khi popup "Refund by years" mở.
+          if (Array.isArray(state.cases)) {
+            state.cases = state.cases.map((c) => {
+              const rec = c as Record<string, unknown>;
+              return {
+                ...rec,
+                refundYearEfileDate:
+                  rec.refundYearEfileDate && typeof rec.refundYearEfileDate === "object" ? rec.refundYearEfileDate : {},
               };
             });
           }

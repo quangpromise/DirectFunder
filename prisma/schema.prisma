@@ -98,6 +98,16 @@ model Case {
   /// refundYearStatus — mọi user đăng nhập đều sửa được (xem PATCH /api/cases/[id], field
   /// này không map qua FIELD_TO_COLUMN_KEY nên không bị chặn theo editableBy).
   refundYearPendingReason Json @default("{}")
+  /// Record<năm, string | null> — ngày E-file ISO "YYYY-MM-DD" riêng cho từng năm refund,
+  /// cạnh refundYearStatus — dùng cho đồng bộ 2 chiều "CPA Review" với Google Sheet (xem
+  /// deployment-database-sync.md mục 4.22), sửa qua popup "Refund by years" giống
+  /// refundYearStatus.
+  refundYearEfileDate Json @default("{}")
+  /// Ngày ISO "YYYY-MM-DD" (hiển thị mm/dd/yy) — 3 field mới, chỉ sửa qua popup "Edit Hồ
+  /// sơ" (client-profile-dialog), đặt ngang hàng ngay dưới khối Refund. null = chưa nhập.
+  fcDate             String?
+  processingDate     String?
+  elDate             String?
   /// Thời điểm gần nhất đã "Send row to Google Sheet" (gửi thật hoặc bấm "Mark as sent"
   /// đánh dấu thủ công) — null = chưa gửi/đã bấm "muốn gửi lại". Lưu xuống DB (không chỉ
   /// React state) để nút Send giữ đúng trạng thái xanh (đã gửi) qua reload/deploy lại,
@@ -106,6 +116,9 @@ model Case {
   /// Tương tự sheetSentAt nhưng cho nút "Send mail to CPA" — xem
   /// POST /api/cases/[id]/send-cpa-email.
   cpaEmailSentAt     DateTime?
+  /// Tương tự sheetSentAt/cpaEmailSentAt nhưng cho nút "Test Sheet" (gửi hồ sơ sang tab
+  /// "CPA Review") — xem POST /api/cases/[id]/test-cpa-review-sheet.
+  cpaReviewTestSentAt DateTime?
   /// Thứ tự hiển thị dòng trên bảng Hồ sơ (kéo-thả) — số càng nhỏ hiển thị càng lên trên.
   /// Dùng fractional indexing (giá trị mới = trung bình 2 hàng xóm khi kéo-thả) để không
   /// phải ghi lại toàn bộ bảng mỗi lần đổi vị trí 1 dòng. Hồ sơ mới luôn nhận giá trị âm
@@ -148,6 +161,16 @@ model AppConfig {
   /// với `columns` ở trên, chỉ khác đối tượng áp dụng. null/thiếu = dùng
   /// DEFAULT_COLLECTING_COLUMNS trong rbac.ts.
   collectingColumns  Json?
+  /// Record<monthKey ("YYYY-MM"), CpaReviewSheetConfig> — MỖI THÁNG 1 Sheet/kết nối riêng
+  /// (thêm 2026-08-14, trước đó là 1 object singleton dùng chung mọi tháng). CpaReviewSheetConfig:
+  /// { sheetId, gid, tabName, rowIndex: Record<ssn, số dòng>, webhookSecret,
+  /// nameToUserId: Record<tên trong Sheet, User.id>, connectedAt, connectedByUserId }. Xem
+  /// deployment-database-sync.md mục 4.22. null/thiếu key = tháng đó Admin chưa kết nối.
+  cpaReviewSheetConfig Json?
+  /// SelectOption[] — danh sách trạng thái (Status) tuỳ chỉnh cho tab "CPA Review" (mỗi khối
+  /// năm), Admin thêm/sửa/xoá + đổi màu tự do qua UI (cùng pattern refundYearStatusOptions ở
+  /// trên) — null/thiếu = dùng CPA_REVIEW_STATUS_OPTIONS mặc định trong cpa-review-columns.ts.
+  cpaReviewStatusOptions Json?
   updatedAt          DateTime @updatedAt
 
   @@map("app_config")
@@ -183,6 +206,30 @@ model CollectingRecord {
   updatedAt DateTime @updatedAt
 
   @@map("collecting_records")
+}
+
+/// Bảng "CPA Review" (tab điều hướng riêng, sau Collecting) — bảng dữ liệu kiểu Excel khớp
+/// đúng cấu trúc cột A-AH của 1 Google Sheet tháng thật đã khảo sát, đồng bộ 2 chiều qua
+/// Service Account (xem deployment-database-sync.md mục 4.22). ĐỘC LẬP HOÀN TOÀN với Case
+/// (theo yêu cầu user 2026-08-14: "không liên kết bất cứ gì") — cùng nguyên tắc với
+/// CollectingRecord ở trên: mọi giá trị cột lưu chung trong `custom` (JSON, key cố định
+/// khớp cpa-review-columns.ts, KHÔNG cấu hình được qua UI như Collecting vì cột phải khớp
+/// đúng Sheet). SSN (custom.ssn) là khoá đối chiếu 2 chiều với Sheet — CHỈ DUY NHẤT trong
+/// CÙNG 1 `month` (thêm 2026-08-14), không còn duy nhất toàn bảng vì mỗi tháng là 1 bảng
+/// dữ liệu độc lập (khách quay lại tháng sau vẫn cùng SSN nhưng là 1 dòng mới).
+model CpaReviewRecord {
+  id        String   @id @default(cuid())
+  /// "YYYY-MM" — tháng dữ liệu này thuộc về (chọn qua bộ chọn tháng trên UI). Quyết định
+  /// dòng này hiện trong bảng của tháng nào VÀ đồng bộ với đúng cấu hình Sheet nào trong
+  /// AppConfig.cpaReviewSheetConfig[month].
+  month     String
+  custom    Json     @default("{}")
+  sortOrder Float
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([month])
+  @@map("cpa_review_records")
 }
 
 /// Thông báo trong app (chuông) — trước đây được tạo hoàn toàn ở client (Zustand `set()`),

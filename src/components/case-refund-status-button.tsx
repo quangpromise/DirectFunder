@@ -8,7 +8,8 @@ import { findRefundStatusOption, hasPendingRefundYear, refundYearRows } from "@/
 import { useConfirm } from "@/components/confirm-dialog";
 import { useAppStore } from "@/store/app-store";
 import { useT } from "@/lib/i18n";
-import { darkenHex, withAlpha } from "@/lib/color";
+import { darkenHex, withAlpha, hexToRgba15, rgbaToHex } from "@/lib/color";
+import { ColorSwatchPicker } from "@/components/color-swatch-picker";
 
 const MENU_MARGIN = 8;
 const MENU_WIDTH = 268;
@@ -213,6 +214,46 @@ function PendingReasonInput({
   );
 }
 
+/** Ô chọn ngày E-file riêng từng năm — dùng cho đồng bộ 2 chiều "CPA Review" với Google
+ * Sheet (xem deployment-database-sync.md mục 4.22). Cùng quyền sửa với dropdown trạng
+ * thái năm đó (`editable`), không editable thì chỉ hiện text tĩnh. Commit ngay khi chọn
+ * xong (input type="date" không cần blur như textarea). */
+function EfileDateInput({
+  year,
+  date,
+  editable,
+  onCommit,
+}: {
+  year: string;
+  date: string | null;
+  editable: boolean;
+  onCommit: (date: string | null) => void;
+}) {
+  const t = useT();
+
+  if (!editable) {
+    return (
+      <p className="px-0.5 text-[10px] text-text-faint">
+        {t("refundStatus.efileDate")}: {date || "—"}
+      </p>
+    );
+  }
+
+  return (
+    <label className="flex items-center gap-1 px-0.5 text-[10px] text-text-faint">
+      {t("refundStatus.efileDate")}:
+      <input
+        type="date"
+        value={date ?? ""}
+        onChange={(e) => onCommit(e.target.value || null)}
+        onClick={(e) => e.stopPropagation()}
+        className="rounded border border-border bg-bg-elevated px-1 py-0.5 text-[10px] text-text outline-none focus:border-accent"
+        aria-label={`${t("refundStatus.efileDate")} ${year}`}
+      />
+    </label>
+  );
+}
+
 /** Bảng quản lý danh sách trạng thái (thêm/sửa/xoá/đổi màu) — mở qua nút bánh răng trong
  * popup, chỉ hiện cho tài khoản có quyền (canManage, xem CaseRefundStatusButton). Cùng
  * pattern UI với phần "options" trong ColumnSettingsDialog. Option id "pending" là id đặc
@@ -261,19 +302,11 @@ function RefundStatusOptionsManager({
           const protectedOption = o.id === "pending";
           return (
             <div key={o.id} className="flex items-center gap-2 rounded-lg border border-border bg-bg-elevated px-2 py-1.5">
-              <input
-                type="color"
-                value={o.color}
-                onChange={(e) => onUpdate(o.id, { color: e.target.value })}
-                title={t("col.textColor")}
-                className="h-6 w-6 shrink-0 cursor-pointer rounded border border-border bg-transparent p-0"
-              />
-              <input
-                type="color"
+              <ColorSwatchPicker value={o.color} onChange={(hex) => onUpdate(o.id, { color: hex })} title={t("col.textColor")} />
+              <ColorSwatchPicker
                 value={rgbaToHex(o.bg)}
-                onChange={(e) => onUpdate(o.id, { bg: hexToRgba15(e.target.value) })}
+                onChange={(hex) => onUpdate(o.id, { bg: hexToRgba15(hex) })}
                 title={t("col.bgColor")}
-                className="h-6 w-6 shrink-0 cursor-pointer rounded border border-border bg-transparent p-0"
               />
               <input
                 value={o.label}
@@ -329,11 +362,13 @@ export function CaseRefundStatusButton({
   refunds,
   refundYearStatus,
   refundYearPendingReason,
+  refundYearEfileDate,
   statusOptions,
   editable,
   canManageOptions,
   onChangeStatus,
   onChangeReason,
+  onChangeEfileDate,
   onAddOption,
   onUpdateOption,
   onRemoveOption,
@@ -341,12 +376,15 @@ export function CaseRefundStatusButton({
   refunds: Record<string, number>;
   refundYearStatus: Record<string, RefundYearStatus>;
   refundYearPendingReason: Record<string, string>;
+  /** Ngày E-file riêng từng năm — dùng cho đồng bộ 2 chiều "CPA Review" với Google Sheet. */
+  refundYearEfileDate: Record<string, string | null>;
   statusOptions: SelectOption[];
   editable: boolean;
   /** Admin (manager) — thêm/sửa/xoá trạng thái trong danh sách qua nút bánh răng. */
   canManageOptions: boolean;
   onChangeStatus: (year: string, status: RefundYearStatus) => void;
   onChangeReason: (year: string, reason: string) => void;
+  onChangeEfileDate: (year: string, date: string | null) => void;
   onAddOption: (option: Omit<SelectOption, "id">) => void;
   onUpdateOption: (optionId: string, patch: Partial<Omit<SelectOption, "id">>) => void;
   onRemoveOption: (optionId: string) => void;
@@ -484,6 +522,12 @@ export function CaseRefundStatusButton({
                               onChange={(s) => onChangeStatus(r.year, s)}
                             />
                           </div>
+                          <EfileDateInput
+                            year={r.year}
+                            date={refundYearEfileDate[r.year] ?? null}
+                            editable={canEditNow}
+                            onCommit={(date) => onChangeEfileDate(r.year, date)}
+                          />
                           {r.status === "pending" && (
                             <PendingReasonInput
                               year={r.year}
@@ -504,18 +548,4 @@ export function CaseRefundStatusButton({
         )}
     </span>
   );
-}
-
-function hexToRgba15(hex: string): string {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `rgba(${r},${g},${b},0.15)`;
-}
-
-function rgbaToHex(rgba: string): string {
-  const m = rgba.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-  if (!m) return "#ff9900";
-  const [, r, g, b] = m;
-  return `#${[r, g, b].map((v) => Number(v).toString(16).padStart(2, "0")).join("")}`;
 }

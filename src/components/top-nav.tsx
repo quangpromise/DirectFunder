@@ -4,7 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LogOut, Menu, X, Table2, Users, ShieldCheck, ClipboardList, Coins, ChevronDown } from "lucide-react";
+import { LogOut, Menu, X, Table2, Users, ShieldCheck, ClipboardList, Coins, FileSpreadsheet, ChevronDown } from "lucide-react";
 import { useAppStore, useCurrentUser } from "@/store/app-store";
 import { hasFeature } from "@/lib/rbac";
 import { Avatar } from "@/components/avatar";
@@ -48,6 +48,16 @@ const PRIMARY_NAV: { href: string; labelKey: string; icon: typeof Table2; roles:
     icon: Coins,
     roles: "all",
     feature: "viewCollecting",
+  },
+  // Tab mới (2026-08-14) — bảng riêng khớp cấu trúc Google Sheet "CPA Review" thật (đồng
+  // bộ 2 chiều, xem deployment-database-sync.md mục 4.22), dữ liệu vẫn là CHÍNH Case (khớp
+  // theo SSN), không phải bảng độc lập kiểu Collecting.
+  {
+    href: "/dashboard/cpa-review",
+    labelKey: "nav.cpaReview",
+    icon: FileSpreadsheet,
+    roles: "all",
+    feature: "viewCpaReview",
   },
 ];
 const ADMIN_NAV: { href: string; labelKey: string; icon: typeof Table2; roles: Role[] | "all" }[] = [

@@ -21,6 +21,9 @@ const FIELD_TO_COLUMN_KEY: Record<string, string> = {
   address: "address",
   email: "email",
   refunds: "refunds",
+  fcDate: "fcDate",
+  processingDate: "processingDate",
+  elDate: "elDate",
 };
 
 interface ClientProfilePayload {
@@ -33,6 +36,9 @@ interface ClientProfilePayload {
   address?: string;
   email?: string;
   refunds?: Record<string, number>;
+  fcDate?: string | null;
+  processingDate?: string | null;
+  elDate?: string | null;
 }
 
 /**

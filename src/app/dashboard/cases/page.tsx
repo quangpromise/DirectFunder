@@ -23,6 +23,7 @@ import { DescriptionCell } from "@/components/description-cell";
 import { OrderCell } from "@/components/order-cell";
 import { SendToSheetButton } from "@/components/send-to-sheet-button";
 import { SendCpaEmailDialog } from "@/components/send-cpa-email-dialog";
+import { TestSheetButton } from "@/components/test-sheet-button";
 import { HistoryDialog } from "@/components/history-dialog";
 import { useConfirm } from "@/components/confirm-dialog";
 import { useAlert } from "@/components/alert-dialog";
@@ -248,6 +249,8 @@ export default function CasesPage() {
   const markCpaEmailSent = useAppStore((s) => s.markCpaEmailSent);
   const sendCaseRowToSheet = useAppStore((s) => s.sendCaseRowToSheet);
   const markCaseSheetSent = useAppStore((s) => s.markCaseSheetSent);
+  const sendCaseRowToCpaReview = useAppStore((s) => s.sendCaseRowToCpaReview);
+  const markCaseCpaReviewTestSent = useAppStore((s) => s.markCaseCpaReviewTestSent);
   const connectGoogleAccount = useAppStore((s) => s.connectGoogleAccount);
   const sendClientEmail = useAppStore((s) => s.sendClientEmail);
   const connectMicrosoftAccount = useAppStore((s) => s.connectMicrosoftAccount);
@@ -270,6 +273,7 @@ export default function CasesPage() {
   const updateSsn = useAppStore((s) => s.updateSsn);
   const updateRefundYearStatus = useAppStore((s) => s.updateRefundYearStatus);
   const updateRefundYearPendingReason = useAppStore((s) => s.updateRefundYearPendingReason);
+  const updateRefundYearEfileDate = useAppStore((s) => s.updateRefundYearEfileDate);
   const updateClientProfile = useAppStore((s) => s.updateClientProfile);
   const addDescriptionReply = useAppStore((s) => s.addDescriptionReply);
   const markDescriptionRead = useAppStore((s) => s.markDescriptionRead);
@@ -1042,6 +1046,7 @@ export default function CasesPage() {
               updateSsn={updateSsn}
               updateRefundYearStatus={updateRefundYearStatus}
               updateRefundYearPendingReason={updateRefundYearPendingReason}
+              updateRefundYearEfileDate={updateRefundYearEfileDate}
               updateClientProfile={updateClientProfile}
               addDescriptionReply={addDescriptionReply}
               markDescriptionRead={markDescriptionRead}
@@ -1056,6 +1061,8 @@ export default function CasesPage() {
               sendCaseRowToSheet={sendCaseRowToSheet}
               markCaseSheetSent={markCaseSheetSent}
               connectGoogleAccount={connectGoogleAccount}
+              sendCaseRowToCpaReview={sendCaseRowToCpaReview}
+              markCaseCpaReviewTestSent={markCaseCpaReviewTestSent}
               canSendClientEmailFeature={canSendClientEmailFeature}
               sendClientEmail={sendClientEmail}
               connectMicrosoftAccount={connectMicrosoftAccount}
@@ -1239,6 +1246,7 @@ function RowCells({
   updateSsn,
   updateRefundYearStatus,
   updateRefundYearPendingReason,
+  updateRefundYearEfileDate,
   updateClientProfile,
   addDescriptionReply,
   markDescriptionRead,
@@ -1253,6 +1261,8 @@ function RowCells({
   sendCaseRowToSheet,
   markCaseSheetSent,
   connectGoogleAccount,
+  sendCaseRowToCpaReview,
+  markCaseCpaReviewTestSent,
   canSendClientEmailFeature,
   sendClientEmail,
   connectMicrosoftAccount,
@@ -1301,6 +1311,7 @@ function RowCells({
   updateSsn: (caseId: string, slot: 0 | 1, value: string | null) => void;
   updateRefundYearStatus: (caseId: string, year: string, status: RefundYearStatus) => void;
   updateRefundYearPendingReason: (caseId: string, year: string, reason: string) => void;
+  updateRefundYearEfileDate: (caseId: string, year: string, date: string | null) => void;
   updateClientProfile: (caseId: string, payload: ClientProfilePayload) => Promise<{ ok: true } | { ok: false; error: string }>;
   addDescriptionReply: (caseId: string, authorId: string, text: string) => void;
   markDescriptionRead: (caseId: string, userId: string) => void;
@@ -1327,6 +1338,11 @@ function RowCells({
   ) => Promise<{ ok: true } | { ok: false; error: string; needsGoogleAuth?: boolean }>;
   markCaseSheetSent: (caseId: string, action: "manual" | "clear") => Promise<void>;
   connectGoogleAccount: () => Promise<boolean>;
+  sendCaseRowToCpaReview: (
+    caseId: string,
+    reviewYears: string[]
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
+  markCaseCpaReviewTestSent: (caseId: string, action: "manual" | "clear") => Promise<void>;
   canSendClientEmailFeature: boolean;
   sendClientEmail: (
     caseId: string
@@ -1434,6 +1450,15 @@ function RowCells({
                 markCpaEmailSent={markCpaEmailSent}
               />
             )}
+            <TestSheetButton
+              caseId={row.id}
+              cpaReviewTestSentAt={row.cpaReviewTestSentAt}
+              refunds={row.refunds}
+              confirm={confirm}
+              alertWarn={alertWarn}
+              sendCaseRowToCpaReview={sendCaseRowToCpaReview}
+              markCaseCpaReviewTestSent={markCaseCpaReviewTestSent}
+            />
           </div>
         )}
       </div>
@@ -1553,11 +1578,13 @@ function RowCells({
               refunds={row.refunds ?? {}}
               refundYearStatus={row.refundYearStatus ?? {}}
               refundYearPendingReason={row.refundYearPendingReason ?? {}}
+              refundYearEfileDate={row.refundYearEfileDate ?? {}}
               statusOptions={refundYearStatusOptions}
               editable={canEditRefundStatus}
               canManageOptions={canManageRefundYearStatusOptions}
               onChangeStatus={(year, status) => updateRefundYearStatus(row.id, year, status)}
               onChangeReason={(year, reason) => updateRefundYearPendingReason(row.id, year, reason)}
+              onChangeEfileDate={(year, date) => updateRefundYearEfileDate(row.id, year, date)}
               onAddOption={addRefundYearStatusOption}
               onUpdateOption={updateRefundYearStatusOption}
               onRemoveOption={removeRefundYearStatusOption}

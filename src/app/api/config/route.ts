@@ -2,8 +2,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
 import { hasFeature } from "@/lib/rbac";
-import type { FeaturePermissions } from "@/lib/types";
+import type { CpaReviewSheetConfig, FeaturePermissions } from "@/lib/types";
 import type { Prisma } from "@prisma/client";
+
+/** Lược bỏ webhookSecret khỏi mọi response đọc chung (GET /api/config) — secret chỉ trả
+ * về đúng 1 lần trong response POST /api/config/cpa-review-sheet (connect), nơi Admin
+ * copy vào Apps Script. Đọc lại bí mật này ở đây sẽ lộ cho MỌI user gọi được GET /api/config
+ * (ai đăng nhập cũng gọi được, không riêng người có quyền manageCpaReviewSheet). */
+function redactCpaReviewSheetConfig(raw: unknown): Omit<CpaReviewSheetConfig, "webhookSecret" | "rowIndex"> | null {
+  const config = raw as CpaReviewSheetConfig | null;
+  if (!config?.sheetId) return null;
+  const { webhookSecret: _webhookSecret, rowIndex: _rowIndex, ...rest } = config;
+  void _webhookSecret;
+  void _rowIndex;
+  return rest;
+}
 
 export async function GET() {
   const me = await requireUser();
@@ -23,6 +36,9 @@ export async function GET() {
     clientEmailTemplate: config.clientEmailTemplate,
     refundYearStatusOptions: config.refundYearStatusOptions,
     collectingColumns: config.collectingColumns,
+    cpaReviewStatusOptions: config.cpaReviewStatusOptions,
+    // Chỉ đọc — ghi qua /api/config/cpa-review-sheet (connect/resync/disconnect riêng).
+    cpaReviewSheetConfig: redactCpaReviewSheetConfig(config.cpaReviewSheetConfig),
   });
 }
 
@@ -132,6 +148,14 @@ export async function PUT(request: NextRequest) {
   ) {
     data.collectingColumns = body.collectingColumns;
   }
+  // Cùng cơ chế collectingColumns ở trên — cho phép mọi role được cấp manageCpaReviewSheet
+  // (không chỉ manager) sửa danh sách Status của tab "CPA Review" qua UI riêng trên trang đó.
+  if (
+    "cpaReviewStatusOptions" in body &&
+    hasFeature(existing.featurePermissions as FeaturePermissions, "manageCpaReviewSheet", me.role)
+  ) {
+    data.cpaReviewStatusOptions = body.cpaReviewStatusOptions;
+  }
 
   const config = await prisma.appConfig.update({
     where: { id: "singleton" },
@@ -145,5 +169,6 @@ export async function PUT(request: NextRequest) {
     clientEmailTemplate: config.clientEmailTemplate,
     refundYearStatusOptions: config.refundYearStatusOptions,
     collectingColumns: config.collectingColumns,
+    cpaReviewStatusOptions: config.cpaReviewStatusOptions,
   });
 }

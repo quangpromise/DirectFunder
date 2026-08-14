@@ -54,6 +54,10 @@ export const ASSIGNABLE_FEATURES = [
   "editCollectingColumn",
   "addCollectingRow",
   "deleteCollectingRow",
+  "manageCpaReviewSheet",
+  "viewCpaReview",
+  "addCpaReviewRow",
+  "deleteCpaReviewRow",
 ] as const;
 export type FeatureKey = (typeof ASSIGNABLE_FEATURES)[number];
 
@@ -75,6 +79,10 @@ export const FEATURE_LABEL: Record<Language, Record<FeatureKey, string>> = {
     editCollectingColumn: "Sửa / xóa cột (tab Collecting)",
     addCollectingRow: "Thêm dòng mới (tab Collecting)",
     deleteCollectingRow: "Xóa dòng (tab Collecting)",
+    manageCpaReviewSheet: "Cấu hình đồng bộ Google Sheet CPA Review",
+    viewCpaReview: "Xem tab CPA Review",
+    addCpaReviewRow: "Thêm dòng mới (tab CPA Review)",
+    deleteCpaReviewRow: "Xóa dòng (tab CPA Review)",
   },
   en: {
     addColumn: "Add new column",
@@ -93,6 +101,10 @@ export const FEATURE_LABEL: Record<Language, Record<FeatureKey, string>> = {
     editCollectingColumn: "Edit / delete columns (Collecting tab)",
     addCollectingRow: "Add new row (Collecting tab)",
     deleteCollectingRow: "Delete row (Collecting tab)",
+    manageCpaReviewSheet: "Configure CPA Review Google Sheet sync",
+    viewCpaReview: "View CPA Review tab",
+    addCpaReviewRow: "Add new row (CPA Review tab)",
+    deleteCpaReviewRow: "Delete row (CPA Review tab)",
   },
 };
 
@@ -128,6 +140,25 @@ export type DateFormat = "iso" | "mdy2";
  * tới khi ghi — an toàn tuyệt đối cho dropdown/công thức/định dạng Admin đã cấu hình sẵn ở
  * các cột đó trên Sheet thật (khác thiết kế cũ dùng "Để trống" chèn giữ chỗ theo vị trí,
  * dễ ghi đè nhầm nếu tính sai thứ tự hoặc Sheet tự mở rộng validation sang dòng mới). */
+/** Cấu hình đồng bộ 2 chiều "CPA Review" (xem deployment-database-sync.md mục 4.22) —
+ * mapping cột CỐ ĐỊNH (không cấu hình qua UI như GoogleSheetColumnMapping), chỉ dán link
+ * Sheet + chọn tab (gid) 1 lần. `rowIndex` cache số dòng theo SSN, tự chữa nếu lệch.
+ * `nameToUserId` ánh xạ tên Processor/Agent xuất hiện trong Sheet (thường viết tắt, vd
+ * "Toan") sang đúng User.id trong app — Admin xác nhận/sửa qua UI sau lần quét đầu. */
+export interface CpaReviewSheetConfig {
+  sheetId: string;
+  gid: string;
+  /** Tên tab thật (vd "Aug26") tra ra từ `gid` lúc kết nối — dùng cho mọi range Sheets
+   * API (range tham chiếu theo tên tab, không phải gid). Nếu Admin đổi tên tab sau khi
+   * kết nối, cần ngắt kết nối rồi dán lại link để tra lại tên mới. */
+  tabName: string;
+  rowIndex: Record<string, number>;
+  webhookSecret: string;
+  nameToUserId: Record<string, string>;
+  connectedAt: string;
+  connectedByUserId: string;
+}
+
 export interface GoogleSheetColumnMapping {
   /** id cột dữ liệu — ColumnDef.id thật, hoặc id ảo (send_date/năm refund cụ thể/CPA
    * review money) — xem sheet-row-columns.ts. */
@@ -338,6 +369,9 @@ export interface CaseRecord {
   sheetSentAt: string | null;
   /** Tương tự sheetSentAt nhưng cho nút "Send mail to CPA" — xem SendCpaEmailDialog. */
   cpaEmailSentAt: string | null;
+  /** Tương tự sheetSentAt/cpaEmailSentAt nhưng cho nút "Test Sheet" (gửi hồ sơ sang tab
+   * "CPA Review") — xem TestSheetButton. */
+  cpaReviewTestSentAt: string | null;
   /** Thứ tự hiển thị dòng trên bảng Hồ sơ (kéo-thả) — số càng nhỏ hiển thị càng lên trên.
    * Xem ghi chú fractional indexing ở reorderCase (app-store.ts) và Case.sortOrder
    * (schema.prisma). */
@@ -350,6 +384,16 @@ export interface CaseRecord {
    * "pending". Khác refundYearStatus: KHÔNG giới hạn theo role, mọi user đăng nhập đều
    * sửa được (xem PATCH /api/cases/[id]). */
   refundYearPendingReason: Record<string, string>;
+  /** Ngày E-file ISO "YYYY-MM-DD" riêng cho từng năm refund (key = năm) — dùng cho đồng
+   * bộ 2 chiều "CPA Review" với Google Sheet, sửa qua popup "Refund by years" cạnh
+   * Status/Số tiền của mỗi năm. */
+  refundYearEfileDate: Record<string, string | null>;
+  /** 3 ô ngày ISO "YYYY-MM-DD" (hiển thị mm/dd/yy) đặt ngang hàng ngay dưới khối Refund
+   * trong popup "Edit Hồ sơ" — chỉ sửa được ở đó, không hiển thị như cột riêng trong bảng
+   * chính (giống phone2/email). null = chưa nhập. Thêm 2026-08-14. */
+  fcDate: string | null;
+  processingDate: string | null;
+  elDate: string | null;
   /** Id người tạo hồ sơ này — dùng để Agent Leader/Processor Leader tự sửa được hồ sơ
    * do chính mình thêm vào, kể cả khi chưa gán cho thành viên nào trong nhóm. */
   createdBy: string | null;
@@ -369,6 +413,21 @@ export interface CollectingRecord {
   createdAt: string;
   updatedAt: string;
 }
+
+/** Bảng "CPA Review" — độc lập hoàn toàn với Case (xem prisma model `CpaReviewRecord`,
+ * src/lib/cpa-review-columns.ts cho cấu trúc cột cố định). */
+export interface CpaReviewRecord {
+  id: string;
+  /** "YYYY-MM" — tháng dữ liệu này thuộc về, xem bộ chọn tháng trên tab CPA Review. */
+  month: string;
+  custom: Record<string, string | number | boolean | null>;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Record<monthKey ("YYYY-MM"), CpaReviewSheetConfig> — mỗi tháng 1 kết nối Sheet riêng. */
+export type CpaReviewSheetConfigMap = Record<string, CpaReviewSheetConfig>;
 
 /** Lịch sử xóa hồ sơ — lưu lại toàn bộ snapshot của dòng đã xóa để có thể tra cứu/kiểm tra sau này. */
 export interface DeletedRowRecord {

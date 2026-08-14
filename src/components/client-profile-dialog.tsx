@@ -95,6 +95,9 @@ export function ClientProfileDialog({
   const [address, setAddress] = useState(caseRecord.address);
   const [email, setEmail] = useState(caseRecord.email);
   const [refundsDraft, setRefundsDraft] = useState<Record<string, string>>(refundsToDraft(caseRecord.refunds));
+  const [fcDate, setFcDate] = useState(caseRecord.fcDate);
+  const [processingDate, setProcessingDate] = useState(caseRecord.processingDate);
+  const [elDate, setElDate] = useState(caseRecord.elDate);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const t = useT();
@@ -117,6 +120,9 @@ export function ClientProfileDialog({
     setAddress(caseRecord.address);
     setEmail(caseRecord.email);
     setRefundsDraft(refundsToDraft(caseRecord.refunds));
+    setFcDate(caseRecord.fcDate);
+    setProcessingDate(caseRecord.processingDate);
+    setElDate(caseRecord.elDate);
     setError("");
     setOpen(true);
   }
@@ -165,6 +171,9 @@ export function ClientProfileDialog({
     if (canEdit("address")) payload.address = address;
     if (canEdit("email")) payload.email = email;
     if (canEdit("refunds")) payload.refunds = draftToRefunds(refundsDraft);
+    if (canEdit("fcDate")) payload.fcDate = fcDate;
+    if (canEdit("processingDate")) payload.processingDate = processingDate;
+    if (canEdit("elDate")) payload.elDate = elDate;
 
     setSaving(true);
     setError("");
@@ -411,6 +420,42 @@ export function ClientProfileDialog({
                     <p className="mt-1.5 text-xs text-text-faint">
                       {t("clientProfile.summary", { case: previewCaseCount, money: previewMoney.toLocaleString("en-US") })}
                     </p>
+                  </div>
+
+                  {/* 3 ô ngày mới, nằm ngang ngay dưới khối Refund (thêm 2026-08-14) —
+                      cùng type="date" native như DOB ở trên (nhất quán trong dialog này),
+                      hiển thị theo định dạng khu vực trình duyệt (mm/dd/yy ở en-US). */}
+                  <div className="grid grid-cols-3 gap-2.5">
+                    <div>
+                      <label className="mb-0.5 block text-[11px] text-text-dim">{t("clientProfile.fcDate")}</label>
+                      <input
+                        type="date"
+                        value={fcDate ?? ""}
+                        disabled={!canEdit("fcDate")}
+                        onChange={(e) => setFcDate(e.target.value || null)}
+                        className={inputCls}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-0.5 block text-[11px] text-text-dim">{t("clientProfile.processingDate")}</label>
+                      <input
+                        type="date"
+                        value={processingDate ?? ""}
+                        disabled={!canEdit("processingDate")}
+                        onChange={(e) => setProcessingDate(e.target.value || null)}
+                        className={inputCls}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-0.5 block text-[11px] text-text-dim">{t("clientProfile.elDate")}</label>
+                      <input
+                        type="date"
+                        value={elDate ?? ""}
+                        disabled={!canEdit("elDate")}
+                        onChange={(e) => setElDate(e.target.value || null)}
+                        className={inputCls}
+                      />
+                    </div>
                   </div>
                 </div>
               </div>

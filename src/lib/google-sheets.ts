@@ -1,4 +1,5 @@
 import { google } from "googleapis";
+import { columnIndexToLetter } from "./spreadsheet-letters";
 
 /**
  * Google Sheets API qua OAuth2 THEO TỪNG USER (không phải 1 Service Account chung) —
@@ -83,7 +84,7 @@ function isInvalidGrantError(err: unknown): boolean {
   return message.includes("invalid_grant");
 }
 
-function mapSheetsError(err: unknown): string {
+export function mapSheetsError(err: unknown): string {
   const e = err as
     | { code?: number; response?: { data?: { error?: { status?: string; message?: string } } }; message?: string }
     | undefined;
@@ -109,16 +110,8 @@ const SKIP_LEADING_ROWS = 3;
 /** Giới hạn số dòng quét tìm dòng trống — đủ lớn cho 1 tab theo tháng, tránh quét vô hạn. */
 const BLANK_ROW_SCAN_LIMIT = 2000;
 
-function columnIndexToLetter(index: number): string {
-  let n = index + 1;
-  let letters = "";
-  while (n > 0) {
-    const rem = (n - 1) % 26;
-    letters = String.fromCharCode(65 + rem) + letters;
-    n = Math.floor((n - 1) / 26);
-  }
-  return letters;
-}
+export { columnIndexToLetter } from "./spreadsheet-letters";
+
 
 /** Quét cột A-F (bounded, bắt đầu từ `SKIP_LEADING_ROWS + 1` — luôn bỏ qua các dòng đầu)
  * — trả về dòng ĐẦU TIÊN có cả 6 cột A-F trống (đã tồn tại sẵn trên Sheet), hoặc nếu
@@ -144,12 +137,30 @@ async function findTargetRow(
   return startRow + rows.length;
 }
 
+/** Tra gid (số) của 1 tab theo tên — batchUpdate (vd updateCells ghi Note) cần gid, không
+ * nhận tên tab như values.update/get. Dùng chung cho ensureRowExists lẫn writeCellNotes. */
+export async function resolveSheetGid(
+  sheets: ReturnType<typeof google.sheets>,
+  spreadsheetId: string,
+  tabName: string
+): Promise<number> {
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId,
+    fields: "sheets.properties(sheetId,title,gridProperties)",
+  });
+  const sheetMeta = meta.data.sheets?.find((s) => s.properties?.title === tabName);
+  const gid = sheetMeta?.properties?.sheetId;
+  if (gid === undefined || gid === null) {
+    throw new Error(`Không tìm thấy tab "${tabName}" trên Google Sheet.`);
+  }
+  return gid;
+}
+
 /** Đảm bảo Sheet có đủ số dòng để ghi vào `targetRow` — values.update/batchUpdate KHÔNG
  * tự mở rộng grid như values.append+INSERT_ROWS, nên phải tự kiểm tra + mở rộng tay bằng
  * appendDimension nếu `targetRow` vượt quá rowCount hiện tại (trường hợp hiếm, sheet đã
- * dùng hết số dòng có sẵn). Trả về sheetId dạng số (gid) — batchUpdate cần gid, không nhận
- * tên tab. */
-async function ensureRowExists(
+ * dùng hết số dòng có sẵn). */
+export async function ensureRowExists(
   sheets: ReturnType<typeof google.sheets>,
   spreadsheetId: string,
   tabName: string,
@@ -170,6 +181,49 @@ async function ensureRowExists(
     spreadsheetId,
     requestBody: {
       requests: [{ appendDimension: { sheetId: gid, dimension: "ROWS", length: targetRow - rowCount } }],
+    },
+  });
+}
+
+/** 1 ô cần ghi/xoá NOTE thật của Google Sheets (chuột phải ô → Insert note) — KHÁC hẳn giá
+ * trị ô (`CellWrite`), dùng `spreadsheets.values.update` không ghi được Note, bắt buộc phải
+ * qua `batchUpdate` với request `updateCells` + `fields: "note"`. Thêm 2026-08-14 cho tính
+ * năng đồng bộ 2 chiều ghi chú ("insert note") cạnh ô "Ngày" mỗi năm ở tab CPA Review. */
+export interface NoteWrite {
+  /** Chỉ số cột 0-based (A=0), khớp cách CPA_REVIEW_SHEET_COLUMN_MAP đang dùng. */
+  columnIndex: number;
+  /** "" để XOÁ note hiện có (Sheets API coi note rỗng = không có note). */
+  note: string;
+}
+
+/** Ghi/xoá NOTE (không phải giá trị) cho các ô đã chỉ định ở `targetRow` — mỗi ô 1 request
+ * `updateCells` riêng trong CÙNG 1 batchUpdate, chỉ đụng đúng field "note", không ảnh hưởng
+ * giá trị/định dạng ô. */
+export async function writeCellNotes(
+  sheets: ReturnType<typeof google.sheets>,
+  spreadsheetId: string,
+  tabName: string,
+  targetRow: number,
+  notes: NoteWrite[]
+): Promise<void> {
+  if (notes.length === 0) return;
+  const gid = await resolveSheetGid(sheets, spreadsheetId, tabName);
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: notes.map((n) => ({
+        updateCells: {
+          range: {
+            sheetId: gid,
+            startRowIndex: targetRow - 1,
+            endRowIndex: targetRow,
+            startColumnIndex: n.columnIndex,
+            endColumnIndex: n.columnIndex + 1,
+          },
+          rows: [{ values: [{ note: n.note || null }] }],
+          fields: "note",
+        },
+      })),
     },
   });
 }
@@ -211,7 +265,7 @@ async function writeCellGroup(
  * ghi riêng theo `isFormula` vì 1 lệnh batchUpdate/update chỉ nhận đúng 1 valueInputOption
  * áp dụng cho mọi ô trong lệnh đó — không trộn RAW (dữ liệu thường) và USER_ENTERED (công
  * thức, vd HYPERLINK cho Client Name) chung 1 lệnh được. */
-async function writeCells(
+export async function writeCells(
   sheets: ReturnType<typeof google.sheets>,
   spreadsheetId: string,
   tabName: string,

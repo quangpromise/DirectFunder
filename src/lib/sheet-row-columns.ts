@@ -110,6 +110,10 @@ export function getColumnValue(
     if (col.id === CHECK_INITIAL_COLUMN_ID) return summarizeCheckInitial(value);
     if (col.type === "date" && typeof value === "string") return formatDateValue(value, dateFormat);
     if (col.type === "currency" && typeof value === "number") return value;
+    if (col.type === "select" && typeof value === "string") {
+      const opt = col.options?.find((o) => o.id === value);
+      return opt ? translateOptionLabel(language, opt.id, opt.label) : value;
+    }
     return String(value);
   }
 

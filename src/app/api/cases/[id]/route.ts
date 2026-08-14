@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
 import { canEditCase, canEditColumn, hasFeature } from "@/lib/rbac";
 import { getFullName, primarySsn } from "@/lib/client-name";
+import { todayIsoDate } from "@/lib/date-format";
 import { broadcastCaseChanged, broadcastNotification } from "@/lib/pusher-server";
 import { toNotificationRecord } from "@/app/api/notifications/route";
 import type { ClientNameEntry, ColumnDef, FeaturePermissions, OrderRecord } from "@/lib/types";
@@ -39,6 +40,8 @@ const FIELD_TO_COLUMN_KEY: Record<string, string> = {
   // Dùng chung nguồn phân quyền với cột ẩn "refunds" (ClientProfileDialog) — trạng thái
   // xử lý từng năm gắn liền với refund nên hợp lý để cùng 1 nhóm role sửa được.
   refundYearStatus: "refunds",
+  // Cùng nhóm quyền với refundYearStatus (gắn liền với refund từng năm).
+  refundYearEfileDate: "refunds",
 };
 
 const ALLOWED_FIELDS = new Set([
@@ -62,6 +65,7 @@ const ALLOWED_FIELDS = new Set([
   "sortOrder",
   "refundYearStatus",
   "refundYearPendingReason",
+  "refundYearEfileDate",
 ]);
 
 export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/cases/[id]">) {
@@ -152,7 +156,29 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/cases/
       data.refundYearPendingReason = merged as Prisma.InputJsonValue;
       continue;
     }
+    if (field === "refundYearEfileDate" && value && typeof value === "object") {
+      const existing = await prisma.case.findUnique({ where: { id }, select: { refundYearEfileDate: true } });
+      const merged = {
+        ...((existing?.refundYearEfileDate as Record<string, unknown>) ?? {}),
+        ...(value as Record<string, unknown>),
+      };
+      data.refundYearEfileDate = merged as Prisma.InputJsonValue;
+      continue;
+    }
     (data as Record<string, unknown>)[field] = value;
+  }
+
+  // "Processing Date" tự động lấy theo LẦN GẦN NHẤT status thật sự chuyển sang "processing"
+  // (yêu cầu 2026-08-14) — chỉ set khi đây là 1 lần CHUYỂN TRẠNG THÁI thật (status cũ khác
+  // "processing"), không ghi đè mỗi lần chọn lại đúng status đang có sẵn (vd double-click
+  // dropdown). Đây là side-effect tự động (giống money/caseLabel tự tính từ refunds ở
+  // client-profile route) nên KHÔNG qua check editableBy riêng của cột "processingDate" —
+  // đã được phép sửa "status" (kiểm tra ở vòng lặp trên) là đủ điều kiện.
+  if (data.status === "processing") {
+    const current = await prisma.case.findUnique({ where: { id }, select: { status: true } });
+    if (current && current.status !== "processing") {
+      data.processingDate = todayIsoDate();
+    }
   }
 
   if (Object.keys(data).length === 0) {
@@ -241,5 +267,6 @@ export async function DELETE(request: NextRequest, ctx: RouteContext<"/api/cases
   const { id } = await ctx.params;
   await prisma.case.delete({ where: { id } });
   await broadcastCaseChanged(id, request.headers.get("x-pusher-socket-id"));
+
   return NextResponse.json({ ok: true });
 }

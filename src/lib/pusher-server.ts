@@ -12,6 +12,7 @@ import Pusher from "pusher";
  */
 
 const CASES_CHANNEL = "private-cases";
+const CPA_REVIEW_CHANNEL = "private-cpa-review";
 
 function notificationChannel(userId: string): string {
   return `private-notifications-${userId}`;
@@ -59,6 +60,16 @@ export async function broadcastCaseChanged(caseId: string, socketId: string | nu
   await safeTrigger(CASES_CHANNEL, "case:changed", { caseId }, socketId);
 }
 
+/** Tín hiệu RỖNG tương tự broadcastCaseChanged nhưng cho bảng "CPA Review" (độc lập với
+ * Case) — cần riêng vì mọi thay đổi tới bảng này (kể cả từ webhook Google Sheet, xem
+ * src/app/api/cpa-review-sheet/webhook/route.ts) trước đây KHÔNG bắn tín hiệu gì, khiến
+ * các tab trình duyệt khác đang mở không bao giờ biết để tự refetch — chỉ thấy dữ liệu
+ * mới sau khi tự F5. `socketId` truyền `null` khi bắn từ webhook (không có Pusher
+ * socket của trình duyệt nào để loại trừ). */
+export async function broadcastCpaReviewChanged(recordId: string, socketId: string | null): Promise<void> {
+  await safeTrigger(CPA_REVIEW_CHANNEL, "cpaReview:changed", { recordId }, socketId);
+}
+
 /** Thông báo thật (Notification row đầy đủ) — an toàn để gửi thẳng vì luôn "địa chỉ hoá"
  * đúng 1 người nhận (kênh riêng theo userId, chỉ user đó auth được — xem
  * src/app/api/pusher/auth/route.ts), không phải kênh chung. */
@@ -70,4 +81,4 @@ export async function broadcastNotification(
   await safeTrigger(notificationChannel(toUserId), "notification:new", notification, socketId);
 }
 
-export { CASES_CHANNEL, notificationChannel, getPusherServer };
+export { CASES_CHANNEL, CPA_REVIEW_CHANNEL, notificationChannel, getPusherServer };

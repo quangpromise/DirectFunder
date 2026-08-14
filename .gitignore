@@ -35,6 +35,11 @@ dev-server.log
 .env*
 !.env.example
 
+# Google Cloud service account key files (tải về từ Cloud Console, KHÔNG commit) — xem
+# .claude/rules/deployment-database-sync.md mục 4.22.
+*.iam.gserviceaccount.com.json
+direct-funder-*.json
+
 # vercel
 .vercel
 

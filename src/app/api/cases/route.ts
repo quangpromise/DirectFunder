@@ -33,9 +33,14 @@ export function toCaseRecord(row: {
   custom: Prisma.JsonValue;
   sheetSentAt: Date | null;
   cpaEmailSentAt: Date | null;
+  cpaReviewTestSentAt: Date | null;
   sortOrder: number;
   refundYearStatus: Prisma.JsonValue;
   refundYearPendingReason: Prisma.JsonValue;
+  refundYearEfileDate: Prisma.JsonValue;
+  fcDate: string | null;
+  processingDate: string | null;
+  elDate: string | null;
   createdAt: Date;
   updatedAt: Date;
 }): CaseRecord {
@@ -66,9 +71,14 @@ export function toCaseRecord(row: {
     custom: row.custom as unknown as CaseRecord["custom"],
     sheetSentAt: row.sheetSentAt ? row.sheetSentAt.toISOString() : null,
     cpaEmailSentAt: row.cpaEmailSentAt ? row.cpaEmailSentAt.toISOString() : null,
+    cpaReviewTestSentAt: row.cpaReviewTestSentAt ? row.cpaReviewTestSentAt.toISOString() : null,
     sortOrder: row.sortOrder,
     refundYearStatus: (row.refundYearStatus as unknown as CaseRecord["refundYearStatus"]) ?? {},
     refundYearPendingReason: (row.refundYearPendingReason as unknown as CaseRecord["refundYearPendingReason"]) ?? {},
+    refundYearEfileDate: (row.refundYearEfileDate as unknown as CaseRecord["refundYearEfileDate"]) ?? {},
+    fcDate: row.fcDate,
+    processingDate: row.processingDate,
+    elDate: row.elDate,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -165,6 +175,10 @@ export async function POST(request: NextRequest) {
       sortOrder: body.sortOrder ?? -Date.now(),
       refundYearStatus: (body.refundYearStatus ?? {}) as unknown as Prisma.InputJsonValue,
       refundYearPendingReason: (body.refundYearPendingReason ?? {}) as unknown as Prisma.InputJsonValue,
+      refundYearEfileDate: (body.refundYearEfileDate ?? {}) as unknown as Prisma.InputJsonValue,
+      fcDate: body.fcDate ?? null,
+      processingDate: body.processingDate ?? null,
+      elDate: body.elDate ?? null,
     };
   } else {
     const columns = (config?.columns as ColumnDef[] | undefined) ?? [];
@@ -202,6 +216,10 @@ export async function POST(request: NextRequest) {
       sortOrder: -Date.now(),
       refundYearStatus: {},
       refundYearPendingReason: {},
+      refundYearEfileDate: {},
+      fcDate: null,
+      processingDate: null,
+      elDate: null,
     };
   }
 

@@ -5,6 +5,8 @@ import type {
   CollectingRecord,
   ColumnDef,
   CpaEmailDefaults,
+  CpaReviewRecord,
+  CpaReviewSheetConfig,
   DeletedRowRecord,
   EditHistoryRecord,
   FeaturePermissions,
@@ -93,6 +95,16 @@ export const api = {
     }),
   deleteCollecting: (rowId: string) => request<{ ok: true }>(`/api/collecting/${rowId}`, { method: "DELETE" }),
 
+  listCpaReview: () => request<CpaReviewRecord[]>("/api/cpa-review"),
+  createCpaReview: (row: CpaReviewRecord) =>
+    request<CpaReviewRecord>("/api/cpa-review", { method: "POST", body: JSON.stringify(row) }),
+  patchCpaReview: (rowId: string, patch: Partial<CpaReviewRecord>) =>
+    request<{ id: string; updatedAt: string }>(`/api/cpa-review/${rowId}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
+  deleteCpaReview: (rowId: string) => request<{ ok: true }>(`/api/cpa-review/${rowId}`, { method: "DELETE" }),
+
   getConfig: () =>
     request<{
       columns: ColumnDef[];
@@ -103,6 +115,8 @@ export const api = {
       clientEmailTemplate: ClientEmailTemplate | null;
       refundYearStatusOptions: SelectOption[] | null;
       collectingColumns: ColumnDef[] | null;
+      cpaReviewStatusOptions: SelectOption[] | null;
+      cpaReviewSheetConfig: Record<string, Omit<CpaReviewSheetConfig, "webhookSecret" | "rowIndex">> | null;
     }>("/api/config"),
   putConfig: (
     columns: ColumnDef[],
@@ -111,7 +125,8 @@ export const api = {
     googleSheetConfig?: GoogleSheetConfig,
     clientEmailTemplate?: ClientEmailTemplate,
     refundYearStatusOptions?: SelectOption[],
-    collectingColumns?: ColumnDef[]
+    collectingColumns?: ColumnDef[],
+    cpaReviewStatusOptions?: SelectOption[]
   ) =>
     request<{
       columns: ColumnDef[];
@@ -121,6 +136,7 @@ export const api = {
       clientEmailTemplate: ClientEmailTemplate | null;
       refundYearStatusOptions: SelectOption[] | null;
       collectingColumns: ColumnDef[] | null;
+      cpaReviewStatusOptions: SelectOption[] | null;
     }>("/api/config", {
       method: "PUT",
       body: JSON.stringify({
@@ -131,6 +147,7 @@ export const api = {
         googleSheetConfig,
         clientEmailTemplate,
         refundYearStatusOptions,
+        cpaReviewStatusOptions,
       }),
     }),
 
@@ -181,6 +198,22 @@ export const api = {
       body: JSON.stringify({ [action]: true }),
     }),
 
+  /** Nút "Test Sheet" — tạo 1 dòng mới trong tab CPA Review (tháng hiện tại) từ hồ sơ này,
+   * xem POST /api/cases/[id]/test-cpa-review-sheet. */
+  sendCaseRowToCpaReview: (caseId: string, reviewYears: string[]) =>
+    request<{ ok: true; cpaReviewTestSentAt: string; record: CpaReviewRecord }>(
+      `/api/cases/${caseId}/test-cpa-review-sheet`,
+      { method: "POST", body: JSON.stringify({ reviewYears }) }
+    ),
+
+  /** Tương tự markCaseSheetSent nhưng cho nút "Test Sheet" — dùng chung route
+   * POST /api/cases/[id]/test-cpa-review-sheet, phân biệt qua body. */
+  markCaseCpaReviewTestSent: (caseId: string, action: "manual" | "clear") =>
+    request<{ ok: true; cpaReviewTestSentAt: string | null }>(`/api/cases/${caseId}/test-cpa-review-sheet`, {
+      method: "POST",
+      body: JSON.stringify({ [action]: true }),
+    }),
+
   /** Gửi email mẫu cố định (Admin cấu hình) cho khách hàng của 1 hồ sơ — xem POST
    * /api/cases/[id]/send-client-email. Lỗi "MICROSOFT_NOT_CONNECTED" (HTTP 428, xem
    * request() ném ApiError với message này) báo hiệu UI cần mở popup kết nối Outlook trước
@@ -207,8 +240,42 @@ export const api = {
     request<RuleRecord>(`/api/rules/${ruleId}`, { method: "PATCH", body: JSON.stringify({ content }) }),
   deleteRule: (ruleId: string) => request<RuleRecord>(`/api/rules/${ruleId}`, { method: "DELETE" }),
 
-  // Lịch sử chỉnh sửa/xoá — server là nguồn thật DUY NHẤT (2026-08-13), mọi user xem được
-  // toàn bộ, không lọc theo người xem (xem GET /api/history/edits|deletions).
+  /** Kết nối Sheet CPA Review (dán link) — NHẬP TOÀN BỘ dòng có SSN trong Sheet thành
+   * CpaReviewRecord mới (bảng độc lập, không có Case sẵn để đối chiếu). Trả về
+   * webhookSecret + đoạn Apps Script mẫu ĐÚNG 1 LẦN duy nhất lúc này (không lấy lại được
+   * sau, GET /api/config lược bỏ secret) — xem POST /api/config/cpa-review-sheet. */
+  connectCpaReviewSheet: (link: string, month: string) =>
+    request<{
+      ok: true;
+      month: string;
+      sheetId: string;
+      gid: string;
+      tabName: string;
+      importedCount: number;
+      distinctNames: string[];
+      webhookSecret: string;
+      webhookUrl: string;
+      appsScript: string;
+    }>("/api/config/cpa-review-sheet", { method: "POST", body: JSON.stringify({ action: "connect", link, month }) }),
+  /** Đẩy lại toàn bộ record của 1 tháng lên Sheet CPA Review đã kết nối tháng đó — dùng khi
+   * nghi ngờ rowIndex cache bị lệch. */
+  resyncCpaReviewSheet: (month: string) =>
+    request<{ ok: true; pushed: number }>("/api/config/cpa-review-sheet", {
+      method: "POST",
+      body: JSON.stringify({ action: "resync", month }),
+    }),
+  updateCpaReviewNameMapping: (nameToUserId: Record<string, string>, month: string) =>
+    request<{ ok: true; nameToUserId: Record<string, string> }>("/api/config/cpa-review-sheet", {
+      method: "PATCH",
+      body: JSON.stringify({ nameToUserId, month }),
+    }),
+  disconnectCpaReviewSheet: (month: string) =>
+    request<{ ok: true }>(`/api/config/cpa-review-sheet?month=${encodeURIComponent(month)}`, { method: "DELETE" }),
+  /** Cho popup "Hướng dẫn" trên tab CPA Review — email Service Account để Admin dán vào ô
+   * Share Sheet, không phải bí mật. */
+  getCpaReviewSyncInfo: () =>
+    request<{ serviceAccountConfigured: boolean; serviceAccountEmail: string | null }>("/api/config/cpa-review-sheet"),
+
   listEditHistory: () => request<EditHistoryRecord[]>("/api/history/edits"),
   createEditHistoryEntry: (entry: Omit<EditHistoryRecord, "id" | "editedByUserId" | "editedAt">) =>
     request<EditHistoryRecord>("/api/history/edits", { method: "POST", body: JSON.stringify(entry) }),
@@ -227,6 +294,9 @@ export interface ClientProfilePayload {
   address?: string;
   email?: string;
   refunds?: Record<string, number>;
+  fcDate?: string | null;
+  processingDate?: string | null;
+  elDate?: string | null;
 }
 
 /** Gọi API nền, không chặn UI (các action Zustand vẫn cập nhật local state ngay lập

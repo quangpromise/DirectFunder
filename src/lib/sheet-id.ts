@@ -10,3 +10,11 @@ export function extractSheetId(input: string): string {
   const match = trimmed.match(/\/d\/([a-zA-Z0-9-_]+)/);
   return match ? match[1] : trimmed;
 }
+
+/** Tách gid (số định danh tab) từ URL Google Sheet (vd "...#gid=1638645126" hoặc
+ * "...?gid=75221029&..." -> "75221029") — null nếu không tìm thấy (URL trỏ tab đầu tiên,
+ * gid mặc định "0"). */
+export function extractGid(input: string): string | null {
+  const match = input.match(/[?#&]gid=(\d+)/);
+  return match ? match[1] : null;
+}

@@ -7,7 +7,9 @@ import { ColumnDef, ROLE_LABEL, Role, SelectOption } from "@/lib/types";
 import { ASSIGNABLE_ROLES } from "@/lib/rbac";
 import { OptionBadge } from "@/components/option-badge";
 import { useConfirm } from "@/components/confirm-dialog";
+import { ColorSwatchPicker } from "@/components/color-swatch-picker";
 import { useT, useLanguage } from "@/lib/i18n";
+import { hexToRgba15, rgbaToHex } from "@/lib/color";
 
 export function ColumnSettingsDialog({
   column,
@@ -160,19 +162,15 @@ export function ColumnSettingsDialog({
                           key={o.id}
                           className="flex items-center gap-2 rounded-lg border border-border bg-bg-elevated px-2 py-1.5"
                         >
-                          <input
-                            type="color"
+                          <ColorSwatchPicker
                             value={o.color}
-                            onChange={(e) => onUpdateOption(o.id, { color: e.target.value })}
+                            onChange={(hex) => onUpdateOption(o.id, { color: hex })}
                             title={t("col.textColor")}
-                            className="h-6 w-6 shrink-0 cursor-pointer rounded border border-border bg-transparent p-0"
                           />
-                          <input
-                            type="color"
+                          <ColorSwatchPicker
                             value={rgbaToHex(o.bg)}
-                            onChange={(e) => onUpdateOption(o.id, { bg: hexToRgba15(e.target.value) })}
+                            onChange={(hex) => onUpdateOption(o.id, { bg: hexToRgba15(hex) })}
                             title={t("col.bgColor")}
-                            className="h-6 w-6 shrink-0 cursor-pointer rounded border border-border bg-transparent p-0"
                           />
                           <input
                             value={o.label}
@@ -251,18 +249,4 @@ export function ColumnSettingsDialog({
         )}
     </>
   );
-}
-
-function hexToRgba15(hex: string): string {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `rgba(${r},${g},${b},0.15)`;
-}
-
-function rgbaToHex(rgba: string): string {
-  const m = rgba.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-  if (!m) return "#ff9900";
-  const [, r, g, b] = m;
-  return `#${[r, g, b].map((v) => Number(v).toString(16).padStart(2, "0")).join("")}`;
 }

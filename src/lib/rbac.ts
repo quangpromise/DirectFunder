@@ -155,6 +155,32 @@ export const DEFAULT_COLUMNS: ColumnDef[] = [
     editableBy: ["manager", "accounting", "agent", "processor", "agent_leader", "processor_leader"],
     hidden: true,
   },
+  // 3 ô ngày mới, đặt ngang hàng ngay dưới khối Refund trong popup "Edit Hồ sơ" (thêm
+  // 2026-08-14) — cùng nhóm quyền với refunds (cùng vị trí, liên quan tới xử lý hoàn thuế).
+  {
+    id: "fcDate",
+    key: "fcDate",
+    label: "FC Date",
+    type: "date",
+    editableBy: ["manager", "accounting", "agent", "processor", "agent_leader", "processor_leader"],
+    hidden: true,
+  },
+  {
+    id: "processingDate",
+    key: "processingDate",
+    label: "Processing Date",
+    type: "date",
+    editableBy: ["manager", "accounting", "agent", "processor", "agent_leader", "processor_leader"],
+    hidden: true,
+  },
+  {
+    id: "elDate",
+    key: "elDate",
+    label: "EL Date",
+    type: "date",
+    editableBy: ["manager", "accounting", "agent", "processor", "agent_leader", "processor_leader"],
+    hidden: true,
+  },
   // Nhiều mục con độc lập (EL/Security Check/Agent guarantees SC/Bank Information/Back Tax
   // Owed/Income Variance) — cột hệ thống cố định (type "checklist", KHÔNG có trong
   // TYPE_OPTIONS của AddColumnDialog nên Admin không tự thêm thêm cột kiểu này được), giá
@@ -315,6 +341,14 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermissions = {
   editCollectingColumn: [],
   addCollectingRow: [],
   deleteCollectingRow: [],
+  // Dán link/ngắt kết nối Sheet CPA Review + sửa bảng ánh xạ tên — mặc định CHỈ Quản lý
+  // (mảng rỗng, Manager luôn được qua hasFeature() không cần liệt kê).
+  manageCpaReviewSheet: [],
+  // Tab "CPA Review" — mặc định đúng 4 nhóm user cần dùng bảng này theo yêu cầu, Admin có
+  // thể mở/thu hồi thêm qua trang Phân quyền.
+  viewCpaReview: ["agent", "agent_leader", "processor", "processor_leader"],
+  addCpaReviewRow: ["agent", "agent_leader", "processor", "processor_leader"],
+  deleteCpaReviewRow: ["agent", "agent_leader", "processor", "processor_leader"],
 };
 
 /** Quyền sửa từng cột hoàn toàn theo cấu hình editableBy — kể cả với Admin. */
