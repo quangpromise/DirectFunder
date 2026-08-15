@@ -75,6 +75,85 @@ Google Sheet, regardless of who edits which side. This is what "CPA Review" (add
    does; not every feature should).
 6. Env vars degrade gracefully — every Service-Account-touching function must short-circuit
    via `isServiceAccountConfigured()`/try-catch so a missing key never 500s the main request.
+7. **Before handing off, reuse the 3 fixes below** (grid size, `onEdit` trigger type, error
+   surfacing) up front — they were each found the hard way on CPA Review's first real
+   production connection and will bite any new synced tab identically if skipped.
+
+## Apps Script gotchas — copy these into any new `buildAppsScript()` generator
+
+These 2 bugs are near-guaranteed to recur on a NEW synced tab if the generator is written
+fresh instead of copied from `buildAppsScript()` in
+`src/app/api/config/cpa-review-sheet/route.ts`. Both were hit for real on CPA Review's
+first production Sheet connection (2026-08-15) — see mục 4.22 addendum in
+`deployment-database-sync.md` for the full incident writeup.
+
+**1. New/small Sheet tabs reject ranges beyond their declared grid size.** A brand-new tab
+defaults to 1000 rows × 26 cols (Z). Any `values.get`/`values.batchGet`/`spreadsheets.get`
+range beyond that — e.g. scanning column AH or row 3000 for a wide/tall layout — fails
+outright with `"Range (...) exceeds grid limits"` (NOT the same as querying an in-bounds
+but empty range, which just returns nothing). **Fix**: before the first scan/write, call
+something like `ensureSheetGridSize()` (`cpa-review-sheet-sync.ts`) — read
+`sheets.properties(sheetId,gridProperties)`, and if `rowCount`/`columnCount` are below what
+the column map needs, `batchUpdate` an `updateSheetProperties` request to grow them (ONLY
+grow, never shrink — growing just appends empty rows/cols, doesn't touch existing data).
+Call this on both the initial "connect" scan and on "resync".
+
+**2. A function literally named `onEdit` can NEVER call `UrlFetchApp` (or any
+authorization-requiring service).** Apps Script auto-registers any function named exactly
+`onEdit` as a **simple trigger**, and simple triggers always run in a **restricted
+authorization sandbox** — no exceptions, no amount of running other functions and clicking
+"Allow" changes this. It throws `"Specified permissions are not sufficient to call
+UrlFetchApp.fetch. Required permissions: https://www.googleapis.com/auth/script.external_request"`
+at the `onEdit` call site. This is a deliberate Google security restriction (simple
+triggers fire without any per-invocation consent, so Google won't let them reach out to
+arbitrary URLs), not a bug that goes away with more permissions. **Fix**: name the handler
+anything else (CPA Review uses `onCpaReviewEdit`) and register it as an **installable
+trigger** explicitly — `ScriptApp.newTrigger("yourHandlerName").forSpreadsheet(SpreadsheetApp.getActiveSpreadsheet()).onEdit().create()`
+— inside the one-time "install" function the user runs and grants permission to manually.
+Installable triggers run with full authorization. Delete-and-recreate this trigger (by
+handler name) at the top of the install function so re-running it after a script update
+doesn't leave duplicate triggers firing twice.
+
+**3. The generated script (with its embedded per-connection secret) must be re-fetchable,
+not shown once and lost.** The very first version of this only returned `appsScript` in the
+one-time POST /connect response. When gotcha #2's fix shipped, every ALREADY-connected
+month had no way to get the corrected script short of disconnecting (which changes the
+secret and throws away the cached row-index map). **Fix from day one**: give the config GET
+endpoint an optional `?period=X` param that, if that period is already connected, rebuilds
+`appsScript` from the saved secret/tab name and returns it — and put a "Copy script" button
+in whatever guide/help UI you build, not just at connect time. See
+`GET /api/config/cpa-review-sheet` and the guide dialog's "Copy script" block for the
+pattern to copy.
+
+**4. Error messages must surface the real cause, not a generic fallback.** The first
+version of `mapSheetsError()` only recognized one Google error shape and fell back to
+"failed, try again later" for everything else — permission errors with a different shape,
+Sheets API rate-limit/quota errors, and a custom `SheetNotAccessibleError` (wrong tab/gid)
+all got flattened into the same unhelpful string, which made the actual production issues
+(quota, then a malformed key, then the grid-size bug, then the `onEdit` bug) each look
+identical from the outside and took a debugging round-trip apiece to unmask. Check MULTIPLE
+Google error shapes (`response.data.error.status`, legacy `errors[].reason`,
+`response.status`, plus known non-HTTP failure message substrings like
+`DECODER routines`/`invalid_grant` for a malformed private key), pass through custom error
+classes' own messages unchanged instead of remapping them, `console.error` the raw error
+server-side even after mapping it (Vercel Runtime Logs are otherwise the only way to see
+what actually happened), and — cheapest win — append the raw underlying `message` to
+whatever generic fallback string remains. See `mapSheetsError()` in `google-sheets.ts` and
+the catch block in `POST /api/config/cpa-review-sheet` for the current version.
+
+## Service Account private key: always offer a base64 env var
+
+A multi-line PEM string pasted into any web-based env-var editor (Vercel dashboard
+included) is extremely easy to mangle — stray wrapping quotes, `\n` literal vs real
+newline getting flipped one way or the other depending on how the paste box handles it.
+Hit this for real on 2026-08-15: re-pasted the exact same correct value multiple times and
+still got `"Specified permissions are not sufficient"`/auth failures. **Fix implemented in
+`google-service-account.ts`**: prefer a `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY_BASE64` env var
+(single line, alphanumeric-plus-`/+=` only, nothing for a text box to mangle) over the raw
+PEM var, generated once via
+`Buffer.from(rawPemStringWithRealNewlines, "utf8").toString("base64")`. Any NEW
+Service-Account-based integration in this repo should offer the same base64 escape hatch
+from the start rather than rediscovering this after a support round-trip.
 
 ## THE gotcha that actually matters (read this even if skimming)
 
