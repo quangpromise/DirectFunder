@@ -214,46 +214,6 @@ function PendingReasonInput({
   );
 }
 
-/** Ô chọn ngày E-file riêng từng năm — dùng cho đồng bộ 2 chiều "CPA Review" với Google
- * Sheet (xem deployment-database-sync.md mục 4.22). Cùng quyền sửa với dropdown trạng
- * thái năm đó (`editable`), không editable thì chỉ hiện text tĩnh. Commit ngay khi chọn
- * xong (input type="date" không cần blur như textarea). */
-function EfileDateInput({
-  year,
-  date,
-  editable,
-  onCommit,
-}: {
-  year: string;
-  date: string | null;
-  editable: boolean;
-  onCommit: (date: string | null) => void;
-}) {
-  const t = useT();
-
-  if (!editable) {
-    return (
-      <p className="px-0.5 text-[10px] text-text-faint">
-        {t("refundStatus.efileDate")}: {date || "—"}
-      </p>
-    );
-  }
-
-  return (
-    <label className="flex items-center gap-1 px-0.5 text-[10px] text-text-faint">
-      {t("refundStatus.efileDate")}:
-      <input
-        type="date"
-        value={date ?? ""}
-        onChange={(e) => onCommit(e.target.value || null)}
-        onClick={(e) => e.stopPropagation()}
-        className="rounded border border-border bg-bg-elevated px-1 py-0.5 text-[10px] text-text outline-none focus:border-accent"
-        aria-label={`${t("refundStatus.efileDate")} ${year}`}
-      />
-    </label>
-  );
-}
-
 /** Bảng quản lý danh sách trạng thái (thêm/sửa/xoá/đổi màu) — mở qua nút bánh răng trong
  * popup, chỉ hiện cho tài khoản có quyền (canManage, xem CaseRefundStatusButton). Cùng
  * pattern UI với phần "options" trong ColumnSettingsDialog. Option id "pending" là id đặc
@@ -362,13 +322,11 @@ export function CaseRefundStatusButton({
   refunds,
   refundYearStatus,
   refundYearPendingReason,
-  refundYearEfileDate,
   statusOptions,
   editable,
   canManageOptions,
   onChangeStatus,
   onChangeReason,
-  onChangeEfileDate,
   onAddOption,
   onUpdateOption,
   onRemoveOption,
@@ -376,15 +334,12 @@ export function CaseRefundStatusButton({
   refunds: Record<string, number>;
   refundYearStatus: Record<string, RefundYearStatus>;
   refundYearPendingReason: Record<string, string>;
-  /** Ngày E-file riêng từng năm — dùng cho đồng bộ 2 chiều "CPA Review" với Google Sheet. */
-  refundYearEfileDate: Record<string, string | null>;
   statusOptions: SelectOption[];
   editable: boolean;
   /** Admin (manager) — thêm/sửa/xoá trạng thái trong danh sách qua nút bánh răng. */
   canManageOptions: boolean;
   onChangeStatus: (year: string, status: RefundYearStatus) => void;
   onChangeReason: (year: string, reason: string) => void;
-  onChangeEfileDate: (year: string, date: string | null) => void;
   onAddOption: (option: Omit<SelectOption, "id">) => void;
   onUpdateOption: (optionId: string, patch: Partial<Omit<SelectOption, "id">>) => void;
   onRemoveOption: (optionId: string) => void;
@@ -522,12 +477,6 @@ export function CaseRefundStatusButton({
                               onChange={(s) => onChangeStatus(r.year, s)}
                             />
                           </div>
-                          <EfileDateInput
-                            year={r.year}
-                            date={refundYearEfileDate[r.year] ?? null}
-                            editable={canEditNow}
-                            onCommit={(date) => onChangeEfileDate(r.year, date)}
-                          />
                           {r.status === "pending" && (
                             <PendingReasonInput
                               year={r.year}

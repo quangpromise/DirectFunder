@@ -12,6 +12,7 @@ import {
 } from "./cpa-review-sheet-columns";
 import { CPA_REVIEW_YEARS, yearNoteKey, caseStatusOptionsForCrmSource } from "./cpa-review-columns";
 import type { ColumnDef, CpaReviewRecord, CpaReviewSheetConfig, CpaReviewSheetConfigMap, SelectOption, User } from "./types";
+import type { Prisma } from "@prisma/client";
 
 /** Options hiện tại của cột "CRM Source" (đọc động từ options cột "status" của Case, xem
  * caseStatusOptionsForCrmSource) — module này không có sẵn AppConfig nên tự fetch riêng ở
@@ -130,8 +131,42 @@ export const CPA_REVIEW_MIN_GRID = {
   cols: FULL_ROW_LAST_COL + 1,
 } as const;
 
+/** Dò rule Data Validation (dropdown) của 1 cột trong vài dòng đầu (đủ để bắt được rule áp
+ * cho cả cột, kể cả khi ô đầu tiên trống) — trả về đúng danh sách giá trị + CHỮ HOA/THƯỜNG
+ * như đã khai báo trong dropdown thật của Sheet, KHÔNG phải giá trị đã gõ vào ô nào (2 nguồn
+ * có thể lệch hoa/thường nếu dropdown viết "Toan" nhưng có ô lỡ gõ tay "toan"). */
+async function scanColumnDropdownValues(
+  sheets: ReturnType<typeof google.sheets>,
+  spreadsheetId: string,
+  tabName: string,
+  columnLetter: string
+): Promise<string[]> {
+  const probeRows = 30;
+  const res = await sheets.spreadsheets.get({
+    spreadsheetId,
+    ranges: [`'${tabName}'!${columnLetter}${SCAN_START_ROW}:${columnLetter}${SCAN_START_ROW + probeRows - 1}`],
+    fields: "sheets.data.rowData.values.dataValidation",
+  });
+  const rows = res.data.sheets?.[0]?.data?.[0]?.rowData ?? [];
+  for (const row of rows) {
+    const rule = row.values?.[0]?.dataValidation;
+    if (rule?.condition?.type === "ONE_OF_LIST") {
+      return (rule.condition.values ?? [])
+        .map((v) => v.userEnteredValue)
+        .filter((v): v is string => Boolean(v && v.trim()))
+        .map((v) => v.trim());
+    }
+  }
+  return [];
+}
+
 /** Quét cột Processor (AC) + Agent (AD) — trả về danh sách tên PHÂN BIỆT xuất hiện trong
- * Sheet, dùng để Admin ánh xạ sang User.id qua UI (nameToUserId) sau lần kết nối đầu. */
+ * Sheet, dùng để Admin ánh xạ sang User.id qua UI (nameToUserId) sau lần kết nối đầu.
+ * Ưu tiên chữ hoa/thường từ chính dropdown (Data Validation) của 2 cột này nếu đọc được —
+ * đè lên chữ hoa/thường của giá trị đã dùng trong ô (thêm 2026-08-15, sửa lỗi Processor/
+ * Agent bị ghi sai hoa/thường khi đẩy App→Sheet vì trước đó fallback về `username` luôn viết
+ * thường). Không đọc được dropdown (vd Sheet không dùng Data Validation) -> vẫn trả về danh
+ * sách từ giá trị đã dùng như cũ, không lỗi. */
 export async function scanDistinctNames(
   sheets: ReturnType<typeof google.sheets>,
   spreadsheetId: string,
@@ -146,14 +181,23 @@ export async function scanDistinctNames(
       `'${tabName}'!${colAgent}${SCAN_START_ROW}:${colAgent}${SCAN_START_ROW + SCAN_ROW_LIMIT - 1}`,
     ],
   });
-  const names = new Set<string>();
+  const names = new Map<string, string>(); // lowercase -> chữ hoa/thường chuẩn dùng để hiển thị/lưu
   for (const range of res.data.valueRanges ?? []) {
     for (const row of range.values ?? []) {
       const name = (row?.[0] ?? "").toString().trim();
-      if (name) names.add(name);
+      if (name) names.set(name.toLowerCase(), name);
     }
   }
-  return Array.from(names).sort((a, b) => a.localeCompare(b));
+
+  const [processorOptions, agentOptions] = await Promise.all([
+    scanColumnDropdownValues(sheets, spreadsheetId, tabName, colProcessor),
+    scanColumnDropdownValues(sheets, spreadsheetId, tabName, colAgent),
+  ]);
+  for (const opt of [...processorOptions, ...agentOptions]) {
+    names.set(opt.toLowerCase(), opt); // ghi đè -> dropdown luôn thắng giá trị đã dùng
+  }
+
+  return Array.from(names.values()).sort((a, b) => a.localeCompare(b));
 }
 
 const NAME_COLUMN_INDEX = 1; // cột B
@@ -207,6 +251,17 @@ export async function importSheetRows(
   let imported = 0;
   let sortOrder = -Date.now();
 
+  // Ghép SSN đã có sẵn trong THÁNG này (thêm 2026-08-15, cho phép "Đổi link" kết nối lại
+  // Sheet khác cho cùng 1 tháng mà KHÔNG tạo trùng lặp dòng) — trước đây hàm này CHỈ chạy
+  // đúng 1 lần lúc kết nối lần đầu (tháng luôn trống) nên chưa lộ ra vấn đề gì, nhưng nếu
+  // gọi lại khi tháng đã có dữ liệu (reconnect) sẽ tạo mới toàn bộ thay vì cập nhật.
+  const existing = await prisma.cpaReviewRecord.findMany({ where: { month }, select: { id: true, custom: true } });
+  const existingBySsn = new Map<string, { id: string; custom: Record<string, unknown> }>();
+  for (const r of existing) {
+    const c = (r.custom as Record<string, unknown>) ?? {};
+    if (typeof c.ssn === "string" && c.ssn.trim()) existingBySsn.set(c.ssn.trim(), { id: r.id, custom: c });
+  }
+
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i] ?? [];
     const ssn = (row[SSN_COLUMN_INDEX] ?? "").toString().trim().split("\n")[0]?.trim();
@@ -223,7 +278,15 @@ export async function importSheetRows(
     const nameLink = nameLinks.get(SCAN_START_ROW + i);
     if (nameLink) custom.nameLink = nameLink;
 
-    await prisma.cpaReviewRecord.create({ data: { custom, sortOrder: sortOrder++, month } });
+    const match = existingBySsn.get(ssn);
+    if (match) {
+      // Sheet thắng (khác "App luôn thắng" của webhook) — đây là hành động Admin CHỦ Ý bấm
+      // kết nối/nhập lại từ Sheet, hợp lý để Sheet ghi đè giá trị app đang có cho SSN này.
+      const merged = { ...match.custom, ...custom };
+      await prisma.cpaReviewRecord.update({ where: { id: match.id }, data: { custom: merged as Prisma.InputJsonValue } });
+    } else {
+      await prisma.cpaReviewRecord.create({ data: { custom, sortOrder: sortOrder++, month } });
+    }
     rowIndex[ssn] = SCAN_START_ROW + i;
     imported++;
   }
@@ -238,7 +301,11 @@ function buildUserNameResolver(users: User[], nameToUserId: Record<string, strin
     const user = byId.get(userId);
     if (!user) return "";
     const mappedName = Object.entries(nameToUserId).find(([, uid]) => uid === userId)?.[0];
-    return mappedName ?? user.username ?? user.name;
+    // Chưa từng ánh xạ (Admin chưa gán tên Sheet cho user này) -> dùng `name` (Họ tên gõ tay
+    // lúc tạo tài khoản, giữ đúng hoa/thường), KHÔNG dùng `username` (luôn bị hạ hết thành
+    // chữ thường, xem workflow-conventions.md — đây chính là nguyên nhân Processor/Agent bị
+    // ghi sai hoa/thường lên Sheet, sửa 2026-08-15).
+    return mappedName ?? user.name;
   };
 }
 

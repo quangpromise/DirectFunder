@@ -6,16 +6,18 @@ import type { SelectOption } from "./types";
 import type { Prisma } from "@prisma/client";
 
 /**
- * Đồng bộ 1 CHIỀU (thêm 2026-08-14): đổi Status theo năm ở tab "CPA Review" sang 1 trong 3
- * giá trị dưới đây -> tự đổi `refundYearStatus[year]` của Case khớp SSN (popup "Refund by
- * years"/mắt cạnh cột Case ở bảng Hồ sơ) sang đúng nhãn tương ứng. KHÔNG đồng bộ ngược lại
- * (sửa refundYearStatus ở bảng Hồ sơ không ảnh hưởng tab CPA Review) — chỉ 3 giá trị này có
- * ánh xạ, mọi giá trị Status khác của CPA Review bị bỏ qua.
+ * Đồng bộ 1 CHIỀU (thêm 2026-08-14, mở rộng 2026-08-15): đổi Status theo năm ở tab "CPA
+ * Review" sang 1 trong các giá trị dưới đây -> tự đổi `refundYearStatus[year]` của Case
+ * khớp SSN (popup "Refund by years"/mắt cạnh cột Case ở bảng Hồ sơ) sang đúng nhãn tương
+ * ứng. KHÔNG đồng bộ ngược lại (sửa refundYearStatus ở bảng Hồ sơ không ảnh hưởng tab CPA
+ * Review) — chỉ các giá trị liệt kê ở đây có ánh xạ, mọi giá trị Status khác của CPA Review
+ * bị bỏ qua.
  */
 const CPA_STATUS_TO_REFUND_YEAR_LABEL: Record<string, string> = {
   accepted: "Submitted",
   tts_refund: "Funded",
-  done: "Client",
+  done: "Collected",
+  resubmitted: "Re-submitted",
 };
 
 /** Màu badge cho nhãn tự tạo lần đầu (nếu Admin chưa từng có sẵn nhãn này trong
@@ -23,7 +25,8 @@ const CPA_STATUS_TO_REFUND_YEAR_LABEL: Record<string, string> = {
 const AUTO_OPTION_COLOR: Record<string, { bg: string; color: string }> = {
   Submitted: { bg: "rgba(59,130,246,0.15)", color: "#93c5fd" },
   Funded: { bg: "rgba(34,197,94,0.15)", color: "#86efac" },
-  Client: { bg: "rgba(168,85,247,0.15)", color: "#d8b4fe" },
+  Collected: { bg: "rgba(168,85,247,0.15)", color: "#d8b4fe" },
+  "Re-submitted": { bg: "rgba(234,179,8,0.15)", color: "#fde047" },
 };
 
 function yearFromStatusKey(key: string): string | null {

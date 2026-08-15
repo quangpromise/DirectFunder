@@ -18,11 +18,14 @@ function joinPair(a: string | null | undefined, b: string | null | undefined): s
  * nhân. Chỉ điền đúng các trường đã xác nhận với user — Note/Status/Ngày E-file mỗi năm CỐ
  * Ý bỏ trống (không nằm trong yêu cầu), CRM Source luôn để trống. `reviewYears` = danh sách
  * năm đã chọn ở popup — CHỈ những năm này mới có số tiền, năm không chọn bỏ trống (không
- * phải 0) để phân biệt "chưa xét năm đó" với "refund năm đó = 0".
+ * phải 0) để phân biệt "chưa xét năm đó" với "refund năm đó = 0". `note` (thêm 2026-08-15) —
+ * ô nhập tay tự do ở popup chọn năm, đổ thẳng vào cột "Note" của dòng CPA Review vừa tạo —
+ * bỏ trống nếu không gõ gì.
  */
 export function buildCpaReviewCustomFromCase(
   c: CaseRecord,
-  reviewYears: string[]
+  reviewYears: string[],
+  note?: string
 ): Record<string, string | number | boolean | null> {
   const custom: Record<string, string | number | boolean | null> = {
     intakeDate: todayIsoDate(),
@@ -39,6 +42,7 @@ export function buildCpaReviewCustomFromCase(
     elDate: c.elDate ?? "NA",
   };
   if (c.clientLink) custom.nameLink = c.clientLink;
+  if (note && note.trim()) custom.note = note.trim();
   for (const year of reviewYears) {
     custom[yearAmountKey(year)] = c.refunds?.[year] ?? 0;
   }

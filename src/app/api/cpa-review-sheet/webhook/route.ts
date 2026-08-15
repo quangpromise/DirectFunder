@@ -97,6 +97,10 @@ export async function POST(request: NextRequest) {
   const crmSourceOptions = await getCrmSourceOptions();
   const patch = sheetChangeToPatch({ columnIndex, rawValue }, sheetConfig.nameToUserId, crmSourceOptions);
   if (!patch) {
+    // Log rõ cột/giá trị bị bỏ qua — trước đây im lặng hoàn toàn, khiến báo cáo "sửa Sheet
+    // nhưng app không cập nhật" không có manh mối gì để tra (chỉ xem được qua Vercel Runtime
+    // Logs, không hiện gì phía Apps Script vì webhook vẫn trả 200 OK có chủ đích).
+    console.warn(`[cpa-review-sheet webhook] bỏ qua columnIndex=${columnIndex} rawValue="${rawValue}" (ssn=${ssn}, month=${month}) — không map được cột hoặc không parse được giá trị`);
     return NextResponse.json({ ok: true, skipped: "column_not_writable_or_unparseable" });
   }
 

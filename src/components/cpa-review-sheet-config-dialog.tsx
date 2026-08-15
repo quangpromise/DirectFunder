@@ -18,9 +18,16 @@ import { useT } from "@/lib/i18n";
  * dùng, chấp nhận đánh đổi để giảm chi phí thêm i18n key cho 1 dialog cấu hình vận hành hẹp
  * phạm vi.
  */
+/** Sheet link không được lưu nguyên văn (chỉ lưu sheetId/gid tách sẵn từ lúc kết nối) —
+ * dựng lại đúng dạng URL chuẩn từ 2 giá trị đó để hiển thị link đã kết nối trong dialog. */
+function buildSheetLink(sheetId: string, gid: string): string {
+  return `https://docs.google.com/spreadsheets/d/${sheetId}/edit#gid=${gid}`;
+}
+
 export function CpaReviewSheetConfigDialog({ month }: { month: string }) {
   const [open, setOpen] = useState(false);
   const [link, setLink] = useState("");
+  const [changingLink, setChangingLink] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [connectResult, setConnectResult] = useState<{
@@ -52,6 +59,7 @@ export function CpaReviewSheetConfigDialog({ month }: { month: string }) {
     }
     setConnectResult(result);
     setLink("");
+    setChangingLink(false);
   }
 
   async function handleResync() {
@@ -120,6 +128,14 @@ export function CpaReviewSheetConfigDialog({ month }: { month: string }) {
                       <p>
                         Đã kết nối tab <span className="font-medium text-text">{config.tabName}</span>
                       </p>
+                      <a
+                        href={buildSheetLink(config.sheetId, config.gid)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-0.5 block truncate text-accent underline-offset-2 hover:underline"
+                      >
+                        {buildSheetLink(config.sheetId, config.gid)}
+                      </a>
                       <p className="mt-0.5 text-text-faint">
                         Lúc: {new Date(config.connectedAt).toLocaleString("vi-VN")}
                       </p>
@@ -134,6 +150,14 @@ export function CpaReviewSheetConfigDialog({ month }: { month: string }) {
                         Đồng bộ lại toàn bộ
                       </button>
                       <button
+                        onClick={() => setChangingLink((v) => !v)}
+                        disabled={busy}
+                        className="flex h-9 items-center justify-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-sm text-text-dim transition hover:bg-surface-hover hover:text-text disabled:cursor-default disabled:opacity-60"
+                      >
+                        <FileSpreadsheet size={14} />
+                        Đổi link
+                      </button>
+                      <button
                         onClick={handleDisconnect}
                         disabled={busy}
                         className="flex h-9 items-center justify-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-sm text-red-400 transition hover:bg-red-500/10 disabled:cursor-default disabled:opacity-60"
@@ -142,6 +166,29 @@ export function CpaReviewSheetConfigDialog({ month }: { month: string }) {
                         Ngắt kết nối
                       </button>
                     </div>
+
+                    {changingLink && (
+                      <div className="rounded-lg border border-border bg-bg-elevated p-3">
+                        <p className="mb-2 text-xs text-text-faint">
+                          Dán link Sheet khác (đúng tab #gid=...) để kết nối lại tháng{" "}
+                          <span className="font-medium text-text">{monthKeyLabel(month)}</span> — dữ liệu hiện có trong app{" "}
+                          <span className="font-medium text-text">không bị xoá</span>, chỉ nạp thêm/khớp lại theo SSN từ Sheet mới.
+                        </p>
+                        <input
+                          value={link}
+                          onChange={(e) => setLink(e.target.value)}
+                          placeholder="https://docs.google.com/spreadsheets/d/...#gid=..."
+                          className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-accent"
+                        />
+                        <button
+                          onClick={handleConnect}
+                          disabled={busy || !link.trim()}
+                          className="gradient-btn mt-2 flex h-9 w-full items-center justify-center rounded-lg text-sm font-medium text-white disabled:cursor-default disabled:opacity-60"
+                        >
+                          {busy ? "Đang kết nối..." : "Kết nối lại"}
+                        </button>
+                      </div>
+                    )}
 
                     <div>
                       <label className="mb-1 block text-xs text-text-dim">Ánh xạ tên Processor/Agent trong Sheet → tài khoản</label>

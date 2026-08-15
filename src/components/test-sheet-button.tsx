@@ -28,13 +28,18 @@ export function TestSheetButton({
   refunds: Record<string, number>;
   confirm: (message: string, opts?: { title?: string; tone?: "default" | "danger" }) => Promise<boolean>;
   alertWarn: (message: string, opts?: { title?: string }) => Promise<void>;
-  sendCaseRowToCpaReview: (caseId: string, reviewYears: string[]) => Promise<{ ok: true } | { ok: false; error: string }>;
+  sendCaseRowToCpaReview: (
+    caseId: string,
+    reviewYears: string[],
+    note?: string
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
   markCaseCpaReviewTestSent: (caseId: string, action: "manual" | "clear") => Promise<void>;
 }) {
   const sent = Boolean(cpaReviewTestSentAt);
   const [sending, setSending] = useState(false);
   const [yearPickerOpen, setYearPickerOpen] = useState(false);
   const [selectedYears, setSelectedYears] = useState<string[]>([]);
+  const [note, setNote] = useState("");
 
   function toggleYear(year: string) {
     setSelectedYears((prev) => (prev.includes(year) ? prev.filter((y) => y !== year) : [...prev, year]));
@@ -50,6 +55,7 @@ export function TestSheetButton({
       return;
     }
     setSelectedYears([]);
+    setNote("");
     setYearPickerOpen(true);
   }
 
@@ -62,7 +68,7 @@ export function TestSheetButton({
     if (!confirmed) return;
     setSending(true);
     try {
-      const result = await sendCaseRowToCpaReview(caseId, selectedYears);
+      const result = await sendCaseRowToCpaReview(caseId, selectedYears, note);
       if (!result.ok) {
         await alertWarn(result.error, { title: "Gửi thất bại" });
       }
@@ -132,6 +138,16 @@ export function TestSheetButton({
                   );
                 })}
               </div>
+              <label className="mt-3 block text-xs text-text-dim">
+                Note (sẽ đổ vào cột &quot;Note&quot; ở tab CPA Review)
+                <textarea
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  rows={2}
+                  placeholder="Không bắt buộc..."
+                  className="mt-1 w-full resize-none rounded-lg border border-border bg-bg-elevated px-2.5 py-1.5 text-xs text-text outline-none focus:border-accent"
+                />
+              </label>
               <button
                 type="button"
                 onClick={confirmYears}

@@ -200,10 +200,10 @@ export const api = {
 
   /** Nút "Test Sheet" — tạo 1 dòng mới trong tab CPA Review (tháng hiện tại) từ hồ sơ này,
    * xem POST /api/cases/[id]/test-cpa-review-sheet. */
-  sendCaseRowToCpaReview: (caseId: string, reviewYears: string[]) =>
+  sendCaseRowToCpaReview: (caseId: string, reviewYears: string[], note?: string) =>
     request<{ ok: true; cpaReviewTestSentAt: string; record: CpaReviewRecord }>(
       `/api/cases/${caseId}/test-cpa-review-sheet`,
-      { method: "POST", body: JSON.stringify({ reviewYears }) }
+      { method: "POST", body: JSON.stringify({ reviewYears, note }) }
     ),
 
   /** Tương tự markCaseSheetSent nhưng cho nút "Test Sheet" — dùng chung route

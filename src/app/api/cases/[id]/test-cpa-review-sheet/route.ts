@@ -25,6 +25,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/cases/[id]/
 
   const body = await request.json().catch(() => ({}));
   const reviewYears = Array.isArray(body?.reviewYears) ? body.reviewYears.filter((y: unknown) => typeof y === "string") : [];
+  const note = typeof body?.note === "string" ? body.note : "";
   const manual = body?.manual === true;
   const clear = body?.clear === true;
 
@@ -49,7 +50,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/cases/[id]/
   if (!row) return NextResponse.json({ error: "Không tìm thấy hồ sơ" }, { status: 404 });
 
   const caseRecord = toCaseRecord(row);
-  const custom = buildCpaReviewCustomFromCase(caseRecord, reviewYears);
+  const custom = buildCpaReviewCustomFromCase(caseRecord, reviewYears, note);
   const month = currentMonthKey();
   const created = await prisma.cpaReviewRecord.create({
     data: { month, custom: custom as unknown as Prisma.InputJsonValue, sortOrder: await nextAppendCpaReviewSortOrder(month) },

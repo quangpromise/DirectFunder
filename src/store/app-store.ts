@@ -362,7 +362,8 @@ interface AppState {
    * thể fail rõ ràng (lỗi mạng/server). */
   sendCaseRowToCpaReview: (
     caseId: string,
-    reviewYears: string[]
+    reviewYears: string[],
+    note?: string
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
   /** Đánh dấu "Đã gửi" tab CPA Review thủ công (manual) hoặc xoá đánh dấu khi xác nhận
    * "muốn gửi lại" (clear) — cùng ngữ nghĩa với markCaseSheetSent, xem
@@ -1690,9 +1691,9 @@ export const useAppStore = create<AppState>()(
       // đúng dữ liệu Case mới nhất trên DB, không dựng ở client nữa — tránh lệch dữ liệu
       // nếu case vừa được người khác sửa. Cùng route lưu luôn cpaReviewTestSentAt để nút
       // giữ đúng trạng thái "đã gửi" qua reload, giống sheetSentAt/cpaEmailSentAt.
-      sendCaseRowToCpaReview: async (caseId, reviewYears) => {
+      sendCaseRowToCpaReview: async (caseId, reviewYears, note) => {
         try {
-          const result = await api.sendCaseRowToCpaReview(caseId, reviewYears);
+          const result = await api.sendCaseRowToCpaReview(caseId, reviewYears, note);
           set((s) => ({
             cases: s.cases.map((c) => (c.id === caseId ? { ...c, cpaReviewTestSentAt: result.cpaReviewTestSentAt } : c)),
             // Nối vào cuối (dòng trống tiếp theo) — record.sortOrder đã được server tính đúng

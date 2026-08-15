@@ -162,7 +162,7 @@ export const DEFAULT_COLUMNS: ColumnDef[] = [
     key: "fcDate",
     label: "FC Date",
     type: "date",
-    editableBy: ["manager", "accounting", "agent", "processor", "agent_leader", "processor_leader"],
+    editableBy: ["manager", "accounting", "agent", "processor", "support", "agent_leader", "processor_leader"],
     hidden: true,
   },
   {
@@ -170,7 +170,7 @@ export const DEFAULT_COLUMNS: ColumnDef[] = [
     key: "processingDate",
     label: "Processing Date",
     type: "date",
-    editableBy: ["manager", "accounting", "agent", "processor", "agent_leader", "processor_leader"],
+    editableBy: ["manager", "accounting", "agent", "processor", "support", "agent_leader", "processor_leader"],
     hidden: true,
   },
   {
@@ -178,7 +178,7 @@ export const DEFAULT_COLUMNS: ColumnDef[] = [
     key: "elDate",
     label: "EL Date",
     type: "date",
-    editableBy: ["manager", "accounting", "agent", "processor", "agent_leader", "processor_leader"],
+    editableBy: ["manager", "accounting", "agent", "processor", "support", "agent_leader", "processor_leader"],
     hidden: true,
   },
   // Nhiều mục con độc lập (EL/Security Check/Agent guarantees SC/Bank Information/Back Tax

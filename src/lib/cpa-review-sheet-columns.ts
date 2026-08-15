@@ -101,16 +101,33 @@ export interface SheetCellChange {
   rawValue: string;
 }
 
-/** "MM/DD/YY", "MM/DD/YYYY" hoặc ISO "YYYY-MM-DD" -> ISO. null nếu không parse được/rỗng. */
+/** "MM/DD/YY", "MM/DD/YYYY" hoặc ISO "YYYY-MM-DD" -> ISO. null nếu không parse được/rỗng.
+ * KHÔNG neo `$` cuối regex (khác bản đầu) — Apps Script onEdit's `e.value` cho 1 ô định dạng
+ * ngày đôi khi kèm theo giờ ("8/15/2026 0:00:00") tuỳ định dạng số của ô, trước đây bị coi là
+ * "không parse được" và ÂM THẦM bỏ qua toàn bộ thay đổi (không có lỗi nào hiện ra) — đây là
+ * nguyên nhân thật gây ra báo cáo "đổi ngày trên Sheet nhưng app không cập nhật" (2026-08-15). */
 function parseSheetDate(raw: string): string | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
-  let m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(trimmed);
+  let m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(trimmed);
   if (m) return `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
-  m = /^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/.exec(trimmed);
+  // (\d{4}|\d{2}) — thử khớp 4 chữ số TRƯỚC (không phải \d{2} trước như trước đây): thiếu
+  // `$` neo cuối (để còn cho phép có giờ theo sau) nghĩa là \d{2} sẽ khớp "20" trong "2026"
+  // rồi dừng ngay (không backtrack) nếu đặt trước, ra sai năm "2020" thay vì "2026".
+  m = /^(\d{1,2})\/(\d{1,2})\/(\d{4}|\d{2})/.exec(trimmed);
   if (m) {
     const year = m[3].length === 2 ? `20${m[3]}` : m[3];
     return `${year}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}`;
+  }
+  // Fallback cuối: chuỗi dạng Date.toString() ("Sat Aug 15 2026 00:00:00 GMT+0700 (...)"),
+  // Apps Script trả đúng dạng này khi ô có định dạng số không phải "Date" thuần. Lấy
+  // ngày/tháng/năm theo giờ LOCAL (không dùng UTC) để tránh lệch 1 ngày qua múi giờ.
+  const d = new Date(trimmed);
+  if (!Number.isNaN(d.getTime())) {
+    const y = d.getFullYear();
+    const mo = String(d.getMonth() + 1).padStart(2, "0");
+    const da = String(d.getDate()).padStart(2, "0");
+    return `${y}-${mo}-${da}`;
   }
   return null;
 }
