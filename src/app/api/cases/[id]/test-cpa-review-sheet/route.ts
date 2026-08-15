@@ -59,7 +59,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/cases/[id]/
   // nên các dòng không còn tranh nhau ghi đè cùng 1 dòng Sheet như bug thật gặp trước đó
   // (case "Dinh Hieu Huynh").
   const created = await prisma.cpaReviewRecord.create({
-    data: { month, custom: custom as unknown as Prisma.InputJsonValue, sortOrder: await nextAppendCpaReviewSortOrder() },
+    data: { month, custom: custom as unknown as Prisma.InputJsonValue, sortOrder: await nextAppendCpaReviewSortOrder(month) },
   });
   const record = toCpaReviewRecord(created);
   after(() => syncRecordToCpaReviewSheet(record));

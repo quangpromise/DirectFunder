@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
       id: body?.id,
       month,
       custom: (body?.custom ?? {}) as unknown as Prisma.InputJsonValue,
-      sortOrder: await nextAppendCpaReviewSortOrder(),
+      sortOrder: await nextAppendCpaReviewSortOrder(month),
     },
   });
   const record = toCpaReviewRecord(row);

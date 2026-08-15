@@ -181,12 +181,12 @@ export default function CpaReviewPage() {
   // `processorUserId`) — so khớp CHÍNH XÁC (dropdown) với cột kiểu select/assign, so khớp
   // CHỨA (text, không phân biệt hoa/thường) với các cột còn lại. Cột "Tổng" mỗi năm là công
   // thức tự tính (không lưu trong custom) nên KHÔNG có ô lọc riêng.
-  // Ẩn mặc định (yêu cầu 2026-08-15 "ẩn row này đi, mặc định row 4 sẽ là row đầu tiên để add
-  // row hay sent mới") — bấm nút "Lọc" ở toolbar mới hiện ra. Số dòng gutter (i+4) KHÔNG đổi
-  // dù ẩn/hiện — luôn khớp đúng dòng 4 thật của Sheet (dòng 1-3 dành riêng cho tiêu đề), dòng
-  // 3 chỉ đơn giản là không render ra khi ẩn, không phải đổi lại quy ước đánh số. Dòng mới
-  // (thêm tay qua nút "Thêm" hay tạo qua "Test Sheet") đã tự lên đầu danh sách sẵn
-  // (sortOrder: -Date.now(), sort asc) nên luôn hiện ở đúng vị trí dòng 4 đầu tiên.
+  // Ẩn mặc định (yêu cầu 2026-08-15 "ẩn row này đi") — bấm nút "Lọc" ở toolbar mới hiện ra.
+  // Số dòng gutter (i+4) KHÔNG đổi dù ẩn/hiện — luôn khớp đúng dòng 4 thật của Sheet (dòng 1-3
+  // dành riêng cho tiêu đề), dòng 3 chỉ đơn giản là không render ra khi ẩn, không phải đổi lại
+  // quy ước đánh số. Dòng mới (thêm tay/"Test Sheet") nối vào CUỐI danh sách (xem
+  // nextAppendCpaReviewSortOrder) — KHÔNG lên đầu (đã thử rồi đảo lại cùng ngày vì làm số
+  // "row" trong app lệch khỏi số dòng thật trên Sheet, xem giải thích ở đó).
   const [showFilterRow, setShowFilterRow] = useState(false);
   const [filters, setFilters] = useState<Record<string, string>>({});
   const hasActiveFilters = Object.values(filters).some(Boolean);

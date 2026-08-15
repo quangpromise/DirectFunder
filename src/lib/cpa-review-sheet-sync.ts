@@ -16,15 +16,21 @@ export async function getCrmSourceOptions(): Promise<SelectOption[]> {
   return caseStatusOptionsForCrmSource(columns);
 }
 
-/** sortOrder cho 1 dòng CPA Review MỚI trong đúng tháng — LUÔN lên ĐẦU bảng (giá trị nhỏ hơn
- * mọi sortOrder hiện có, ORDER BY sortOrder ASC), khớp đúng dòng 4 (dòng dữ liệu đầu tiên,
- * xem cpa-review/page.tsx) — ĐẢO LẠI so với yêu cầu 2026-08-14 trước đó ("chèn vào row trống
- * tiếp theo, không chèn lên đầu"), theo yêu cầu MỚI 2026-08-15 ("mặc định row 4 sẽ là row đầu
- * tiên để add row hay sent mới"). Dùng chung cho cả nút "Thêm" trong tab CPA Review lẫn nút
- * "Test Sheet" ở bảng Hồ sơ. Không còn cần đọc DB nữa (khác trước) nên bỏ luôn tham số
- * `month` khỏi chữ ký hàm. */
-export async function nextAppendCpaReviewSortOrder(): Promise<number> {
-  return -Date.now();
+/** sortOrder cho 1 dòng CPA Review MỚI trong đúng tháng — LUÔN nối vào "dòng trống tiếp
+ * theo" ở CUỐI bảng (giá trị lớn hơn mọi sortOrder hiện có, ORDER BY sortOrder ASC).
+ *
+ * ĐÃ THỬ đổi sang lên ĐẦU bảng (2026-08-15, yêu cầu "row 4 sẽ là row đầu tiên để add row hay
+ * sent mới") rồi ĐẢO LẠI về đúng bản này TRONG CÙNG NGÀY sau khi phát hiện bug thật: Google
+ * Sheet chỉ NỐI THÊM dòng mới vào CUỐI (không thể "chèn lên đầu"), nên nếu app hiển thị dòng
+ * mới nhất ở đầu, số "row" trong app (gutter) sẽ KHÔNG còn khớp đúng số dòng thật trên Sheet
+ * nữa ngay khi có từ 2 dòng trở lên — case "Dinh Hieu Huynh" thật gặp: dòng tạo SAU (Sheet
+ * row 5) hiện ở app thành "row 4" (đầu), dòng tạo TRƯỚC (Sheet row 4) lại hiện thành "row 5",
+ * gây cảm giác "sửa 1 dòng làm dòng kia nhảy lên đầu" dù không đụng gì tới dòng còn lại.
+ * User xác nhận ưu tiên khớp đúng thứ tự Sheet hơn — dùng chung cho cả nút "Thêm" trong tab
+ * CPA Review lẫn nút "Test Sheet" ở bảng Hồ sơ. */
+export async function nextAppendCpaReviewSortOrder(month: string): Promise<number> {
+  const agg = await prisma.cpaReviewRecord.aggregate({ where: { month }, _max: { sortOrder: true } });
+  return (agg._max.sortOrder ?? 0) + 1;
 }
 
 const SSN_COLUMN_INDEX = 3; // cột D
