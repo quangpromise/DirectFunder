@@ -205,6 +205,19 @@ export function CpaReviewReportView({
   const agentStats = computeAgentStats(rows, visibleAgentUsers);
   const processorStats = computeProcessorStats(rows, visibleProcessorUsers);
 
+  // Hàng "Tổng" cộng dồn các cột số — CHỈ tính trên những người ĐANG hiện (tôn trọng bộ lọc
+  // Agent/Processor phía trên), thêm 2026-08-16.
+  const agentTotals = agentStats.reduce(
+    (acc, s) => ({
+      totalCase: acc.totalCase + s.totalCase,
+      over1000: acc.over1000 + s.over1000,
+      under1000: acc.under1000 + s.under1000,
+      collected: acc.collected + s.collected,
+    }),
+    { totalCase: 0, over1000: 0, under1000: 0, collected: 0 }
+  );
+  const processorTotalCase = processorStats.reduce((sum, s) => sum + s.totalCase, 0);
+
   return (
     <div className="flex h-full flex-col gap-4 overflow-auto px-4 py-6 sm:px-6">
       <div className="flex flex-wrap items-center gap-2">
@@ -230,6 +243,18 @@ export function CpaReviewReportView({
                 </tr>
               </thead>
               <tbody>
+                {/* Hàng "Tổng" — cộng dồn Total Case/>1000/<1000/Collected của MỌI Agent đang
+                    hiện (theo bộ lọc phía trên), thêm 2026-08-16. */}
+                {agentStats.length > 0 && (
+                  <tr className="border-b-2 border-accent/40 bg-accent-soft">
+                    <td className="px-3 py-2"></td>
+                    <td className="px-3 py-2 text-sm font-bold text-text">Tổng</td>
+                    <td className="px-3 py-2 text-center text-sm font-bold text-text">{agentTotals.totalCase}</td>
+                    <td className="px-3 py-2 text-center text-sm font-bold text-text">{agentTotals.over1000}</td>
+                    <td className="px-3 py-2 text-center text-sm font-bold text-text">{agentTotals.under1000}</td>
+                    <td className="px-3 py-2 text-center text-sm font-bold text-text">{agentTotals.collected}</td>
+                  </tr>
+                )}
                 {agentStats.length === 0 && (
                   <tr>
                     <td colSpan={6} className="px-3 py-6 text-center text-xs text-text-faint">
@@ -277,6 +302,13 @@ export function CpaReviewReportView({
                 </tr>
               </thead>
               <tbody>
+                {processorStats.length > 0 && (
+                  <tr className="border-b-2 border-accent/40 bg-accent-soft">
+                    <td className="px-3 py-2"></td>
+                    <td className="px-3 py-2 text-sm font-bold text-text">Tổng</td>
+                    <td className="px-3 py-2 text-center text-sm font-bold text-text">{processorTotalCase}</td>
+                  </tr>
+                )}
                 {processorStats.length === 0 && (
                   <tr>
                     <td colSpan={3} className="px-3 py-6 text-center text-xs text-text-faint">
