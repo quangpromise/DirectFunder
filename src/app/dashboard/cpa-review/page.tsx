@@ -398,7 +398,16 @@ export default function CpaReviewPage() {
       {/* Báo cáo dùng `rows` (toàn bộ tháng đang chọn), KHÔNG dùng `filteredRows` — bộ lọc ở
           hàng "3" là khái niệm riêng của bảng dữ liệu, không nên âm thầm ảnh hưởng số liệu
           báo cáo nếu người dùng quên tắt lọc trước khi chuyển tab. */}
-      {view === "report" && <CpaReviewReportView rows={rows} agentUsers={agentUsers} processorUsers={processorUsers} />}
+      {/* Báo cáo Processor KHÔNG tính Processor Leader (khác `processorUsers` dùng chung cho
+          AssignMenu ở bảng dữ liệu, vẫn giữ nguyên cả Processor+Processor Leader) — báo cáo
+          Agent vẫn giữ nguyên Agent Leader như bảng dữ liệu, theo yêu cầu 2026-08-16. */}
+      {view === "report" && (
+        <CpaReviewReportView
+          rows={rows}
+          agentUsers={agentUsers}
+          processorUsers={processorUsers.filter((u) => u.role === "processor")}
+        />
+      )}
 
       {view === "table" && rows.length === 0 && !isMonthConnected && (
         <div className="mt-4 flex items-center gap-2 rounded-xl border border-dashed border-border-strong bg-surface px-4 py-3 text-xs text-text-faint">

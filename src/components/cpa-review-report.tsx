@@ -172,20 +172,14 @@ export function CpaReviewReportView({
                     </td>
                   </tr>
                 )}
+                {/* KHÁC bảng Agent — chỉ xếp hạng theo SỐ THỨ TỰ thường (1, 2, 3...), KHÔNG
+                    icon huy chương/highlight top 3, theo yêu cầu 2026-08-16. */}
                 {processorStats.map((s, i) => {
                   const rank = i + 1;
-                  const highlighted = rank <= 3;
                   return (
-                    <tr
-                      key={s.userId}
-                      className={`border-b border-border last:border-0 ${
-                        highlighted ? RANK_ROW_BG[rank - 1] : i % 2 === 0 ? "bg-bg" : "bg-[var(--row-alt-bg)]"
-                      }`}
-                    >
-                      <td className="px-3 py-2 text-center">
-                        <RankBadge rank={rank} />
-                      </td>
-                      <td className={`px-3 py-2 ${highlighted ? "font-semibold text-text" : "text-text-dim"}`}>{s.name}</td>
+                    <tr key={s.userId} className={`border-b border-border last:border-0 ${i % 2 === 0 ? "bg-bg" : "bg-[var(--row-alt-bg)]"}`}>
+                      <td className="px-3 py-2 text-center text-xs text-text-faint">{rank}</td>
+                      <td className="px-3 py-2 text-text-dim">{s.name}</td>
                       <td className="px-3 py-2 text-center font-medium text-text">{s.totalCase}</td>
                     </tr>
                   );
