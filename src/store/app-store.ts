@@ -169,6 +169,10 @@ interface AppState {
    * được cấp feature "manageCpaReviewSheet") thêm/sửa/xoá + đổi màu qua UI, mặc định
    * CPA_REVIEW_STATUS_OPTIONS (cpa-review-columns.ts) nếu chưa từng đổi. Thêm 2026-08-14. */
   cpaReviewStatusOptions: SelectOption[];
+  /** Key các cột "đuôi" (Note/Processor/Agent/CRM Source/FC Date/Processing Date/EL Date) của
+   * tab "CPA Review" đang bị ẩn khỏi bảng cho MỌI user — mặc định rỗng (không ẩn cột nào),
+   * thêm 2026-08-15. */
+  cpaReviewHiddenColumns: string[];
 
   /** true khi đã hydrate xong dữ liệu thật từ server ít nhất 1 lần trong phiên này. */
   hydrated: boolean;
@@ -224,6 +228,9 @@ interface AppState {
   addCpaReviewStatusOption: (option: Omit<SelectOption, "id">) => void;
   updateCpaReviewStatusOption: (optionId: string, patch: Partial<Omit<SelectOption, "id">>) => void;
   removeCpaReviewStatusOption: (optionId: string) => void;
+  /** Ẩn/hiện 1 cột "đuôi" (Note/Processor/Agent/CRM Source/FC Date/Processing Date/EL Date)
+   * của tab "CPA Review" cho MỌI user — thêm 2026-08-15. */
+  toggleCpaReviewHiddenColumn: (key: string) => void;
   /** Foreground action (giống sendCpaEmail) — lưu toàn bộ nội dung popup "Edit Hồ sơ"
    * (ClientProfileDialog) trong 1 lần gọi, server tự tính lại money/caseLabel từ
    * refunds và trả về giá trị đã tính để đồng bộ local state chính xác. */
@@ -249,6 +256,7 @@ interface AppState {
   removeColumn: (columnId: string) => void;
   renameColumn: (columnId: string, label: string) => void;
   setColumnEditableBy: (columnId: string, roles: Role[]) => void;
+  setColumnHiddenFromGrid: (columnId: string, hidden: boolean) => void;
   addColumnOption: (columnId: string, option: Omit<SelectOption, "id">) => void;
   updateColumnOption: (columnId: string, optionId: string, patch: Partial<Omit<SelectOption, "id">>) => void;
   removeColumnOption: (columnId: string, optionId: string) => void;
@@ -266,6 +274,7 @@ interface AppState {
   removeCollectingColumn: (columnId: string) => void;
   renameCollectingColumn: (columnId: string, label: string) => void;
   setCollectingColumnEditableBy: (columnId: string, roles: Role[]) => void;
+  setCollectingColumnHiddenFromGrid: (columnId: string, hidden: boolean) => void;
   addCollectingColumnOption: (columnId: string, option: Omit<SelectOption, "id">) => void;
   updateCollectingColumnOption: (columnId: string, optionId: string, patch: Partial<Omit<SelectOption, "id">>) => void;
   removeCollectingColumnOption: (columnId: string, optionId: string) => void;
@@ -453,7 +462,8 @@ export const useAppStore = create<AppState>()(
             state.clientEmailTemplate ?? undefined,
             state.refundYearStatusOptions,
             state.collectingColumns,
-            state.cpaReviewStatusOptions
+            state.cpaReviewStatusOptions,
+            state.cpaReviewHiddenColumns
           );
         });
         syncInBackground("config", configSyncChain);
@@ -484,6 +494,7 @@ export const useAppStore = create<AppState>()(
       cpaReviewRecords: [],
       collectingColumns: DEFAULT_COLLECTING_COLUMNS,
       cpaReviewStatusOptions: CPA_REVIEW_STATUS_OPTIONS,
+      cpaReviewHiddenColumns: [],
 
       login: async (email, password) => {
         try {
@@ -535,6 +546,7 @@ export const useAppStore = create<AppState>()(
           refundYearStatusOptions: config.refundYearStatusOptions ?? DEFAULT_REFUND_YEAR_STATUS_OPTIONS,
           collectingColumns: config.collectingColumns ?? DEFAULT_COLLECTING_COLUMNS,
           cpaReviewStatusOptions: config.cpaReviewStatusOptions ?? CPA_REVIEW_STATUS_OPTIONS,
+          cpaReviewHiddenColumns: config.cpaReviewHiddenColumns ?? [],
           rules,
           collectingRecords,
           cpaReviewRecords,
@@ -1190,6 +1202,13 @@ export const useAppStore = create<AppState>()(
         syncConfig();
       },
 
+      setColumnHiddenFromGrid: (columnId, hidden) => {
+        set((state) => ({
+          columns: state.columns.map((c) => (c.id === columnId ? { ...c, hiddenFromGrid: hidden } : c)),
+        }));
+        syncConfig();
+      },
+
       addColumnOption: (columnId, option) => {
         set((state) => ({
           columns: state.columns.map((c) =>
@@ -1371,6 +1390,13 @@ export const useAppStore = create<AppState>()(
         syncConfig();
       },
 
+      setCollectingColumnHiddenFromGrid: (columnId, hidden) => {
+        set((state) => ({
+          collectingColumns: state.collectingColumns.map((c) => (c.id === columnId ? { ...c, hiddenFromGrid: hidden } : c)),
+        }));
+        syncConfig();
+      },
+
       addCollectingColumnOption: (columnId, option) => {
         set((state) => ({
           collectingColumns: state.collectingColumns.map((c) =>
@@ -1466,6 +1492,16 @@ export const useAppStore = create<AppState>()(
       removeCpaReviewStatusOption: (optionId) => {
         set((state) => ({
           cpaReviewStatusOptions: state.cpaReviewStatusOptions.filter((o) => o.id !== optionId),
+        }));
+        syncConfig();
+      },
+
+      // Ẩn/hiện 1 cột "đuôi" tab CPA Review cho MỌI user (thêm 2026-08-15).
+      toggleCpaReviewHiddenColumn: (key) => {
+        set((state) => ({
+          cpaReviewHiddenColumns: state.cpaReviewHiddenColumns.includes(key)
+            ? state.cpaReviewHiddenColumns.filter((k) => k !== key)
+            : [...state.cpaReviewHiddenColumns, key],
         }));
         syncConfig();
       },

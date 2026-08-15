@@ -171,6 +171,12 @@ model AppConfig {
   /// năm), Admin thêm/sửa/xoá + đổi màu tự do qua UI (cùng pattern refundYearStatusOptions ở
   /// trên) — null/thiếu = dùng CPA_REVIEW_STATUS_OPTIONS mặc định trong cpa-review-columns.ts.
   cpaReviewStatusOptions Json?
+  /// string[] — key các cột "đuôi" (Note/Processor/Agent/CRM Source/FC Date/Processing
+  /// Date/EL Date) bị Admin/người có quyền manageCpaReviewSheet ẨN khỏi bảng cho MỌI user
+  /// (thêm 2026-08-15, yêu cầu "ẩn hiện cột ở tất cả màn hình có table") — CPA Review cột cố
+  /// định (không có ColumnDef riêng như Cases/Collecting) nên dùng list key thay vì field
+  /// `hiddenFromGrid` trên từng cột. null/thiếu = không ẩn cột nào.
+  cpaReviewHiddenColumns Json?
   updatedAt          DateTime @updatedAt
 
   @@map("app_config")

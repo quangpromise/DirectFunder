@@ -261,6 +261,13 @@ export interface ColumnDef {
    * Hồ sơ và không có nút cấu hình (⚙) — dùng cho "caseNumber" (đổi tên thành "Code", ẩn
    * đi) khi cột "Case" hiển thị được thay bằng 1 cột tuỳ chỉnh khác cho người dùng tự gõ. */
   hidden?: boolean;
+  /** KHÁC `hidden` ở trên (field cố định/kỹ thuật, ẩn vĩnh viễn) — đây là cột BÌNH THƯỜNG bị
+   * Admin/người có quyền editColumn chủ động ẨN khỏi bảng cho MỌI user (thêm 2026-08-15, yêu
+   * cầu "thêm tính năng ẩn các cột không muốn xem cho tất cả user"), có thể bật lại bất cứ
+   * lúc nào qua nút cấu hình (⚙) của cột. Dùng cho Cases/Orders/Collecting (đều dùng chung
+   * `ColumnDef`) — CPA Review dùng cơ chế riêng (`cpaReviewHiddenColumns`, cột cố định không
+   * có `ColumnDef`). */
+  hiddenFromGrid?: boolean;
 }
 
 export interface DescriptionReply {

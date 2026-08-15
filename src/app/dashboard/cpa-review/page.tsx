@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ShieldAlert, Plus, Trash2, ExternalLink, StickyNote, FileSpreadsheet, X, Filter } from "lucide-react";
+import { ShieldAlert, Plus, Trash2, ExternalLink, StickyNote, FileSpreadsheet, X, Filter, EyeOff } from "lucide-react";
 import { useAppStore, useCurrentUser } from "@/store/app-store";
 import { hasFeature } from "@/lib/rbac";
 import {
@@ -34,6 +34,18 @@ import { monthKeyLabel } from "@/lib/cpa-review-month";
 // việc ẩn/hiện UI. "Tổng" (cột Q, công thức Sheet) KHÔNG nằm trong mảng này — tính riêng
 // (xem TotalCell bên dưới), nên không cộng vào con số này.
 const YEAR_COLUMN_COUNT = 4;
+
+// Danh sách cột "đuôi" cho phép ẩn/hiện cho MỌI user (thêm 2026-08-15) — chỉ gồm Note/
+// Processor/Agent (không nằm trong CPA_REVIEW_COLUMNS, xử lý riêng ở UI) + các cột đuôi
+// còn lại trong CPA_REVIEW_COLUMNS (CRM Source/FC Date/Processing Date/EL Date). KHÔNG gồm
+// 6 cột đóng băng A-F hay khối năm — cấu trúc header colSpan/rowSpan cố định của khối năm
+// (xem yearHeaderStyle) sẽ vỡ nếu cho phép ẩn từng cột con riêng lẻ.
+const HIDEABLE_TAIL_COLUMNS: { key: string; label: string }[] = [
+  { key: "note", label: "Note" },
+  { key: "processorUserId", label: "Processor" },
+  { key: "agentUserId", label: "Agent" },
+  ...CPA_REVIEW_COLUMNS.slice(6 + CPA_REVIEW_YEARS.length * YEAR_COLUMN_COUNT + 1).map((c) => ({ key: c.key, label: c.label })),
+];
 
 // Freeze cột A-F + gutter khi cuộn ngang (thêm 2026-08-14, yêu cầu "khi scroll sang phải
 // thì các cột này giữ nguyên") — độ rộng cố định tính "gọn" (yêu cầu "fix cho vừa column
@@ -130,6 +142,8 @@ export default function CpaReviewPage() {
   const addCpaReviewRow = useAppStore((s) => s.addCpaReviewRow);
   const deleteCpaReviewRow = useAppStore((s) => s.deleteCpaReviewRow);
   const statusOptions = useAppStore((s) => s.cpaReviewStatusOptions);
+  const hiddenColumns = useAppStore((s) => s.cpaReviewHiddenColumns);
+  const toggleHiddenColumn = useAppStore((s) => s.toggleCpaReviewHiddenColumn);
   // Cột "CRM Source" LUÔN lấy options động theo đúng options hiện tại của cột "Status" trên
   // bảng Hồ sơ chính (Case) — không có danh sách riêng nào lưu ở đây (thêm 2026-08-14, yêu
   // cầu "khi nào màn hình hồ sơ có thêm trường gì thì CRM đều có thêm trường đó"). Không có
@@ -232,14 +246,28 @@ export default function CpaReviewPage() {
   const canManageStatus = hasFeature(featurePermissions, "manageCpaReviewSheet", user.role);
   const agentUsers = users.filter((u) => u.role === "agent" || u.role === "agent_leader");
   const processorUsers = users.filter((u) => u.role === "processor" || u.role === "processor_leader");
+
+  // Ẩn/hiện cột "đuôi" cho MỌI user (thêm 2026-08-15, yêu cầu "ẩn hiện cột ở tất cả màn hình
+  // có table") — chỉ áp dụng cho 7 cột đuôi (Note/Processor/Agent/CRM Source/FC Date/
+  // Processing Date/EL Date), KHÔNG áp dụng cho 6 cột đóng băng A-F hay khối năm (cấu trúc
+  // header phức tạp — colSpan/rowSpan cố định 4 subcột/năm, xem yearHeaderStyle) để tránh phá
+  // vỡ layout đóng băng/sticky đã có.
+  const hiddenColumnsSet = new Set(hiddenColumns);
+  const tailColumnsAll = CPA_REVIEW_COLUMNS.slice(6 + CPA_REVIEW_YEARS.length * YEAR_COLUMN_COUNT + 1);
+  const tailColumns = tailColumnsAll.filter((c) => !hiddenColumnsSet.has(c.key));
+  const showNoteColumn = !hiddenColumnsSet.has("note");
+  const showProcessorColumn = !hiddenColumnsSet.has("processorUserId");
+  const showAgentColumn = !hiddenColumnsSet.has("agentUserId");
+
   // Tổng số cột dữ liệu (không tính cột số dòng/nút xoá) — dùng để vẽ hàng chữ cái kiểu
   // Google Sheet (A, B, C...) khớp đúng số cột thật đang render bên dưới.
   const totalDataColumns =
     CPA_REVIEW_COLUMNS.slice(0, 6).length +
     CPA_REVIEW_VISIBLE_YEARS.length * 5 +
-    1 /* note */ +
-    2 /* processor, agent */ +
-    CPA_REVIEW_COLUMNS.slice(6 + CPA_REVIEW_YEARS.length * YEAR_COLUMN_COUNT + 1).length;
+    (showNoteColumn ? 1 : 0) +
+    (showProcessorColumn ? 1 : 0) +
+    (showAgentColumn ? 1 : 0) +
+    tailColumns.length;
 
   // Đếm số dòng có "Tổng" (Số tiền + Điều chỉnh) > 0 mỗi năm — hiện ngay trong ô tiêu đề
   // cột "Tổng", khớp đúng công thức COUNTIF Google Sheet đặt ở dòng 1 cùng vị trí cột này
@@ -282,6 +310,9 @@ export default function CpaReviewPage() {
             </>
           )}
           {canManageStatus && <CpaReviewStatusOptionsButton />}
+          {canManageStatus && (
+            <ColumnVisibilityButton hiddenColumns={hiddenColumnsSet} onToggle={toggleHiddenColumn} />
+          )}
           <button
             onClick={toggleFilterRow}
             className={`flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm transition ${
@@ -385,7 +416,8 @@ export default function CpaReviewPage() {
                       KHÔNG có dấu ngoặc đơn — theo yêu cầu 2026-08-15 ("bỏ text intake đi và
                       số sum ko có ()"). Các cột A-F còn lại vẫn hiện label chữ như cũ. */}
                   {col.key === "intakeDate" ? (
-                    <span className="font-semibold text-amber-400">
+                    // To gấp đôi (text-[11px] mặc định -> text-[22px]) theo yêu cầu 2026-08-15.
+                    <span className="text-[22px] font-semibold leading-none text-amber-400">
                       {CPA_REVIEW_VISIBLE_YEARS.reduce((sum, year) => sum + (totalCountByYear[year] ?? 0), 0)}
                     </span>
                   ) : (
@@ -412,28 +444,34 @@ export default function CpaReviewPage() {
                   <span className="ml-1 font-semibold text-red-400">({totalCountByYear[year] ?? 0})</span>
                 </th>,
               ])}
-              <th
-                rowSpan={2}
-                style={headTopStyle(headerOffset.row2, 20)}
-                className="whitespace-nowrap border-b border-r border-border bg-table-head-bg px-2.5 py-2 text-center text-xs font-semibold"
-              >
-                Note
-              </th>
-              <th
-                rowSpan={2}
-                style={headTopStyle(headerOffset.row2, 20)}
-                className="whitespace-nowrap border-b border-r border-border bg-table-head-bg px-2.5 py-2 text-center text-xs font-semibold"
-              >
-                Processor
-              </th>
-              <th
-                rowSpan={2}
-                style={headTopStyle(headerOffset.row2, 20)}
-                className="whitespace-nowrap border-b border-r border-border bg-table-head-bg px-2.5 py-2 text-center text-xs font-semibold"
-              >
-                Agent
-              </th>
-              {CPA_REVIEW_COLUMNS.slice(6 + CPA_REVIEW_YEARS.length * YEAR_COLUMN_COUNT + 1).map((col) => (
+              {showNoteColumn && (
+                <th
+                  rowSpan={2}
+                  style={headTopStyle(headerOffset.row2, 20)}
+                  className="whitespace-nowrap border-b border-r border-border bg-table-head-bg px-2.5 py-2 text-center text-xs font-semibold"
+                >
+                  Note
+                </th>
+              )}
+              {showProcessorColumn && (
+                <th
+                  rowSpan={2}
+                  style={headTopStyle(headerOffset.row2, 20)}
+                  className="whitespace-nowrap border-b border-r border-border bg-table-head-bg px-2.5 py-2 text-center text-xs font-semibold"
+                >
+                  Processor
+                </th>
+              )}
+              {showAgentColumn && (
+                <th
+                  rowSpan={2}
+                  style={headTopStyle(headerOffset.row2, 20)}
+                  className="whitespace-nowrap border-b border-r border-border bg-table-head-bg px-2.5 py-2 text-center text-xs font-semibold"
+                >
+                  Agent
+                </th>
+              )}
+              {tailColumns.map((col) => (
                 <th
                   key={col.key}
                   rowSpan={2}
@@ -556,24 +594,30 @@ export default function CpaReviewPage() {
                   className="border-b border-r border-border bg-table-head-bg"
                 />,
               ])}
-              <th className="border-b border-r border-border bg-table-head-bg p-0 text-left font-normal" style={headTopStyle(headerOffset.row4, 20)}>
-                <FilterInput value={filters.note ?? ""} onChange={(v) => setFilter("note", v)} />
-              </th>
-              <th className="border-b border-r border-border bg-table-head-bg p-0 text-left font-normal" style={headTopStyle(headerOffset.row4, 20)}>
-                <FilterSelect
-                  value={filters.processorUserId ?? ""}
-                  onChange={(v) => setFilter("processorUserId", v)}
-                  options={processorUsers.map((u) => ({ id: u.id, label: u.name }))}
-                />
-              </th>
-              <th className="border-b border-r border-border bg-table-head-bg p-0 text-left font-normal" style={headTopStyle(headerOffset.row4, 20)}>
-                <FilterSelect
-                  value={filters.agentUserId ?? ""}
-                  onChange={(v) => setFilter("agentUserId", v)}
-                  options={agentUsers.map((u) => ({ id: u.id, label: u.name }))}
-                />
-              </th>
-              {CPA_REVIEW_COLUMNS.slice(6 + CPA_REVIEW_YEARS.length * YEAR_COLUMN_COUNT + 1).map((col) => (
+              {showNoteColumn && (
+                <th className="border-b border-r border-border bg-table-head-bg p-0 text-left font-normal" style={headTopStyle(headerOffset.row4, 20)}>
+                  <FilterInput value={filters.note ?? ""} onChange={(v) => setFilter("note", v)} />
+                </th>
+              )}
+              {showProcessorColumn && (
+                <th className="border-b border-r border-border bg-table-head-bg p-0 text-left font-normal" style={headTopStyle(headerOffset.row4, 20)}>
+                  <FilterSelect
+                    value={filters.processorUserId ?? ""}
+                    onChange={(v) => setFilter("processorUserId", v)}
+                    options={processorUsers.map((u) => ({ id: u.id, label: u.name }))}
+                  />
+                </th>
+              )}
+              {showAgentColumn && (
+                <th className="border-b border-r border-border bg-table-head-bg p-0 text-left font-normal" style={headTopStyle(headerOffset.row4, 20)}>
+                  <FilterSelect
+                    value={filters.agentUserId ?? ""}
+                    onChange={(v) => setFilter("agentUserId", v)}
+                    options={agentUsers.map((u) => ({ id: u.id, label: u.name }))}
+                  />
+                </th>
+              )}
+              {tailColumns.map((col) => (
                 <th
                   key={`${col.key}-filter`}
                   className="border-b border-r border-border bg-table-head-bg p-0 text-left font-normal"
@@ -687,38 +731,44 @@ export default function CpaReviewPage() {
                   );
                 })}
 
-                <Cell>
-                  {/* Gọn hơn (max-width) + tự xuống dòng khi chữ dài thay vì cắt bớt, theo
-                      yêu cầu 2026-08-14. */}
-                  <div style={{ maxWidth: 220 }}>
-                    <EditableCell
-                      value={(row.custom.note as string | null) ?? null}
-                      type="text"
-                      editable
-                      wrap
-                      multilineEdit
-                      onCommit={(v) => updateCpaReviewCell(row.id, "note", v)}
+                {showNoteColumn && (
+                  <Cell>
+                    {/* Gọn hơn (max-width) + tự xuống dòng khi chữ dài thay vì cắt bớt, theo
+                        yêu cầu 2026-08-14. */}
+                    <div style={{ maxWidth: 220 }}>
+                      <EditableCell
+                        value={(row.custom.note as string | null) ?? null}
+                        type="text"
+                        editable
+                        wrap
+                        multilineEdit
+                        onCommit={(v) => updateCpaReviewCell(row.id, "note", v)}
+                      />
+                    </div>
+                  </Cell>
+                )}
+                {showProcessorColumn && (
+                  <Cell>
+                    <AssignMenu
+                      users={processorUsers}
+                      assignedTo={(row.custom.processorUserId as string) ?? null}
+                      canAssign
+                      onAssign={(uid) => updateCpaReviewCell(row.id, "processorUserId", uid)}
                     />
-                  </div>
-                </Cell>
-                <Cell>
-                  <AssignMenu
-                    users={processorUsers}
-                    assignedTo={(row.custom.processorUserId as string) ?? null}
-                    canAssign
-                    onAssign={(uid) => updateCpaReviewCell(row.id, "processorUserId", uid)}
-                  />
-                </Cell>
-                <Cell>
-                  <AssignMenu
-                    users={agentUsers}
-                    assignedTo={(row.custom.agentUserId as string) ?? null}
-                    canAssign
-                    onAssign={(uid) => updateCpaReviewCell(row.id, "agentUserId", uid)}
-                  />
-                </Cell>
+                  </Cell>
+                )}
+                {showAgentColumn && (
+                  <Cell>
+                    <AssignMenu
+                      users={agentUsers}
+                      assignedTo={(row.custom.agentUserId as string) ?? null}
+                      canAssign
+                      onAssign={(uid) => updateCpaReviewCell(row.id, "agentUserId", uid)}
+                    />
+                  </Cell>
+                )}
 
-                {CPA_REVIEW_COLUMNS.slice(6 + CPA_REVIEW_YEARS.length * YEAR_COLUMN_COUNT + 1).map((col) => (
+                {tailColumns.map((col) => (
                   <Cell key={col.key}>
                     <EditableCell
                       value={(row.custom[col.key] as string | number | null) ?? null}
@@ -741,6 +791,72 @@ export default function CpaReviewPage() {
   );
 }
 
+/** Nút "Cột hiển thị" (thêm 2026-08-15, yêu cầu "ẩn hiện cột ở tất cả màn hình có table") —
+ * danh sách checkbox bật/tắt hiển thị cho MỌI user, chỉ gồm HIDEABLE_TAIL_COLUMNS (xem giải
+ * thích ở khai báo hằng số). */
+function ColumnVisibilityButton({
+  hiddenColumns,
+  onToggle,
+}: {
+  hiddenColumns: Set<string>;
+  onToggle: (key: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+
+  function openPopup() {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (rect) setPos({ x: Math.min(rect.left, window.innerWidth - 240), y: rect.bottom + 4 });
+    setOpen((o) => !o);
+  }
+
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        onClick={openPopup}
+        className={`flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm transition ${
+          hiddenColumns.size > 0
+            ? "border-accent bg-accent-soft text-accent"
+            : "border-border bg-surface text-text-dim hover:bg-surface-hover hover:text-text"
+        }`}
+      >
+        <EyeOff size={14} />
+        Cột hiển thị
+      </button>
+
+      {open &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <>
+            <div className="fixed inset-0 z-[90]" onClick={() => setOpen(false)} />
+            <div className="popover fixed z-[100] w-56 rounded-xl p-2 shadow-2xl shadow-black/60" style={{ left: pos.x, top: pos.y }}>
+              <p className="mb-1.5 px-1 text-[11px] font-semibold text-text-faint">Ẩn/hiện cột (áp dụng cho mọi người dùng)</p>
+              <div className="flex flex-col gap-0.5">
+                {HIDEABLE_TAIL_COLUMNS.map((c) => (
+                  <label
+                    key={c.key}
+                    className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-surface-hover"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={!hiddenColumns.has(c.key)}
+                      onChange={() => onToggle(c.key)}
+                      className="h-3.5 w-3.5 accent-[var(--accent)]"
+                    />
+                    <span>{c.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </>,
+          document.body
+        )}
+    </>
+  );
+}
+
 function Cell({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
     <td className={`group border-b border-r border-border p-0 align-middle ${className ?? ""}`}>
@@ -751,13 +867,19 @@ function Cell({ children, className }: { children: React.ReactNode; className?: 
 
 /** Ô lọc dạng text (hàng lọc "3", thêm 2026-08-15) — so khớp CHỨA, không phân biệt hoa/thường,
  * dùng cho mọi cột không phải select/assign (xem CpaReviewPage). */
+// Nền + viền rõ ràng riêng cho ô lọc (khác hẳn nền header xung quanh) — trước đây bg-transparent
+// khiến ô lọc lẫn vào header, khó nhận ra đâu là chỗ gõ được (yêu cầu 2026-08-15 "chỉnh giao
+// diện text và background dễ nhìn hơn").
+const FILTER_FIELD_CLASS =
+  "m-1 h-7 w-[calc(100%-8px)] min-w-0 rounded-md border border-border-strong bg-bg-elevated px-2 text-xs font-medium text-text shadow-sm outline-none transition placeholder:text-text-faint focus:border-accent focus:bg-bg";
+
 function FilterInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
     <input
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder="Lọc..."
-      className="h-7 w-full min-w-0 border-none bg-transparent px-2 text-[11px] font-normal text-text outline-none placeholder:text-text-faint"
+      className={FILTER_FIELD_CLASS}
     />
   );
 }
@@ -774,11 +896,7 @@ function FilterSelect({
   options: { id: string; label: string }[];
 }) {
   return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="h-7 w-full min-w-0 border-none bg-transparent px-1 text-[11px] font-normal text-text outline-none"
-    >
+    <select value={value} onChange={(e) => onChange(e.target.value)} className={`${FILTER_FIELD_CLASS} cursor-pointer`}>
       <option value="">Tất cả</option>
       {options.map((o) => (
         <option key={o.id} value={o.id}>

@@ -15,6 +15,7 @@ export function ColumnSettingsDialog({
   column,
   onRename,
   onSetEditableBy,
+  onSetHidden,
   onAddOption,
   onUpdateOption,
   onRemoveOption,
@@ -25,6 +26,10 @@ export function ColumnSettingsDialog({
   column: ColumnDef;
   onRename: (label: string) => void;
   onSetEditableBy: (roles: Role[]) => void;
+  /** Ẩn/hiện cột khỏi bảng cho MỌI user (thêm 2026-08-15) — optional vì chỉ Cases/Collecting
+   * (dùng ColumnDef thật) truyền vào; cột `hidden: true` sẵn (field kỹ thuật ẩn vĩnh viễn,
+   * xem types.ts) không hiện toggle này dù có truyền onSetHidden. */
+  onSetHidden?: (hidden: boolean) => void;
   onAddOption: (option: Omit<SelectOption, "id">) => void;
   onUpdateOption: (optionId: string, patch: Partial<Omit<SelectOption, "id">>) => void;
   onRemoveOption: (optionId: string) => void;
@@ -149,6 +154,21 @@ export function ColumnSettingsDialog({
                       </label>
                     ))}
                   </div>
+                </div>
+              )}
+
+              {canManageFully && onSetHidden && !column.hidden && (
+                <div>
+                  <label className="flex items-center gap-2 rounded-lg border border-border bg-bg-elevated px-3 py-1.5 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(column.hiddenFromGrid)}
+                      onChange={(e) => onSetHidden(e.target.checked)}
+                      className="h-3.5 w-3.5 accent-[var(--accent)]"
+                    />
+                    <span>{t("col.hideFromGrid")}</span>
+                  </label>
+                  <p className="mt-1 text-[11px] text-text-faint">{t("col.hideFromGridNote")}</p>
                 </div>
               )}
 

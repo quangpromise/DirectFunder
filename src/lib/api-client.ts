@@ -116,6 +116,7 @@ export const api = {
       refundYearStatusOptions: SelectOption[] | null;
       collectingColumns: ColumnDef[] | null;
       cpaReviewStatusOptions: SelectOption[] | null;
+      cpaReviewHiddenColumns: string[] | null;
       cpaReviewSheetConfig: Record<string, Omit<CpaReviewSheetConfig, "webhookSecret" | "rowIndex">> | null;
     }>("/api/config"),
   putConfig: (
@@ -126,7 +127,8 @@ export const api = {
     clientEmailTemplate?: ClientEmailTemplate,
     refundYearStatusOptions?: SelectOption[],
     collectingColumns?: ColumnDef[],
-    cpaReviewStatusOptions?: SelectOption[]
+    cpaReviewStatusOptions?: SelectOption[],
+    cpaReviewHiddenColumns?: string[]
   ) =>
     request<{
       columns: ColumnDef[];
@@ -137,6 +139,7 @@ export const api = {
       refundYearStatusOptions: SelectOption[] | null;
       collectingColumns: ColumnDef[] | null;
       cpaReviewStatusOptions: SelectOption[] | null;
+      cpaReviewHiddenColumns: string[] | null;
     }>("/api/config", {
       method: "PUT",
       body: JSON.stringify({
@@ -148,6 +151,7 @@ export const api = {
         clientEmailTemplate,
         refundYearStatusOptions,
         cpaReviewStatusOptions,
+        cpaReviewHiddenColumns,
       }),
     }),
 

@@ -339,6 +339,8 @@ const dict: Record<Language, Record<string, string>> = {
     "col.name": "Tên cột",
     "col.editableRoles": "Vai trò được phép sửa",
     "col.editableRolesNote": "Kể cả Quản lý (Admin) — bỏ chọn nghĩa là vai trò đó không sửa được ô dữ liệu của cột này.",
+    "col.hideFromGrid": "Ẩn cột này khỏi bảng",
+    "col.hideFromGridNote": "Áp dụng cho MỌI người dùng — có thể bật lại bất cứ lúc nào.",
     "col.optionsList": "Danh sách lựa chọn & màu sắc",
     "col.textColor": "Màu chữ",
     "col.bgColor": "Màu nền",
@@ -803,6 +805,8 @@ const dict: Record<Language, Record<string, string>> = {
     "col.name": "Column name",
     "col.editableRoles": "Roles allowed to edit",
     "col.editableRolesNote": "Includes Manager (Admin) — unchecking a role means it cannot edit values in this column.",
+    "col.hideFromGrid": "Hide this column from the table",
+    "col.hideFromGridNote": "Applies to EVERY user — can be turned back on anytime.",
     "col.optionsList": "Options & colors",
     "col.textColor": "Text color",
 

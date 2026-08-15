@@ -35,6 +35,7 @@ export default function CollectingPage() {
   const removeCollectingColumn = useAppStore((s) => s.removeCollectingColumn);
   const renameCollectingColumn = useAppStore((s) => s.renameCollectingColumn);
   const setCollectingColumnEditableBy = useAppStore((s) => s.setCollectingColumnEditableBy);
+  const setCollectingColumnHiddenFromGrid = useAppStore((s) => s.setCollectingColumnHiddenFromGrid);
   const addCollectingColumnOption = useAppStore((s) => s.addCollectingColumnOption);
   const updateCollectingColumnOption = useAppStore((s) => s.updateCollectingColumnOption);
   const removeCollectingColumnOption = useAppStore((s) => s.removeCollectingColumnOption);
@@ -64,7 +65,8 @@ export default function CollectingPage() {
   const canAddRowFeature = hasFeature(featurePermissions, "addCollectingRow", user.role);
   const canDeleteRowFeature = hasFeature(featurePermissions, "deleteCollectingRow", user.role);
 
-  const [firstColumn, ...otherColumns] = columns;
+  const [firstColumn, ...restColumns] = columns;
+  const otherColumns = restColumns.filter((col) => !col.hiddenFromGrid);
   const FIRST_COL_LEFT = GRIP_COL_WIDTH;
   const FIRST_COL_WIDTH = firstColumn?.width ?? 120;
 
@@ -75,7 +77,7 @@ export default function CollectingPage() {
     `${ACTIONS_COL_WIDTH}px`,
   ].join(" ");
 
-  function renderColumnHeader(col: ColumnDef, opts: { sticky?: number; draggable?: boolean }) {
+  function renderColumnHeader(col: ColumnDef, opts: { sticky?: number; draggable?: boolean; hideable?: boolean }) {
     return (
       <div
         key={col.id}
@@ -101,6 +103,7 @@ export default function CollectingPage() {
             column={col}
             onRename={(label) => renameCollectingColumn(col.id, label)}
             onSetEditableBy={(roles) => setCollectingColumnEditableBy(col.id, roles)}
+            onSetHidden={opts.hideable === false ? undefined : (hidden) => setCollectingColumnHiddenFromGrid(col.id, hidden)}
             onAddOption={(option) => addCollectingColumnOption(col.id, option)}
             onUpdateOption={(optionId, patch) => updateCollectingColumnOption(col.id, optionId, patch)}
             onRemoveOption={(optionId) => removeCollectingColumnOption(col.id, optionId)}
@@ -140,7 +143,7 @@ export default function CollectingPage() {
             className="sticky top-0 z-30 border-b-2 border-r border-border-strong border-b-accent bg-table-head-bg"
             style={{ left: 0, gridRow: "1" }}
           />
-          {firstColumn && renderColumnHeader(firstColumn, { sticky: FIRST_COL_LEFT })}
+          {firstColumn && renderColumnHeader(firstColumn, { sticky: FIRST_COL_LEFT, hideable: false })}
           {otherColumns.map((col) => renderColumnHeader(col, { draggable: true }))}
           <div className="sticky top-0 z-20 border-b-2 border-b-accent bg-table-head-bg" style={{ gridRow: "1" }} />
 

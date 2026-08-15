@@ -263,6 +263,7 @@ export default function CasesPage() {
   const removeColumn = useAppStore((s) => s.removeColumn);
   const renameColumn = useAppStore((s) => s.renameColumn);
   const setColumnEditableBy = useAppStore((s) => s.setColumnEditableBy);
+  const setColumnHiddenFromGrid = useAppStore((s) => s.setColumnHiddenFromGrid);
   const addColumnOption = useAppStore((s) => s.addColumnOption);
   const updateColumnOption = useAppStore((s) => s.updateColumnOption);
   const removeColumnOption = useAppStore((s) => s.removeColumnOption);
@@ -638,7 +639,8 @@ export default function CasesPage() {
       col.id !== "status" &&
       col.id !== "orderStatusOrder8821" &&
       col.id !== "orderStatusOrderTtsWit" &&
-      !col.hidden
+      !col.hidden &&
+      !col.hiddenFromGrid
   );
   // Giao việc cột Agent hiện nhóm Agent + Agent Leader, cột Processor hiện nhóm
   // Processor + Processor Leader — không lẫn các vai trò khác vào danh sách chọn.
@@ -996,6 +998,7 @@ export default function CasesPage() {
                   column={col}
                   onRename={(label) => renameColumn(col.id, label)}
                   onSetEditableBy={(roles) => setColumnEditableBy(col.id, roles)}
+                  onSetHidden={(hidden) => setColumnHiddenFromGrid(col.id, hidden)}
                   onAddOption={(option) => addColumnOption(col.id, option)}
                   onUpdateOption={(optionId, patch) => updateColumnOption(col.id, optionId, patch)}
                   onRemoveOption={(optionId) => removeColumnOption(col.id, optionId)}

@@ -50,6 +50,7 @@ export async function GET() {
     refundYearStatusOptions: config.refundYearStatusOptions,
     collectingColumns: config.collectingColumns,
     cpaReviewStatusOptions: config.cpaReviewStatusOptions,
+    cpaReviewHiddenColumns: config.cpaReviewHiddenColumns,
     // Chỉ đọc — ghi qua /api/config/cpa-review-sheet (connect/resync/disconnect riêng).
     cpaReviewSheetConfig: redactCpaReviewSheetConfig(config.cpaReviewSheetConfig),
   });
@@ -115,12 +116,16 @@ export async function PUT(request: NextRequest) {
   // khi request đó chỉ đổi cpaReviewStatusOptions/collectingColumns (không đụng gì tới
   // columns/featurePermissions) — client vẫn hiện thay đổi optimistic nên tưởng đã lưu, nhưng
   // KHÔNG có gì được ghi xuống DB, reload lại mất hết (bug thật gặp production 2026-08-15,
-  // "đổi màu status CPA Review xong reload lại về cũ"). SỬA: chỉ BỎ QUA (không ghi) 2 field
-  // columns/featurePermissions khi không đủ điều kiện, KHÔNG 403 cả request — các field độc
-  // lập khác (cpaReviewStatusOptions/collectingColumns) vẫn được xét quyền + ghi riêng bên
-  // dưới như bình thường.
-  const canWriteColumnsAndPermissions =
+  // "đổi màu status CPA Review xong reload lại về cũ"). SỬA: chỉ BỎ QUA (không ghi) field
+  // nào không đủ điều kiện, KHÔNG 403 cả request — các field độc lập khác vẫn được xét quyền +
+  // ghi riêng bên dưới như bình thường. `featurePermissions` (ma trận phân quyền) tách RIÊNG
+  // khỏi `columns` (thêm 2026-08-15, phục vụ tính năng ẩn/hiện cột) — role có quyền
+  // `editColumn` (không chỉ manager) giờ ghi được `columns` (đổi tên/quyền sửa/ẩn-hiện cột...)
+  // nhưng KHÔNG BAO GIỜ ghi được `featurePermissions` (chỉ manager).
+  const canWriteFeaturePermissions = me.role === "manager";
+  const canWriteColumns =
     me.role === "manager" ||
+    hasFeature(existing.featurePermissions as FeaturePermissions, "editColumn", me.role) ||
     isOrderStatusOptionsOnlyChange(existing.columns, body.columns, existing.featurePermissions, body.featurePermissions, me.role);
 
   // cpaEmailDefaults là field độc lập, riêng biệt với cụm columns/featurePermissions ở
@@ -128,8 +133,10 @@ export async function PUT(request: NextRequest) {
   // khác gửi kèm field này thì âm thầm bỏ qua (không set, không 403 cả request) vì
   // columns/featurePermissions của họ (nhánh order-status-options-only) vẫn hợp lệ.
   const data: Prisma.AppConfigUpdateInput = {};
-  if (canWriteColumnsAndPermissions) {
+  if (canWriteColumns) {
     data.columns = body.columns;
+  }
+  if (canWriteFeaturePermissions) {
     data.featurePermissions = body.featurePermissions;
   }
   if (me.role === "manager" && "cpaEmailDefaults" in body) {
@@ -173,6 +180,14 @@ export async function PUT(request: NextRequest) {
   ) {
     data.cpaReviewStatusOptions = body.cpaReviewStatusOptions;
   }
+  // Cùng cơ chế cpaReviewStatusOptions ở trên — ẩn/hiện cột tab "CPA Review" cho MỌI user
+  // (thêm 2026-08-15).
+  if (
+    "cpaReviewHiddenColumns" in body &&
+    hasFeature(existing.featurePermissions as FeaturePermissions, "manageCpaReviewSheet", me.role)
+  ) {
+    data.cpaReviewHiddenColumns = body.cpaReviewHiddenColumns;
+  }
 
   // Không có field hợp lệ nào để ghi (vd role không phải manager, columns/featurePermissions
   // lệch bản server nên bị bỏ qua ở trên, VÀ cũng không có quyền field độc lập nào khác) — lúc
@@ -194,5 +209,6 @@ export async function PUT(request: NextRequest) {
     refundYearStatusOptions: config.refundYearStatusOptions,
     collectingColumns: config.collectingColumns,
     cpaReviewStatusOptions: config.cpaReviewStatusOptions,
+    cpaReviewHiddenColumns: config.cpaReviewHiddenColumns,
   });
 }
