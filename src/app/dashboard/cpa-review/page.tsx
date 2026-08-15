@@ -2,7 +2,8 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ShieldAlert, Plus, Trash2, ExternalLink, StickyNote, FileSpreadsheet, X, Filter, EyeOff } from "lucide-react";
+import { ShieldAlert, Plus, Trash2, ExternalLink, StickyNote, FileSpreadsheet, X, Filter, EyeOff, Table2, BarChart3 } from "lucide-react";
+import { CpaReviewReportView } from "@/components/cpa-review-report";
 import { useAppStore, useCurrentUser } from "@/store/app-store";
 import { hasFeature } from "@/lib/rbac";
 import {
@@ -201,6 +202,9 @@ export default function CpaReviewPage() {
   // quy ước đánh số. Dòng mới (thêm tay/"Test Sheet") nối vào CUỐI danh sách (xem
   // nextAppendCpaReviewSortOrder) — KHÔNG lên đầu (đã thử rồi đảo lại cùng ngày vì làm số
   // "row" trong app lệch khỏi số dòng thật trên Sheet, xem giải thích ở đó).
+  // Tab con "Dữ liệu"/"Báo cáo" trong chính CPA Review (thêm 2026-08-16) — "Báo cáo" tính
+  // theo THÁNG đang chọn (dùng chung `rows`/`filteredRows` bên dưới), xem cpa-review-report.tsx.
+  const [view, setView] = useState<"table" | "report">("table");
   const [showFilterRow, setShowFilterRow] = useState(false);
   const [filters, setFilters] = useState<Record<string, string>>({});
   const hasActiveFilters = Object.values(filters).some(Boolean);
@@ -293,39 +297,63 @@ export default function CpaReviewPage() {
   return (
     <div className="flex h-full flex-col px-4 py-6 sm:px-6">
       {ConfirmDialogUI}
+      <div className="mb-3 flex items-center gap-1 rounded-lg border border-border bg-surface p-1 self-start">
+        <button
+          onClick={() => setView("table")}
+          className={`flex h-8 items-center gap-1.5 rounded-md px-3 text-sm font-medium transition ${
+            view === "table" ? "gradient-btn text-white" : "text-text-dim hover:text-text"
+          }`}
+        >
+          <Table2 size={14} />
+          Dữ liệu
+        </button>
+        <button
+          onClick={() => setView("report")}
+          className={`flex h-8 items-center gap-1.5 rounded-md px-3 text-sm font-medium transition ${
+            view === "report" ? "gradient-btn text-white" : "text-text-dim hover:text-text"
+          }`}
+        >
+          <BarChart3 size={14} />
+          Báo cáo
+        </button>
+      </div>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold tracking-tight">{t("nav.cpaReview")}</h1>
           <p className="mt-0.5 text-xs text-text-faint">
-            Bảng độc lập theo TỪNG THÁNG, khớp đúng cấu trúc Google Sheet CPA Review — đồng bộ 2 chiều nếu đã kết nối
-            (nút &quot;Kết nối Sheet&quot; cạnh bộ chọn tháng).
+            {view === "report"
+              ? "Xếp hạng Agent/Processor theo tháng đang chọn, dựa trên Số tiền mỗi năm (2023-2025)."
+              : "Bảng độc lập theo TỪNG THÁNG, khớp đúng cấu trúc Google Sheet CPA Review — đồng bộ 2 chiều nếu đã kết nối"}
+            {view === "table" && " (nút \"Kết nối Sheet\" cạnh bộ chọn tháng)."}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <CpaReviewMonthPicker value={selectedMonth} onChange={setSelectedMonth} />
-          {canManageStatus && (
+          {view === "table" && canManageStatus && (
             <>
               <CpaReviewSyncGuideDialog month={selectedMonth} />
               <CpaReviewSheetConfigDialog month={selectedMonth} />
             </>
           )}
-          {canManageStatus && <CpaReviewStatusOptionsButton />}
-          {canManageStatus && (
+          {view === "table" && canManageStatus && <CpaReviewStatusOptionsButton />}
+          {view === "table" && canManageStatus && (
             <ColumnVisibilityButton hiddenColumns={hiddenColumnsSet} onToggle={toggleHiddenColumn} />
           )}
-          <button
-            onClick={toggleFilterRow}
-            className={`flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm transition ${
-              showFilterRow
-                ? "border-accent bg-accent-soft text-accent"
-                : "border-border bg-surface text-text-dim hover:bg-surface-hover hover:text-text"
-            }`}
-          >
-            <Filter size={14} />
-            Lọc
-            {hasActiveFilters && <span className="h-1.5 w-1.5 rounded-full bg-accent" />}
-          </button>
-          {canAdd && (
+          {view === "table" && (
+            <button
+              onClick={toggleFilterRow}
+              className={`flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm transition ${
+                showFilterRow
+                  ? "border-accent bg-accent-soft text-accent"
+                  : "border-border bg-surface text-text-dim hover:bg-surface-hover hover:text-text"
+              }`}
+            >
+              <Filter size={14} />
+              Lọc
+              {hasActiveFilters && <span className="h-1.5 w-1.5 rounded-full bg-accent" />}
+            </button>
+          )}
+          {view === "table" && canAdd && (
             <button
               onClick={addCpaReviewRow}
               className="flex h-9 items-center gap-1.5 rounded-lg border border-dashed border-border-strong px-3 text-sm text-text-dim transition hover:bg-surface-hover hover:text-text"
@@ -337,7 +365,12 @@ export default function CpaReviewPage() {
         </div>
       </div>
 
-      {rows.length === 0 && !isMonthConnected && (
+      {/* Báo cáo dùng `rows` (toàn bộ tháng đang chọn), KHÔNG dùng `filteredRows` — bộ lọc ở
+          hàng "3" là khái niệm riêng của bảng dữ liệu, không nên âm thầm ảnh hưởng số liệu
+          báo cáo nếu người dùng quên tắt lọc trước khi chuyển tab. */}
+      {view === "report" && <CpaReviewReportView rows={rows} agentUsers={agentUsers} processorUsers={processorUsers} />}
+
+      {view === "table" && rows.length === 0 && !isMonthConnected && (
         <div className="mt-4 flex items-center gap-2 rounded-xl border border-dashed border-border-strong bg-surface px-4 py-3 text-xs text-text-faint">
           <FileSpreadsheet size={15} className="shrink-0 text-text-dim" />
           <span>
@@ -347,7 +380,7 @@ export default function CpaReviewPage() {
         </div>
       )}
 
-      {rows.length > 0 && filteredRows.length === 0 && (
+      {view === "table" && rows.length > 0 && filteredRows.length === 0 && (
         <div className="mt-4 flex items-center gap-2 rounded-xl border border-dashed border-border-strong bg-surface px-4 py-3 text-xs text-text-faint">
           <span>
             Không có dòng nào khớp bộ lọc hiện tại —{" "}
@@ -359,6 +392,7 @@ export default function CpaReviewPage() {
         </div>
       )}
 
+      {view === "table" && (
       <div className="mt-4 flex-1 overflow-auto rounded-xl border border-border-strong">
         {/* border-separate (KHÔNG border-collapse) — bắt buộc để position:sticky trên
             <td>/<th> hoạt động đúng khi cuộn NGANG, tránh lỗi cột A-F "dính" luôn cả khi
@@ -790,6 +824,7 @@ export default function CpaReviewPage() {
           </tbody>
         </table>
       </div>
+      )}
     </div>
   );
 }
