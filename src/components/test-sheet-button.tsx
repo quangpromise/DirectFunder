@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { CheckCircle2, FlaskConical, X } from "lucide-react";
+import { useT } from "@/lib/i18n";
 import { REFUND_YEARS } from "@/lib/refund";
 
 /**
@@ -40,6 +41,7 @@ export function TestSheetButton({
   const [yearPickerOpen, setYearPickerOpen] = useState(false);
   const [selectedYears, setSelectedYears] = useState<string[]>([]);
   const [note, setNote] = useState("");
+  const t = useT();
 
   function toggleYear(year: string) {
     setSelectedYears((prev) => (prev.includes(year) ? prev.filter((y) => y !== year) : [...prev, year]));
@@ -47,8 +49,8 @@ export function TestSheetButton({
 
   async function handleClick() {
     if (sent) {
-      const confirmed = await confirm("Bạn có muốn gửi lại hồ sơ này sang tab CPA Review không?", {
-        title: "Gửi lại Test Sheet",
+      const confirmed = await confirm(t("testSheet.resendConfirm"), {
+        title: t("testSheet.resendTitle"),
       });
       if (!confirmed) return;
       await markCaseCpaReviewTestSent(caseId, "clear");
@@ -62,15 +64,15 @@ export function TestSheetButton({
   async function confirmYears() {
     if (selectedYears.length === 0) return;
     setYearPickerOpen(false);
-    const confirmed = await confirm("Gửi thông tin hồ sơ này sang tab CPA Review (tháng hiện tại)?", {
-      title: "Test Sheet",
+    const confirmed = await confirm(t("testSheet.confirmSend"), {
+      title: t("testSheet.confirmSendTitle"),
     });
     if (!confirmed) return;
     setSending(true);
     try {
       const result = await sendCaseRowToCpaReview(caseId, selectedYears, note);
       if (!result.ok) {
-        await alertWarn(result.error, { title: "Gửi thất bại" });
+        await alertWarn(result.error, { title: t("testSheet.sendErrorTitle") });
       }
     } finally {
       setSending(false);
@@ -90,8 +92,8 @@ export function TestSheetButton({
         type="button"
         onClick={handleClick}
         disabled={sending}
-        title={sent ? "Đã gửi sang tab CPA Review" : "Test Sheet (gửi sang tab CPA Review)"}
-        aria-label={sent ? "Đã gửi sang tab CPA Review" : "Test Sheet (gửi sang tab CPA Review)"}
+        title={sent ? t("testSheet.sentTitle") : t("testSheet.notSentTitle")}
+        aria-label={sent ? t("testSheet.sentTitle") : t("testSheet.notSentTitle")}
         className={`ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition disabled:cursor-default disabled:opacity-60 ${
           sent
             ? "border-green-600/70 bg-green-800/60 text-green-100 hover:bg-green-800/80 light:border-green-700 light:bg-green-600 light:text-white light:hover:bg-green-700"
@@ -107,7 +109,7 @@ export function TestSheetButton({
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 px-4 py-8">
             <div className="popover w-full max-w-sm rounded-2xl p-5 shadow-2xl">
               <div className="mb-3 flex items-center justify-between">
-                <h3 className="text-sm font-semibold">Test Sheet — chọn năm gửi</h3>
+                <h3 className="text-sm font-semibold">{t("testSheet.pickerTitle")}</h3>
                 <button onClick={() => setYearPickerOpen(false)} className="text-text-faint hover:text-text">
                   <X size={16} />
                 </button>
@@ -139,12 +141,12 @@ export function TestSheetButton({
                 })}
               </div>
               <label className="mt-3 block text-xs text-text-dim">
-                Note (sẽ đổ vào cột &quot;Note&quot; ở tab CPA Review)
+                {t("testSheet.noteLabel")}
                 <textarea
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
                   rows={2}
-                  placeholder="Không bắt buộc..."
+                  placeholder={t("testSheet.notePlaceholder")}
                   className="mt-1 w-full resize-none rounded-lg border border-border bg-bg-elevated px-2.5 py-1.5 text-xs text-text outline-none focus:border-accent"
                 />
               </label>
@@ -154,14 +156,14 @@ export function TestSheetButton({
                 disabled={selectedYears.length === 0}
                 className="gradient-btn mt-3 w-full rounded-lg py-1.5 text-xs font-medium text-white disabled:cursor-default disabled:opacity-50"
               >
-                Xác nhận
+                {t("common.confirm")}
               </button>
               <button
                 type="button"
                 onClick={markAsSent}
                 className="mt-1.5 w-full rounded-lg border border-green-600/50 bg-green-800/20 py-1.5 text-xs font-medium text-green-300 transition hover:bg-green-800/40 light:border-green-600 light:bg-green-50 light:text-green-700 light:hover:bg-green-100"
               >
-                Đánh dấu đã gửi
+                {t("testSheet.markSentBtn")}
               </button>
             </div>
           </div>,

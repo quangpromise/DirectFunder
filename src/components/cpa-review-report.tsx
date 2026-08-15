@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Trophy, ChevronDown, Check } from "lucide-react";
+import { useT } from "@/lib/i18n";
 import { CPA_REVIEW_VISIBLE_YEARS, yearAmountKey, yearStatusKey } from "@/lib/cpa-review-columns";
 import type { CpaReviewRecord, User } from "@/lib/types";
 
@@ -114,6 +115,7 @@ function MultiSelectFilter({
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const [pos, setPos] = useState({ x: 0, y: 0 });
+  const t = useT();
 
   function openPopup() {
     const rect = triggerRef.current?.getBoundingClientRect();
@@ -157,15 +159,15 @@ function MultiSelectFilter({
             <div className="fixed inset-0 z-[90]" onClick={() => setOpen(false)} />
             <div className="popover fixed z-[100] w-60 rounded-xl p-2 shadow-2xl shadow-black/60" style={{ left: pos.x, top: pos.y }}>
               <div className="mb-1 flex items-center justify-between px-1">
-                <span className="text-[11px] font-semibold text-text-faint">Chọn {label.toLowerCase()} hiện trong báo cáo</span>
+                <span className="text-[11px] font-semibold text-text-faint">{t("cpaReviewReport.selectFilterHeading", { label })}</span>
                 {!isAll && (
                   <button onClick={() => onChange(null)} className="text-[11px] font-medium text-accent hover:underline">
-                    Chọn tất cả
+                    {t("cpaReviewReport.selectAll")}
                   </button>
                 )}
               </div>
               <div className="flex max-h-72 flex-col gap-0.5 overflow-y-auto">
-                {users.length === 0 && <p className="px-2 py-2 text-xs text-text-faint">Chưa có ai.</p>}
+                {users.length === 0 && <p className="px-2 py-2 text-xs text-text-faint">{t("cpaReviewReport.noUsers")}</p>}
                 {users.map((u) => {
                   const checked = isAll || selected!.has(u.id);
                   return (
@@ -201,6 +203,7 @@ export function CpaReviewReportView({
 }) {
   const [selectedAgentIds, setSelectedAgentIds] = useState<Set<string> | null>(null);
   const [selectedProcessorIds, setSelectedProcessorIds] = useState<Set<string> | null>(null);
+  const t = useT();
 
   const visibleAgentUsers = selectedAgentIds ? agentUsers.filter((u) => selectedAgentIds.has(u.id)) : agentUsers;
   const visibleProcessorUsers = selectedProcessorIds ? processorUsers.filter((u) => selectedProcessorIds.has(u.id)) : processorUsers;
@@ -231,7 +234,7 @@ export function CpaReviewReportView({
       <div className="flex flex-col gap-4 lg:flex-row">
         <div className="flex-1 rounded-xl border border-border-strong bg-surface">
           <div className="border-b border-border px-4 py-3">
-            <h3 className="text-sm font-semibold text-amber-400 light:text-amber-700">Báo cáo Agent</h3>
+            <h3 className="text-sm font-semibold text-amber-400 light:text-amber-700">{t("cpaReviewReport.agentReportTitle")}</h3>
           </div>
           {/* max-h + overflow-y-auto — cuộn riêng từng bảng nếu danh sách dài (yêu cầu
               2026-08-16), <thead> sticky để tiêu đề + hàng Tổng KHÔNG biến mất khi cuộn. */}
@@ -257,7 +260,7 @@ export function CpaReviewReportView({
                 {agentStats.length > 0 && (
                   <tr className="bg-orange-600">
                     <td className="px-3 py-2"></td>
-                    <td className="px-3 py-2 text-sm font-bold text-white">Tổng</td>
+                    <td className="px-3 py-2 text-sm font-bold text-white">{t("common.total")}</td>
                     <td className="px-3 py-2 text-center text-sm font-bold text-white">{agentTotals.totalCase}</td>
                     <td className="px-3 py-2 text-center text-sm font-bold text-white">{agentTotals.over1000}</td>
                     <td className="px-3 py-2 text-center text-sm font-bold text-white">{agentTotals.under1000}</td>
@@ -269,7 +272,7 @@ export function CpaReviewReportView({
                 {agentStats.length === 0 && (
                   <tr>
                     <td colSpan={6} className="px-3 py-6 text-center text-xs text-text-faint">
-                      {agentUsers.length === 0 ? "Chưa có Agent nào trong hệ thống." : "Không có Agent nào đang được chọn."}
+                      {agentUsers.length === 0 ? t("cpaReviewReport.noAgentsInSystem") : t("cpaReviewReport.noAgentsSelected")}
                     </td>
                   </tr>
                 )}
@@ -301,7 +304,7 @@ export function CpaReviewReportView({
 
         <div className="flex-1 rounded-xl border border-border-strong bg-surface">
           <div className="border-b border-border px-4 py-3">
-            <h3 className="text-sm font-semibold text-amber-400 light:text-amber-700">Báo cáo Processor</h3>
+            <h3 className="text-sm font-semibold text-amber-400 light:text-amber-700">{t("cpaReviewReport.processorReportTitle")}</h3>
           </div>
           <div className="max-h-[480px] overflow-auto">
             <table className="w-full text-sm">
@@ -316,7 +319,7 @@ export function CpaReviewReportView({
                 {processorStats.length > 0 && (
                   <tr className="bg-orange-600">
                     <td className="px-3 py-2"></td>
-                    <td className="px-3 py-2 text-sm font-bold text-white">Tổng</td>
+                    <td className="px-3 py-2 text-sm font-bold text-white">{t("common.total")}</td>
                     <td className="px-3 py-2 text-center text-sm font-bold text-white">{processorTotalCase}</td>
                   </tr>
                 )}
@@ -325,7 +328,9 @@ export function CpaReviewReportView({
                 {processorStats.length === 0 && (
                   <tr>
                     <td colSpan={3} className="px-3 py-6 text-center text-xs text-text-faint">
-                      {processorUsers.length === 0 ? "Chưa có Processor nào trong hệ thống." : "Không có Processor nào đang được chọn."}
+                      {processorUsers.length === 0
+                        ? t("cpaReviewReport.noProcessorsInSystem")
+                        : t("cpaReviewReport.noProcessorsSelected")}
                     </td>
                   </tr>
                 )}

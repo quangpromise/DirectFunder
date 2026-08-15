@@ -2,6 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useT } from "@/lib/i18n";
 import { ColumnType, SelectOption } from "@/lib/types";
 import { OptionBadge } from "@/components/option-badge";
 import { CELL_NAV_ATTR, handleCellTab } from "@/lib/cell-nav";
@@ -286,6 +287,7 @@ function SelectCell({
   const current = options.find((o) => o.id === value);
   const filteredOptions =
     searchable && query.trim() ? options.filter((o) => o.label.toLowerCase().includes(query.trim().toLowerCase())) : options;
+  const t = useT();
 
   // Đo lại vị trí sau khi menu render (biết chiều cao thật) và lật lên trên nếu không đủ
   // chỗ bên dưới — tránh popup bị khuất màn hình khi ô nằm ở hàng gần cuối bảng.
@@ -355,7 +357,7 @@ function SelectCell({
                   onChange={(e) => setQuery(e.target.value)}
                   onClick={(e) => e.stopPropagation()}
                   onKeyDown={(e) => e.stopPropagation()}
-                  placeholder="Tìm kiếm..."
+                  placeholder={t("editableCell.searchPlaceholder")}
                   className="mb-1 w-full shrink-0 rounded-lg border border-border bg-bg-elevated px-2 py-1 text-xs outline-none focus:border-accent"
                 />
               )}
@@ -374,7 +376,7 @@ function SelectCell({
                 ))}
                 {filteredOptions.length === 0 && (
                   <div className="px-2 py-2 text-xs text-text-faint">
-                    {options.length === 0 ? "Chưa có lựa chọn nào." : "Không tìm thấy lựa chọn phù hợp."}
+                    {options.length === 0 ? t("editableCell.noOptions") : t("editableCell.noMatchingOptions")}
                   </div>
                 )}
               </div>

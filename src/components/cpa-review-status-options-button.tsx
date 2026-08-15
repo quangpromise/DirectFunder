@@ -71,7 +71,7 @@ export function CpaReviewStatusOptionsButton() {
         className="flex h-9 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-sm text-text-dim transition hover:bg-surface-hover hover:text-text"
       >
         <Settings size={14} />
-        Trạng thái Status
+        {t("cpaReviewStatusOptions.button")}
       </button>
 
       {open &&
@@ -85,7 +85,7 @@ export function CpaReviewStatusOptionsButton() {
               style={{ left: pos.x, top: pos.y, width: PANEL_WIDTH }}
             >
               <div className="mb-1.5 flex items-center justify-between px-1">
-                <span className="text-xs font-semibold text-text">Quản lý Status (CPA Review)</span>
+                <span className="text-xs font-semibold text-text">{t("cpaReviewStatusOptions.heading")}</span>
                 <button onClick={() => setOpen(false)} className="text-text-faint hover:text-text" aria-label={t("common.close")}>
                   <X size={14} />
                 </button>

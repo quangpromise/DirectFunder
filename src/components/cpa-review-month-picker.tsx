@@ -1,6 +1,7 @@
 "use client";
 
 import { ChevronLeft, ChevronRight, Calendar } from "lucide-react";
+import { useT } from "@/lib/i18n";
 import { currentMonthKey, monthKeyLabel, shiftMonthKey } from "@/lib/cpa-review-month";
 
 /**
@@ -11,6 +12,7 @@ import { currentMonthKey, monthKeyLabel, shiftMonthKey } from "@/lib/cpa-review-
  */
 export function CpaReviewMonthPicker({ value, onChange }: { value: string; onChange: (month: string) => void }) {
   const isCurrent = value === currentMonthKey();
+  const t = useT();
 
   return (
     <div className="flex h-9 items-center gap-0.5 rounded-lg border border-border bg-surface px-1">
@@ -18,8 +20,8 @@ export function CpaReviewMonthPicker({ value, onChange }: { value: string; onCha
         type="button"
         onClick={() => onChange(shiftMonthKey(value, -1))}
         className="flex h-7 w-7 items-center justify-center rounded-md text-text-dim transition hover:bg-surface-hover hover:text-text"
-        aria-label="Tháng trước"
-        title="Tháng trước"
+        aria-label={t("cpaReviewMonth.prev")}
+        title={t("cpaReviewMonth.prev")}
       >
         <ChevronLeft size={15} />
       </button>
@@ -31,8 +33,8 @@ export function CpaReviewMonthPicker({ value, onChange }: { value: string; onCha
         type="button"
         onClick={() => onChange(shiftMonthKey(value, 1))}
         className="flex h-7 w-7 items-center justify-center rounded-md text-text-dim transition hover:bg-surface-hover hover:text-text"
-        aria-label="Tháng sau"
-        title="Tháng sau"
+        aria-label={t("cpaReviewMonth.next")}
+        title={t("cpaReviewMonth.next")}
       >
         <ChevronRight size={15} />
       </button>
@@ -42,7 +44,7 @@ export function CpaReviewMonthPicker({ value, onChange }: { value: string; onCha
           onClick={() => onChange(currentMonthKey())}
           className="ml-1 shrink-0 rounded-md border border-dashed border-border-strong px-2 py-1 text-[11px] text-text-faint transition hover:bg-surface-hover hover:text-text"
         >
-          Hôm nay
+          {t("cpaReviewMonth.today")}
         </button>
       )}
     </div>

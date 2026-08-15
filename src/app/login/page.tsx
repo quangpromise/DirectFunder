@@ -131,7 +131,7 @@ export default function LoginPage() {
               onChange={(e) => setEmail(e.target.value)}
               onFocus={() => setShowSuggestions(true)}
               onClick={() => setShowSuggestions(true)}
-              placeholder="ten@directfunder.com hoặc Họ và Tên"
+              placeholder={t("login.emailPlaceholder")}
               autoComplete="off"
               className="w-full rounded-lg border border-border bg-bg-elevated px-3 py-2 text-sm outline-none transition focus:border-accent focus:ring-4 focus:ring-accent/15"
             />

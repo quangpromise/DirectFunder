@@ -6,6 +6,7 @@ import { FileText } from "lucide-react";
 import { useAppStore } from "@/store/app-store";
 import { getFullName } from "@/lib/client-name";
 import { formatSsn } from "@/lib/ssn";
+import { useT } from "@/lib/i18n";
 
 type OrderTab = "order8821" | "orderTtsWit";
 
@@ -19,13 +20,14 @@ export default function OrderPage({ params }: { params: Promise<{ caseId: string
   const searchParams = useSearchParams();
   const initialTab = searchParams.get("tab") === "orderTtsWit" ? "orderTtsWit" : "order8821";
   const [tab, setTab] = useState<OrderTab>(initialTab);
+  const t = useT();
 
   const kase = useAppStore((s) => s.cases.find((c) => c.id === caseId));
 
   if (!kase) {
     return (
       <div className="flex min-h-screen items-center justify-center px-6 text-center text-sm text-text-faint">
-        Không tìm thấy hồ sơ này. Có thể hồ sơ đã bị xóa.
+        {t("orderDetail.notFound")}
       </div>
     );
   }
@@ -40,7 +42,7 @@ export default function OrderPage({ params }: { params: Promise<{ caseId: string
           <FileText size={17} />
         </div>
         <div>
-          <h1 className="text-lg font-semibold tracking-tight">Order Detail</h1>
+          <h1 className="text-lg font-semibold tracking-tight">{t("orderDetail.title")}</h1>
           <p className="text-xs text-text-faint">{kase.caseNumber}</p>
         </div>
       </div>
@@ -84,12 +86,12 @@ export default function OrderPage({ params }: { params: Promise<{ caseId: string
 
         <div className="pt-4 text-sm text-text-dim">
           <p>
-            Đã tạo <span className="font-medium text-text">{TAB_LABEL[tab]}</span> cho khách hàng{" "}
-            <span className="font-medium text-text">{fullName || "—"}</span> dựa trên thông tin Client
-            Name, Phone và SSN của hồ sơ {kase.caseNumber}.
+            {t("orderDetail.createdPrefix")} <span className="font-medium text-text">{TAB_LABEL[tab]}</span>{" "}
+            {t("orderDetail.createdMid")} <span className="font-medium text-text">{fullName || "—"}</span>{" "}
+            {t("orderDetail.createdSuffix", { caseNumber: kase.caseNumber })}
           </p>
           <p className="mt-2 text-xs text-text-faint">
-            Đây là bản xem trước nội bộ — chưa kết nối hệ thống order thật.
+            {t("orderDetail.previewNotice")}
           </p>
         </div>
       </div>

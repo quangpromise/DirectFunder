@@ -324,7 +324,7 @@ export default function CpaReviewPage() {
           }`}
         >
           <Table2 size={14} />
-          Dữ liệu
+          {t("cpaReview.tab.data")}
         </button>
         <button
           onClick={() => setView("report")}
@@ -333,17 +333,14 @@ export default function CpaReviewPage() {
           }`}
         >
           <BarChart3 size={14} />
-          Báo cáo
+          {t("cpaReview.tab.report")}
         </button>
       </div>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold tracking-tight">{t("nav.cpaReview")}</h1>
           <p className="mt-0.5 text-xs text-text-faint">
-            {view === "report"
-              ? "Xếp hạng Agent/Processor theo tháng đang chọn, dựa trên Số tiền mỗi năm (2023-2025)."
-              : "Bảng độc lập theo TỪNG THÁNG, khớp đúng cấu trúc Google Sheet CPA Review — đồng bộ 2 chiều nếu đã kết nối"}
-            {view === "table" && " (nút \"Kết nối Sheet\" cạnh bộ chọn tháng)."}
+            {view === "report" ? t("cpaReview.desc.report") : t("cpaReview.desc.table")}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -353,7 +350,7 @@ export default function CpaReviewPage() {
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Tìm Name, Phone, SSN..."
+                placeholder={t("cpaReview.searchPlaceholder")}
                 className="w-48 rounded-lg border border-border bg-surface py-2 pl-8 pr-3 text-sm outline-none focus:border-accent lg:w-56"
               />
             </div>
@@ -379,7 +376,7 @@ export default function CpaReviewPage() {
               }`}
             >
               <Filter size={14} />
-              Lọc
+              {t("cpaReview.filterBtn")}
               {hasActiveFilters && <span className="h-1.5 w-1.5 rounded-full bg-accent" />}
             </button>
           )}
@@ -413,8 +410,8 @@ export default function CpaReviewPage() {
         <div className="mt-4 flex items-center gap-2 rounded-xl border border-dashed border-border-strong bg-surface px-4 py-3 text-xs text-text-faint">
           <FileSpreadsheet size={15} className="shrink-0 text-text-dim" />
           <span>
-            Chưa có dữ liệu/kết nối Sheet cho <span className="font-medium text-text">{monthKeyLabel(selectedMonth)}</span>
-            {canManageStatus ? " — dán link Sheet của tháng này qua nút \"Kết nối Sheet\" ở trên, hoặc bấm \"Hướng dẫn\" nếu chưa từng làm." : "."}
+            {t("cpaReview.noDataPrefix")} <span className="font-medium text-text">{monthKeyLabel(selectedMonth)}</span>
+            {canManageStatus ? t("cpaReview.noDataSuffixManage") : "."}
           </span>
         </div>
       )}
@@ -422,7 +419,7 @@ export default function CpaReviewPage() {
       {view === "table" && rows.length > 0 && filteredRows.length === 0 && (
         <div className="mt-4 flex items-center gap-2 rounded-xl border border-dashed border-border-strong bg-surface px-4 py-3 text-xs text-text-faint">
           <span>
-            Không có dòng nào khớp tìm kiếm/bộ lọc hiện tại —{" "}
+            {t("cpaReview.noResultsPrefix")}{" "}
             <button
               onClick={() => {
                 setFilters({});
@@ -430,7 +427,7 @@ export default function CpaReviewPage() {
               }}
               className="font-medium text-accent hover:underline"
             >
-              xoá tất cả
+              {t("cpaReview.clearAll")}
             </button>
             .
           </span>
@@ -613,7 +610,7 @@ export default function CpaReviewPage() {
                   <button
                     onClick={() => setFilters({})}
                     className="flex h-full w-full items-center justify-center text-accent transition hover:text-red-400"
-                    title="Xoá tất cả bộ lọc"
+                    title={t("cpaReview.clearAllFiltersTitle")}
                   >
                     <X size={11} />
                   </button>
@@ -780,7 +777,7 @@ export default function CpaReviewPage() {
                             target="_blank"
                             rel="noreferrer"
                             className="absolute right-1 top-1/2 -translate-y-1/2 text-text-faint transition hover:text-accent"
-                            title="Mở hồ sơ gốc"
+                            title={t("cpaReview.openOriginalCase")}
                             onClick={(e) => e.stopPropagation()}
                           >
                             <ExternalLink size={11} />
@@ -887,6 +884,7 @@ function ColumnVisibilityButton({
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const [pos, setPos] = useState({ x: 0, y: 0 });
+  const t = useT();
 
   function openPopup() {
     const rect = triggerRef.current?.getBoundingClientRect();
@@ -906,7 +904,7 @@ function ColumnVisibilityButton({
         }`}
       >
         <EyeOff size={14} />
-        Cột hiển thị
+        {t("cpaReview.columnVisibilityBtn")}
       </button>
 
       {open &&
@@ -915,7 +913,7 @@ function ColumnVisibilityButton({
           <>
             <div className="fixed inset-0 z-[90]" onClick={() => setOpen(false)} />
             <div className="popover fixed z-[100] w-56 rounded-xl p-2 shadow-2xl shadow-black/60" style={{ left: pos.x, top: pos.y }}>
-              <p className="mb-1.5 px-1 text-[11px] font-semibold text-text-faint">Ẩn/hiện cột (áp dụng cho mọi người dùng)</p>
+              <p className="mb-1.5 px-1 text-[11px] font-semibold text-text-faint">{t("cpaReview.columnVisibilityHeading")}</p>
               <div className="flex flex-col gap-0.5">
                 {HIDEABLE_TAIL_COLUMNS.map((c) => (
                   <label
@@ -957,11 +955,12 @@ const FILTER_FIELD_CLASS =
   "m-1 h-7 w-[calc(100%-8px)] min-w-0 rounded-md border border-border-strong bg-bg-elevated px-2 text-xs font-medium text-text shadow-sm outline-none transition placeholder:text-text-faint focus:border-accent focus:bg-bg";
 
 function FilterInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const t = useT();
   return (
     <input
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      placeholder="Lọc..."
+      placeholder={t("cpaReview.filterPlaceholder")}
       className={FILTER_FIELD_CLASS}
     />
   );
@@ -978,9 +977,10 @@ function FilterSelect({
   onChange: (v: string) => void;
   options: { id: string; label: string }[];
 }) {
+  const t = useT();
   return (
     <select value={value} onChange={(e) => onChange(e.target.value)} className={`${FILTER_FIELD_CLASS} cursor-pointer`}>
-      <option value="">Tất cả</option>
+      <option value="">{t("cpaReview.filterAllOption")}</option>
       {options.map((o) => (
         <option key={o.id} value={o.id}>
           {o.label}
@@ -1103,7 +1103,7 @@ function DateWithNote({
         className={`mr-1 shrink-0 rounded p-0.5 transition ${
           hasNote ? "text-amber-400" : "text-text-faint opacity-0 hover:text-text-dim [tr:hover_&]:opacity-100"
         }`}
-        title={hasNote ? note! : "Thêm ghi chú"}
+        title={hasNote ? note! : t("cpaReview.addNoteTitle")}
       >
         <StickyNote size={11} />
       </button>
@@ -1122,7 +1122,7 @@ function DateWithNote({
                 onChange={(e) => setDraft(e.target.value)}
                 rows={3}
                 autoFocus
-                placeholder="Ghi chú..."
+                placeholder={t("cpaReview.addNotePlaceholder")}
                 className="w-full resize-none rounded-md border border-border bg-bg-elevated p-1.5 text-xs outline-none focus:border-accent"
               />
               <div className="mt-1.5 flex justify-end gap-1.5">
