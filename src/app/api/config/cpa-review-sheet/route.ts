@@ -53,7 +53,10 @@ function onCpaReviewEdit(e) {
     secret: "${secret}",
     ssn: String(ssn).split("\\n")[0].trim(),
     columnIndex: col - 1,
-    rawValue: e.value != null ? String(e.value) : ""
+    rawValue: e.value != null ? String(e.value) : "",
+    // Số dòng thật (thêm 2026-08-15) — cần để app phân biệt đúng dòng khi nhiều dòng cùng
+    // SSN (vd gửi "Test Sheet" nhiều lần cho cùng khách với năm khác nhau, không gộp).
+    row: row
   };
   // Cột B (Name) có thể gắn link tới hồ sơ gốc (vd tax.agentc3.com) — gửi kèm link hiện tại
   // mỗi khi cột này được sửa, để app không làm mất link lúc đồng bộ ngược lại Sheet.

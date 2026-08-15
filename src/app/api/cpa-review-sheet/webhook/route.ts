@@ -2,7 +2,13 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sheetChangeToPatch } from "@/lib/cpa-review-sheet-columns";
 import { yearNoteKey, CPA_REVIEW_YEARS } from "@/lib/cpa-review-columns";
-import { getCpaReviewSheetConfigMap, findCpaReviewConfigBySecret, getCrmSourceOptions } from "@/lib/cpa-review-sheet-sync";
+import {
+  getCpaReviewSheetConfigMap,
+  saveCpaReviewSheetConfigMap,
+  findCpaReviewConfigBySecret,
+  findRowIndexKeyByRow,
+  getCrmSourceOptions,
+} from "@/lib/cpa-review-sheet-sync";
 import { extractChangedYearStatuses, syncCpaReviewStatusToCase } from "@/lib/cpa-review-case-sync";
 import { broadcastCpaReviewChanged } from "@/lib/pusher-server";
 import type { Prisma } from "@prisma/client";
@@ -87,6 +93,14 @@ export async function POST(request: NextRequest) {
   const ssn = typeof body?.ssn === "string" ? body.ssn.trim() : "";
   const columnIndex = typeof body?.columnIndex === "number" ? body.columnIndex : Number(body?.columnIndex);
   const rawValue = typeof body?.rawValue === "string" ? body.rawValue : "";
+  // Số dòng thật trên Sheet (thêm 2026-08-15) — CẦN để phân biệt đúng dòng khi nhiều
+  // CpaReviewRecord cùng chia sẻ 1 SSN (vd nút "Test Sheet" gửi nhiều lần, mỗi lần 1 năm
+  // khác nhau, không gộp — xem pushRecordToSheet trong cpa-review-sheet-sync.ts). Có thể
+  // thiếu (`undefined`) nếu Apps Script cũ chưa dán lại script mới — vẫn hoạt động được nhờ
+  // fallback khớp theo SSN bên dưới, chỉ kém chính xác hơn khi thật sự có nhiều dòng trùng
+  // SSN chưa từng được cache theo dòng.
+  const sheetRow = typeof body?.row === "number" ? body.row : Number(body?.row);
+  const hasSheetRow = Number.isFinite(sheetRow);
   // Link đính kèm ô Name (cột B) — Apps Script chỉ gửi field này khi cột vừa sửa là cột B
   // (xem buildAppsScript trong /api/config/cpa-review-sheet), rỗng "" nghĩa là Admin vừa GỠ
   // link (không phải "không gửi") nên vẫn cần merge để xoá đúng `custom.nameLink` cũ.
@@ -114,10 +128,16 @@ export async function POST(request: NextRequest) {
   const changedYearStatuses = extractChangedYearStatuses({ [patch.key]: patch.value });
 
   const rows = await prisma.cpaReviewRecord.findMany({ where: { month } });
-  const row = rows.find((r) => {
-    const custom = r.custom as Record<string, unknown>;
-    return typeof custom.ssn === "string" && custom.ssn.trim() === ssn;
-  });
+  // Ưu tiên khớp theo SỐ DÒNG thật (qua rowIndex cache đã lưu id/ssn -> dòng) — chỉ fallback
+  // khớp theo SSN (hành vi cũ, có thể chọn NHẦM dòng nếu nhiều dòng cùng SSN chưa từng được
+  // cache theo dòng) khi không có `sheetRow` hoặc dòng đó chưa từng xuất hiện trong cache.
+  const cachedKey = hasSheetRow ? findRowIndexKeyByRow(sheetConfig.rowIndex, sheetRow) : undefined;
+  const row =
+    (cachedKey ? rows.find((r) => r.id === cachedKey) : undefined) ??
+    rows.find((r) => {
+      const custom = r.custom as Record<string, unknown>;
+      return typeof custom.ssn === "string" && custom.ssn.trim() === ssn;
+    });
 
   if (!row) {
     // Dòng mới trong Sheet (chưa từng đồng bộ) — tạo record mới trong đúng tháng, bắt đầu
@@ -127,6 +147,15 @@ export async function POST(request: NextRequest) {
     const created = await prisma.cpaReviewRecord.create({
       data: { custom: initialCustom, sortOrder: -Date.now(), month },
     });
+    // Cache NGAY theo dòng thật (nếu Apps Script có gửi kèm) — để lần App→Sheet đẩy tiếp
+    // theo cho ĐÚNG record này ghi lại vào đúng dòng vừa gõ tay, không append nhầm 1 dòng
+    // mới trùng lặp bên cạnh.
+    if (hasSheetRow) {
+      await saveCpaReviewSheetConfigMap({
+        ...configMap,
+        [month]: { ...sheetConfig, rowIndex: { ...sheetConfig.rowIndex, [created.id]: sheetRow } },
+      });
+    }
     if (changedYearStatuses.length > 0) {
       after(() => syncCpaReviewStatusToCase(ssn, changedYearStatuses));
     }
@@ -151,6 +180,15 @@ export async function POST(request: NextRequest) {
     where: { id: row.id },
     data: { custom: merged as Prisma.InputJsonValue },
   });
+  // Tự "chữa lành" cache về đúng key mới (record.id) nếu dòng này vừa được khớp qua SSN
+  // (cache kiểu cũ, hoặc chưa từng cache) hay lệch số dòng — để lần push App→Sheet kế tiếp
+  // (và lần webhook kế tiếp) không còn phải dò lại qua SSN nữa.
+  if (hasSheetRow && sheetConfig.rowIndex[row.id] !== sheetRow) {
+    await saveCpaReviewSheetConfigMap({
+      ...configMap,
+      [month]: { ...sheetConfig, rowIndex: { ...sheetConfig.rowIndex, [row.id]: sheetRow } },
+    });
+  }
   if (changedYearStatuses.length > 0) {
     after(() => syncCpaReviewStatusToCase(ssn, changedYearStatuses));
   }

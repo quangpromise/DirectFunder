@@ -369,15 +369,25 @@ async function applyStatusDropdowns(
 }
 
 /** Ghi 1 dòng vào đúng vị trí trong Sheet CPA Review — tự tra rowIndex cache, append dòng
- * mới nếu chưa có (record mới hoặc SSN mới đổi). Trả về rowIndex MỚI nếu có append (nơi
- * gọi cần lưu lại AppConfig.cpaReviewSheetConfig[month].rowIndex). */
+ * mới nếu chưa có. Trả về thông tin cache cần lưu lại nếu có gì thay đổi (dòng mới, hoặc
+ * vừa tự chuyển từ cache kiểu cũ sang kiểu mới — xem giải thích dưới), null nếu không cần
+ * ghi lại config (đã đúng cache từ trước, hoặc không có gì để đẩy).
+ *
+ * **Cache theo `record.id`, KHÔNG theo SSN** (đổi 2026-08-15) — bản đầu cache theo SSN, giả
+ * định ngầm "1 SSN = 1 dòng/tháng" (đúng với Sheet gốc lúc import lần đầu, SSN vốn không
+ * trùng). Giả định đó bị PHÁ VỠ bởi nút "Test Sheet": theo yêu cầu, gửi hồ sơ nhiều lần với
+ * năm khác nhau phải tạo NHIỀU CpaReviewRecord riêng biệt cùng SSN (không gộp) — cache theo
+ * SSN khiến các dòng này tranh nhau đúng 1 dòng Sheet, ghi đè lẫn nhau (bug thật gặp
+ * production, case "Dinh Hieu Huynh"). `config.rowIndex[ssn]` (kiểu cache CŨ) vẫn được đọc
+ * làm fallback TỰ CHUYỂN ĐỔI 1 lần cho các dòng import cũ chưa từng cache theo id — nhận
+ * đúng dòng cũ thay vì append nhầm 1 dòng mới trùng lặp cho dòng vốn đã tồn tại. */
 async function pushRecordToSheet(
   record: CpaReviewRecord,
   config: CpaReviewSheetConfig,
   users: User[],
   ssn: string,
   crmSourceOptions: SelectOption[]
-): Promise<{ appendedRow?: number } | null> {
+): Promise<{ cacheKey: string; row: number; removeLegacyKey?: string } | null> {
   const sheets = getServiceAccountSheetsClient();
   const resolveUserName = buildUserNameResolver(users, config.nameToUserId);
   const cells = buildCpaReviewSheetCells(record, resolveUserName, crmSourceOptions);
@@ -388,12 +398,19 @@ async function pushRecordToSheet(
   const noteTouched = CPA_REVIEW_YEARS.some((year) => yearNoteKey(year) in record.custom);
   if (cells.length === 0 && !noteTouched) return null;
 
-  let targetRow = config.rowIndex[ssn];
+  let targetRow = config.rowIndex[record.id];
   let appendedRow: number | undefined;
+  let removeLegacyKey: string | undefined;
   if (!targetRow) {
-    const occupied = Object.values(config.rowIndex);
-    targetRow = occupied.length > 0 ? Math.max(...occupied) + 1 : SCAN_START_ROW;
-    appendedRow = targetRow;
+    const legacyRow = config.rowIndex[ssn];
+    if (legacyRow !== undefined) {
+      targetRow = legacyRow;
+      removeLegacyKey = ssn;
+    } else {
+      const occupied = Object.values(config.rowIndex);
+      targetRow = occupied.length > 0 ? Math.max(...occupied) + 1 : SCAN_START_ROW;
+      appendedRow = targetRow;
+    }
   }
   await ensureRowExists(sheets, config.sheetId, config.tabName, targetRow);
   if (appendedRow) {
@@ -407,7 +424,29 @@ async function pushRecordToSheet(
   if (noteTouched || notes.some((n) => n.note)) {
     await writeCellNotes(sheets, config.sheetId, config.tabName, targetRow, notes);
   }
-  return appendedRow ? { appendedRow: targetRow } : null;
+  if (appendedRow === undefined && removeLegacyKey === undefined) return null;
+  return { cacheKey: record.id, row: targetRow, removeLegacyKey };
+}
+
+/** Tra ngược `rowIndex` (key -> số dòng) để tìm key (thường là `record.id`, có thể vẫn là
+ * SSN kiểu cache cũ) đang trỏ tới đúng số dòng Sheet đã cho — dùng ở chiều Sheet→App
+ * (webhook) để biết CHÍNH XÁC dòng nào trong nhiều dòng CÙNG SSN vừa được sửa (thêm
+ * 2026-08-15, xem giải thích ở pushRecordToSheet). Trả về `undefined` nếu dòng đó chưa
+ * từng được cache (dòng mới gõ tay trực tiếp trên Sheet, chưa có CpaReviewRecord nào). */
+export function findRowIndexKeyByRow(rowIndex: Record<string, number>, row: number): string | undefined {
+  return Object.entries(rowIndex).find(([, r]) => r === row)?.[0];
+}
+
+/** Áp kết quả `pushRecordToSheet` vào 1 bản `rowIndex` — dùng chung cho mọi nơi gọi
+ * `pushRecordToSheet` để tránh lặp lại logic merge/xoá legacy key. */
+function applyRowIndexResult(
+  rowIndex: Record<string, number>,
+  result: { cacheKey: string; row: number; removeLegacyKey?: string } | null
+): Record<string, number> {
+  if (!result) return rowIndex;
+  const next = { ...rowIndex, [result.cacheKey]: result.row };
+  if (result.removeLegacyKey) delete next[result.removeLegacyKey];
+  return next;
 }
 
 /** Đẩy 1 record lên Sheet CPA Review đúng THÁNG của record đó (nếu tháng đó đã kết nối) —
@@ -426,10 +465,10 @@ export async function syncRecordToCpaReviewSheet(record: CpaReviewRecord): Promi
     const users = (await prisma.user.findMany()) as unknown as User[];
     const crmSourceOptions = await getCrmSourceOptions();
     const result = await pushRecordToSheet(record, sheetConfig, users, ssn, crmSourceOptions);
-    if (result?.appendedRow) {
+    if (result) {
       await saveCpaReviewSheetConfigMap({
         ...map,
-        [record.month]: { ...sheetConfig, rowIndex: { ...sheetConfig.rowIndex, [ssn]: result.appendedRow } },
+        [record.month]: { ...sheetConfig, rowIndex: applyRowIndexResult(sheetConfig.rowIndex, result) },
       });
     }
   } catch (err) {
@@ -447,7 +486,7 @@ export async function clearRecordFromCpaReviewSheet(record: CpaReviewRecord): Pr
     const map = await getCpaReviewSheetConfigMap();
     const sheetConfig = map[record.month];
     if (!sheetConfig?.sheetId) return;
-    const targetRow = sheetConfig.rowIndex[ssn];
+    const targetRow = sheetConfig.rowIndex[record.id] ?? sheetConfig.rowIndex[ssn];
     if (!targetRow) return;
     const sheets = getServiceAccountSheetsClient();
     const cells: CellWrite[] = CPA_REVIEW_MANAGED_COLUMN_INDEXES.map((index) => ({ column: letterFor(index), value: "" }));
@@ -490,8 +529,8 @@ export async function resyncAllRecordsToSheet(month: string): Promise<number> {
     if (!ssn) continue;
     const result = await pushRecordToSheet(record, current, users, ssn, crmSourceOptions);
     pushed++;
-    if (result?.appendedRow) {
-      current = { ...current, rowIndex: { ...current.rowIndex, [ssn]: result.appendedRow } };
+    if (result) {
+      current = { ...current, rowIndex: applyRowIndexResult(current.rowIndex, result) };
     }
   }
   if (current !== sheetConfig) {
