@@ -180,6 +180,19 @@ export function sheetChangeToPatch(
   if (!key) return null;
   const raw = change.rawValue.trim();
 
+  // Ô vừa bị XOÁ TRẮNG trên Sheet — trước đây mọi nhánh bên dưới coi "" là "không parse
+  // được" -> trả null -> webhook bỏ qua toàn bộ thay đổi, khiến xoá Status (hay Processor/
+  // Agent/ngày/số tiền) trên Sheet KHÔNG BAO GIỜ đồng bộ xuống app (bug thật gặp production
+  // 2026-08-16, "để trống Status trên Sheet nhưng CPA Review vẫn giữ nguyên"). Tách rõ 2
+  // trường hợp: rỗng = Ý ĐỊNH xoá (luôn áp dụng), có giá trị nhưng không khớp được gì mới là
+  // "không parse được" (giữ nguyên hành vi bỏ qua + log cảnh báo cũ).
+  if (!raw) {
+    if (key === "processorUserId" || key === "agentUserId") return { key, value: "" };
+    const col = COLUMN_BY_KEY.get(key);
+    if (col?.type === "currency") return { key, value: 0 };
+    return { key, value: "" };
+  }
+
   if (key === "processorUserId" || key === "agentUserId") {
     const userId = nameToUserId[raw];
     if (!userId) return null;
