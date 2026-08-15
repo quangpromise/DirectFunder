@@ -516,7 +516,7 @@ export default function CpaReviewPage() {
                   style={yearHeaderStyle(year, headerOffset.row2, 20)}
                   className="whitespace-nowrap border-b border-r border-border px-2.5 py-2 text-center text-xs font-semibold"
                 >
-                  Tổng
+                  Total
                   <span className="ml-1 font-semibold text-red-400">({totalCountByYear[year] ?? 0})</span>
                 </th>,
               ])}
@@ -571,7 +571,7 @@ export default function CpaReviewPage() {
                   style={yearHeaderStyle(year, headerOffset.row3, 20)}
                   className="whitespace-nowrap border-b border-r border-border px-2.5 py-2 text-center text-xs font-semibold"
                 >
-                  Ngày
+                  Date
                 </th>,
                 <th
                   key={`${year}-status`}
@@ -585,7 +585,7 @@ export default function CpaReviewPage() {
                   style={yearHeaderStyle(year, headerOffset.row3, 20)}
                   className="whitespace-nowrap border-b border-r border-border px-2.5 py-2 text-center text-xs font-semibold"
                 >
-                  Số tiền
+                  Amount
                 </th>,
                 <th
                   key={`${year}-adjustment`}

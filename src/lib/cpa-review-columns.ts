@@ -94,9 +94,9 @@ export const CPA_REVIEW_COLUMNS: CpaReviewColumnDef[] = [
   { key: "dob", label: "DOB", type: "text", width: 110 },
   { key: "zipcode", label: "Zip", type: "zipcode", width: 86 },
   ...CPA_REVIEW_YEARS.flatMap((year): CpaReviewColumnDef[] => [
-    { key: yearEfileDateKey(year), label: `${year} Ngày`, type: "date", width: 110 },
+    { key: yearEfileDateKey(year), label: `${year} Date`, type: "date", width: 110 },
     { key: yearStatusKey(year), label: `${year} Status`, type: "select", width: 110, options: CPA_REVIEW_STATUS_OPTIONS },
-    { key: yearAmountKey(year), label: `${year} Số tiền`, type: "currency", width: 100 },
+    { key: yearAmountKey(year), label: `${year} Amount`, type: "currency", width: 100 },
     // Cột P thật trên Sheet (offset+3) — xem yearAdjustmentKey ở trên. Cột Q (offset+4,
     // "Tổng") CỐ Ý không có mặt ở đây: đó là ô công thức `=O+P` trên Sheet thật, app tự
     // tính lại y hệt ở UI (page.tsx) thay vì lưu/đồng bộ, để không bao giờ ghi đè công thức.
