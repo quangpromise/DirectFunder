@@ -418,14 +418,15 @@ async function pushRecordToSheet(
   // đụng gì tới cấu hình dropdown Admin đã set (yêu cầu 2026-08-15).
   await ensureRowExists(sheets, config.sheetId, config.tabName, targetRow);
   const cellsWithSsn: CellWrite[] = [...cells, { column: letterFor(SSN_COLUMN_INDEX), value: ssn }];
-  // 2 việc CHỈ áp dụng cho DÒNG MỚI (appendedRow), không đụng dòng đã có sẵn (thêm
-  // 2026-08-16): (1) ghi thẳng giá trị "Tổng" mỗi năm (=Số tiền+Other Refund) — ô này chắc
-  // chắn còn trống ở dòng mới nên an toàn ghi số trực tiếp, khác dòng có sẵn có thể đã có
-  // công thức Sheet thật (không tự ghi đè, giữ nguyên nguyên tắc cũ); (2) căn giữa cả dòng —
-  // dòng app tự thêm trước đây giữ định dạng mặc định (căn trái/dưới), lệch với các dòng có
-  // sẵn do Admin gõ tay.
-  const cellsToWrite = appendedRow !== undefined ? [...cellsWithSsn, ...buildCpaReviewYearTotalCells(record)] : cellsWithSsn;
+  // Ghi đè ô "Tổng" mỗi năm (=Số tiền+Other Refund) bằng giá trị THẬT tự tính — ÁP DỤNG CHO
+  // MỌI DÒNG (kể cả dòng có sẵn, không chỉ dòng mới như bản trước), theo yêu cầu rõ ràng
+  // 2026-08-16 ("ghi đè công thức Tổng... đến google sheet") — ĐẢO LẠI nguyên tắc "không tự
+  // ghi đè công thức Sheet" đã áp dụng cho riêng ô này trước đó. Ghi giá trị số RAW (không
+  // phải công thức `=O+P`) nên sẽ xoá mất công thức cũ ở ô đó nếu có — đúng như user yêu cầu.
+  const cellsToWrite = [...cellsWithSsn, ...buildCpaReviewYearTotalCells(record)];
   await writeCells(sheets, config.sheetId, config.tabName, targetRow, cellsToWrite);
+  // Căn giữa cả dòng vẫn CHỈ áp dụng cho dòng MỚI — dòng có sẵn có thể đã được Admin tự định
+  // dạng riêng, không đụng tới.
   if (appendedRow !== undefined) {
     await centerAlignRow(sheets, config.sheetId, Number(config.gid), targetRow, FULL_ROW_LAST_COL);
   }

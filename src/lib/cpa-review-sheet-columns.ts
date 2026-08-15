@@ -101,12 +101,10 @@ export function buildCpaReviewSheetCells(
 }
 
 /** Ô "Tổng" mỗi năm (= Số tiền + Other Refund, khớp đúng công thức `=O+P` thật trên Sheet) —
- * CHỈ dùng cho DÒNG MỚI app vừa thêm (ô Tổng chắc chắn còn trống, chưa có công thức Admin
- * nào để lỡ ghi đè), thêm 2026-08-16 theo yêu cầu "ô tổng... nếu chưa set công thức thì sẽ
- * lấy theo công thức tab CPA Review... gắn trực tiếp số đang có ở tổng vào Google sheet để
- * đồng bộ 2 chiều". KHÔNG gọi hàm này khi ghi đè lên 1 dòng ĐÃ CÓ SẴN trên Sheet (xem
- * pushRecordToSheet) — dòng đó có thể đã có công thức thật, ghi đè sẽ xoá mất công thức đó
- * (đúng nguyên tắc đã thống nhất từ trước, không tự set/ghi đè công thức Sheet có sẵn). */
+ * Thêm 2026-08-16, ban đầu chỉ định áp dụng cho dòng MỚI (ô Tổng chắc chắn còn trống) — ĐẢO
+ * LẠI cùng ngày theo yêu cầu rõ ràng "ghi đè công thức Tổng... đến google sheet": giờ áp dụng
+ * cho MỌI dòng (kể cả dòng có sẵn đã có công thức `=O+P` thật), ghi giá trị số RAW nên sẽ XOÁ
+ * MẤT công thức cũ tại ô đó nếu có — đây là hành vi được yêu cầu, không phải bug. */
 export function buildCpaReviewYearTotalCells(record: CpaReviewRecord): CellWrite[] {
   const cells: CellWrite[] = [];
   const custom = record.custom;
