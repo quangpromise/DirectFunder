@@ -86,17 +86,36 @@ function isInvalidGrantError(err: unknown): boolean {
 
 export function mapSheetsError(err: unknown): string {
   const e = err as
-    | { code?: number; response?: { data?: { error?: { status?: string; message?: string } } }; message?: string }
+    | {
+        code?: number | string;
+        response?: { status?: number; data?: { error?: { status?: string; message?: string; errors?: { reason?: string }[] } } };
+        errors?: { reason?: string; message?: string }[];
+        message?: string;
+      }
     | undefined;
+  // Gaxios/Google API error có nhiều "hình dạng" tuỳ lỗi tới từ đâu (Sheets API v4 style
+  // mới dùng `response.data.error.status`, style cũ dùng `errors[].reason`, lỗi mạng/HTTP
+  // thuần dùng `response.status`/`code` số) — kiểm tra đủ các dạng thay vì chỉ 1 kiểu, nếu
+  // không rất dễ rơi vào nhánh "thất bại, thử lại sau" chung chung dù lỗi thật đã rõ ràng
+  // (permission/not-found) chỉ vì không khớp đúng hình dạng object.
   const status = e?.response?.data?.error?.status;
-  const httpCode = e?.code;
-  if (status === "PERMISSION_DENIED" || httpCode === 403) {
-    return "Tài khoản Google của bạn chưa được cấp quyền Editor trên Sheet này — liên hệ Admin để chia sẻ quyền.";
+  const legacyReason = e?.response?.data?.error?.errors?.[0]?.reason ?? e?.errors?.[0]?.reason;
+  const httpCode = typeof e?.code === "number" ? e.code : e?.response?.status;
+  const message = e?.message ?? "";
+
+  if (status === "PERMISSION_DENIED" || legacyReason === "forbidden" || httpCode === 403) {
+    return "Tài khoản Service Account chưa được cấp quyền Editor trên Sheet này — vào Google Sheet, bấm Share, dán email Service Account (xem nút Hướng dẫn) rồi chọn Editor.";
   }
-  if (status === "NOT_FOUND" || httpCode === 404) {
-    return "Không tìm thấy Sheet hoặc tab tương ứng — kiểm tra lại Sheet ID và tên tab tháng trên Google Sheet.";
+  if (status === "NOT_FOUND" || legacyReason === "notFound" || httpCode === 404) {
+    return "Không tìm thấy Sheet hoặc tab tương ứng — kiểm tra lại link Sheet và đảm bảo đang mở đúng tab tháng trước khi copy link.";
   }
-  return "Gửi dữ liệu lên Google Sheet thất bại, thử lại sau.";
+  // Private key sai định dạng (dán thiếu/dán đè `\n` thành newline thật lẫn lộn khi lưu
+  // biến môi trường trên Vercel) khiến JWT không ký được — lỗi ném ra từ thư viện crypto,
+  // không đi qua HTTP nên không có status/code như các nhánh trên.
+  if (/DECODER routines|invalid_grant|PEM routines|ERR_OSSL|key value mismatch/i.test(message)) {
+    return "Không xác thực được Service Account — kiểm tra lại GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY trên server (thường do dán thiếu/sai định dạng khi lưu biến môi trường).";
+  }
+  return `Gửi dữ liệu lên Google Sheet thất bại, thử lại sau${message ? ` (${message})` : ""}.`;
 }
 
 /** Số cột đầu (A-F) dùng để Sheets xác định "dòng cuối cùng đang có dữ liệu" — CHỈ xét 6

@@ -13,6 +13,7 @@ import {
   getCpaReviewSheetConfigMap,
   saveCpaReviewSheetConfigMap,
   mapSheetsError,
+  SheetNotAccessibleError,
 } from "@/lib/cpa-review-sheet-sync";
 import { yearNoteColumnIndex } from "@/lib/cpa-review-sheet-columns";
 import { CPA_REVIEW_YEARS } from "@/lib/cpa-review-columns";
@@ -198,7 +199,17 @@ export async function POST(request: NextRequest) {
     const pushed = await resyncAllRecordsToSheet(month);
     return NextResponse.json({ ok: true, pushed });
   } catch (err) {
+    // Log lỗi gốc — trước đây chỉ trả message đã map, không log gì, nên lỗi thật (auth
+    // key sai định dạng, quota, lỗi mạng...) hoàn toàn không thấy được qua Vercel Runtime
+    // Logs khi debug production.
+    console.error("[cpa-review-sheet connect/resync] thất bại:", err);
     if (err instanceof ServiceAccountNotConfiguredError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+    // SheetNotAccessibleError đã có message cụ thể (vd "Không tìm thấy tab (gid=...)") —
+    // KHÔNG đi qua mapSheetsError (chỉ xử lý lỗi từ Google API, sẽ thay bằng message
+    // chung chung kém hữu ích hơn nếu không tách riêng ở đây).
+    if (err instanceof SheetNotAccessibleError) {
       return NextResponse.json({ error: err.message }, { status: 400 });
     }
     return NextResponse.json({ error: mapSheetsError(err) }, { status: 502 });
