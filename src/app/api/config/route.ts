@@ -109,25 +109,29 @@ export async function PUT(request: NextRequest) {
   const existing = await prisma.appConfig.findUnique({ where: { id: "singleton" } });
   if (!existing) return NextResponse.json({ error: "Chưa có cấu hình" }, { status: 404 });
 
-  if (me.role !== "manager") {
-    const allowed = isOrderStatusOptionsOnlyChange(
-      existing.columns,
-      body.columns,
-      existing.featurePermissions,
-      body.featurePermissions,
-      me.role
-    );
-    if (!allowed) return NextResponse.json({ error: "Không có quyền sửa cấu hình" }, { status: 403 });
-  }
+  // TRƯỚC ĐÂY: role không phải manager mà columns/featurePermissions gửi lên không khớp
+  // BYTE-FOR-BYTE với bản server hiện có (rất dễ xảy ra — trình duyệt họ có thể đang giữ bản
+  // hơi cũ vì server đổi liên tục qua các đợt deploy) thì 403 CHẶN LUÔN TOÀN BỘ REQUEST, kể cả
+  // khi request đó chỉ đổi cpaReviewStatusOptions/collectingColumns (không đụng gì tới
+  // columns/featurePermissions) — client vẫn hiện thay đổi optimistic nên tưởng đã lưu, nhưng
+  // KHÔNG có gì được ghi xuống DB, reload lại mất hết (bug thật gặp production 2026-08-15,
+  // "đổi màu status CPA Review xong reload lại về cũ"). SỬA: chỉ BỎ QUA (không ghi) 2 field
+  // columns/featurePermissions khi không đủ điều kiện, KHÔNG 403 cả request — các field độc
+  // lập khác (cpaReviewStatusOptions/collectingColumns) vẫn được xét quyền + ghi riêng bên
+  // dưới như bình thường.
+  const canWriteColumnsAndPermissions =
+    me.role === "manager" ||
+    isOrderStatusOptionsOnlyChange(existing.columns, body.columns, existing.featurePermissions, body.featurePermissions, me.role);
 
   // cpaEmailDefaults là field độc lập, riêng biệt với cụm columns/featurePermissions ở
   // trên (không đi qua isOrderStatusOptionsOnlyChange) — chỉ manager mới được set, role
   // khác gửi kèm field này thì âm thầm bỏ qua (không set, không 403 cả request) vì
   // columns/featurePermissions của họ (nhánh order-status-options-only) vẫn hợp lệ.
-  const data: Prisma.AppConfigUpdateInput = {
-    columns: body.columns,
-    featurePermissions: body.featurePermissions,
-  };
+  const data: Prisma.AppConfigUpdateInput = {};
+  if (canWriteColumnsAndPermissions) {
+    data.columns = body.columns;
+    data.featurePermissions = body.featurePermissions;
+  }
   if (me.role === "manager" && "cpaEmailDefaults" in body) {
     data.cpaEmailDefaults = body.cpaEmailDefaults;
   }
@@ -168,6 +172,13 @@ export async function PUT(request: NextRequest) {
     hasFeature(existing.featurePermissions as FeaturePermissions, "manageCpaReviewSheet", me.role)
   ) {
     data.cpaReviewStatusOptions = body.cpaReviewStatusOptions;
+  }
+
+  // Không có field hợp lệ nào để ghi (vd role không phải manager, columns/featurePermissions
+  // lệch bản server nên bị bỏ qua ở trên, VÀ cũng không có quyền field độc lập nào khác) — lúc
+  // này mới thực sự 403, thay vì chặn oan những request hợp lệ khác như trước.
+  if (Object.keys(data).length === 0) {
+    return NextResponse.json({ error: "Không có quyền sửa cấu hình" }, { status: 403 });
   }
 
   const config = await prisma.appConfig.update({
