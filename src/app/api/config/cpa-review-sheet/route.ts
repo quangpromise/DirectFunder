@@ -106,19 +106,29 @@ function syncCpaReviewNotes() {
   var props = PropertiesService.getScriptProperties();
   var cache = JSON.parse(props.getProperty("cpaReviewNoteCache") || "{}");
   var changes = [];
+  var seenKeys = {};
   for (var year in CPA_REVIEW_YEAR_NOTE_COLUMNS) {
     var col = CPA_REVIEW_YEAR_NOTE_COLUMNS[year];
     var notes = sheet.getRange(4, col, numRows, 1).getNotes();
     for (var i = 0; i < numRows; i++) {
       var ssn = String(ssnValues[i][0] || "").split("\\n")[0].trim();
       if (!ssn) continue;
+      var row = 4 + i;
       var note = notes[i][0] || "";
-      var key = ssn + "|" + year;
+      // Cache theo DÒNG (không theo SSN) — nhiều dòng cùng SSN (gửi "Test Sheet" nhiều năm)
+      // trước đây dùng chung 1 slot cache theo SSN, khiến ghi chú của dòng này ghi đè/lẫn với
+      // dòng kia (bug thật gặp production 2026-08-15). Kèm số dòng trong payload để server
+      // khớp CHÍNH XÁC đúng record, không còn suy đoán qua SSN.
+      var key = row + "|" + year;
+      seenKeys[key] = true;
       if (cache[key] !== note) {
-        changes.push({ ssn: ssn, year: year, note: note });
+        changes.push({ ssn: ssn, year: year, note: note, row: row });
         cache[key] = note;
       }
     }
+  }
+  for (var k in cache) {
+    if (!seenKeys[k]) delete cache[k];
   }
   if (changes.length === 0) return;
   UrlFetchApp.fetch("${webhookUrl}", {

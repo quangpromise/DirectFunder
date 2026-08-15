@@ -127,6 +127,24 @@ function parseSheetDate(raw: string): string | null {
     const year = m[3].length === 2 ? `20${m[3]}` : m[3];
     return `${year}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}`;
   }
+  // Chuỗi SỐ THUẦN (không có "/" hay "-") — Apps Script's `e.value` đôi khi trả về SERIAL
+  // NUMBER thô của Google Sheets (số ngày kể từ 30/12/1899) thay vì chuỗi ngày đã định dạng,
+  // gặp thật khi ô vừa được tính lại qua công thức/paste thay vì gõ tay trực tiếp (bug thật
+  // gặp production 2026-08-15: "efileDate_2025" bị lưu thành "46250-01-01" — `new Date("46250")`
+  // bị JS hiểu nhầm thành năm 46250 thay vì convert serial number, đúng ra là 16/08/2026).
+  // PHẢI xử lý TRƯỚC fallback `new Date(trimmed)` bên dưới vì đó chính là nguồn gây lỗi.
+  if (/^\d+(\.\d+)?$/.test(trimmed)) {
+    const serial = Number(trimmed);
+    const ms = Date.UTC(1899, 11, 30) + serial * 86400000;
+    const d = new Date(ms);
+    if (!Number.isNaN(d.getTime())) {
+      const y = d.getUTCFullYear();
+      const mo = String(d.getUTCMonth() + 1).padStart(2, "0");
+      const da = String(d.getUTCDate()).padStart(2, "0");
+      return `${y}-${mo}-${da}`;
+    }
+    return null;
+  }
   // Fallback cuối: chuỗi dạng Date.toString() ("Sat Aug 15 2026 00:00:00 GMT+0700 (...)"),
   // Apps Script trả đúng dạng này khi ô có định dạng số không phải "Date" thuần. Lấy
   // ngày/tháng/năm theo giờ LOCAL (không dùng UTC) để tránh lệch 1 ngày qua múi giờ.

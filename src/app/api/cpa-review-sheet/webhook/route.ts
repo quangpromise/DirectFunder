@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
   if (Array.isArray(body?.notes)) {
     const validYears = new Set<string>(CPA_REVIEW_YEARS);
     const changes = (body.notes as unknown[]).filter(
-      (n): n is { ssn: string; year: string; note: string } =>
+      (n): n is { ssn: string; year: string; note: string; row?: number } =>
         Boolean(n) &&
         typeof (n as Record<string, unknown>).ssn === "string" &&
         typeof (n as Record<string, unknown>).year === "string" &&
@@ -66,6 +66,11 @@ export async function POST(request: NextRequest) {
     }
 
     const rows = await prisma.cpaReviewRecord.findMany({ where: { month } });
+    // Ưu tiên khớp theo SỐ DÒNG (rowIndex cache), CHỈ fallback theo SSN khi thiếu `row`
+    // (Apps Script chưa dán lại bản mới) — nhiều record cùng SSN (nút "Test Sheet" gửi nhiều
+    // năm) khiến khớp thuần theo SSN gán NHẦM ghi chú cho record khác/không đúng cái vừa sửa
+    // (bug thật gặp production 2026-08-15, "insert note từ Sheet không nhận"). Cùng cơ chế
+    // với payload sửa 1 ô thường ở dưới.
     const bySsn = new Map<string, (typeof rows)[number]>();
     for (const row of rows) {
       const custom = row.custom as Record<string, unknown>;
@@ -74,7 +79,9 @@ export async function POST(request: NextRequest) {
 
     const updatedIds = new Set<string>();
     for (const change of changes) {
-      const row = bySsn.get(change.ssn.trim());
+      const hasRow = typeof change.row === "number" && Number.isFinite(change.row);
+      const cachedKey = hasRow ? findRowIndexKeyByRow(sheetConfig.rowIndex, change.row as number) : undefined;
+      const row = (cachedKey ? rows.find((r) => r.id === cachedKey) : undefined) ?? bySsn.get(change.ssn.trim());
       if (!row) continue; // SSN lạ chưa từng đồng bộ — chỉ tạo record mới từ giá trị ô, không tạo riêng từ Note.
       if (isRecentlyUpdatedByApp(row.updatedAt)) continue; // "App luôn thắng".
       const key = yearNoteKey(change.year);
