@@ -10,14 +10,7 @@ import {
   sheetChangeToPatch,
   CPA_REVIEW_MANAGED_COLUMN_INDEXES,
 } from "./cpa-review-sheet-columns";
-import {
-  CPA_REVIEW_YEARS,
-  yearNoteKey,
-  yearStatusKey,
-  caseStatusOptionsForCrmSource,
-  CPA_REVIEW_STATUS_OPTIONS,
-  CPA_REVIEW_KEY_TO_SHEET_COLUMN,
-} from "./cpa-review-columns";
+import { CPA_REVIEW_YEARS, yearNoteKey, caseStatusOptionsForCrmSource } from "./cpa-review-columns";
 import type { ColumnDef, CpaReviewRecord, CpaReviewSheetConfig, CpaReviewSheetConfigMap, SelectOption, User } from "./types";
 import type { Prisma } from "@prisma/client";
 
@@ -321,53 +314,6 @@ function recordSsn(record: CpaReviewRecord): string | null {
   return typeof ssn === "string" && ssn.trim() ? ssn.trim() : null;
 }
 
-/** Áp lại dropdown (Data Validation, danh sách ONE_OF_LIST) cho các ô Status theo năm +
- * CRM Source ở 1 dòng MỚI vừa được thêm — cả 2 cách "thêm dòng" (`ensureRowExists` gọi
- * `appendDimension`, hoặc dòng đã nằm trong phạm vi grid đã phóng to sẵn qua
- * `ensureSheetGridSize`) đều tạo ô TRẮNG, không tự mang theo validation như các dòng có sẵn
- * (Admin tạo dropdown thủ công trên Sheet gốc, chỉ áp cho phạm vi lúc đó) — thiếu bước này
- * khiến dòng mới "mất dropdown" so với dòng cũ (báo cáo thật 2026-08-15). CHỈ gọi khi thật
- * sự vừa append 1 dòng mới — dòng có sẵn giữ nguyên validation, không cần ghi đè lại mỗi
- * lần push. */
-async function applyStatusDropdowns(
-  sheets: ReturnType<typeof google.sheets>,
-  spreadsheetId: string,
-  gid: string,
-  targetRow: number,
-  crmSourceOptions: SelectOption[]
-): Promise<void> {
-  const sheetId = Number(gid);
-  const rowIndex0 = targetRow - 1;
-
-  function validationRequest(columnIndex: number | undefined, options: SelectOption[]) {
-    if (columnIndex === undefined || options.length === 0) return null;
-    return {
-      setDataValidation: {
-        range: {
-          sheetId,
-          startRowIndex: rowIndex0,
-          endRowIndex: rowIndex0 + 1,
-          startColumnIndex: columnIndex,
-          endColumnIndex: columnIndex + 1,
-        },
-        rule: {
-          condition: { type: "ONE_OF_LIST" as const, values: options.map((o) => ({ userEnteredValue: o.label })) },
-          showCustomUi: true,
-          strict: false,
-        },
-      },
-    };
-  }
-
-  const requests = [
-    ...CPA_REVIEW_YEARS.map((year) => validationRequest(CPA_REVIEW_KEY_TO_SHEET_COLUMN[yearStatusKey(year)], CPA_REVIEW_STATUS_OPTIONS)),
-    validationRequest(CPA_REVIEW_KEY_TO_SHEET_COLUMN.crmSource, crmSourceOptions),
-  ].filter((r): r is NonNullable<typeof r> => r !== null);
-
-  if (requests.length === 0) return;
-  await sheets.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests } });
-}
-
 /** Ghi 1 dòng vào đúng vị trí trong Sheet CPA Review — tự tra rowIndex cache, append dòng
  * mới nếu chưa có. Trả về thông tin cache cần lưu lại nếu có gì thay đổi (dòng mới, hoặc
  * vừa tự chuyển từ cache kiểu cũ sang kiểu mới — xem giải thích dưới), null nếu không cần
@@ -412,10 +358,11 @@ async function pushRecordToSheet(
       appendedRow = targetRow;
     }
   }
+  // KHÔNG tự set/ghi đè Data Validation (dropdown) của Status/CRM Source ở đây — Admin đã tự
+  // thiết lập dropdown sẵn cho toàn bộ cột ngay từ lúc dựng Sheet gốc (đã xác nhận qua kiểm
+  // tra trực tiếp API, kể cả những dòng chưa từng có dữ liệu), app chỉ đọc/ghi GIÁ TRỊ, không
+  // đụng gì tới cấu hình dropdown Admin đã set (yêu cầu 2026-08-15).
   await ensureRowExists(sheets, config.sheetId, config.tabName, targetRow);
-  if (appendedRow) {
-    await applyStatusDropdowns(sheets, config.sheetId, config.gid, targetRow, crmSourceOptions);
-  }
   const cellsWithSsn: CellWrite[] = [...cells, { column: letterFor(SSN_COLUMN_INDEX), value: ssn }];
   await writeCells(sheets, config.sheetId, config.tabName, targetRow, cellsWithSsn);
   // Chỉ tốn thêm 1 lệnh batchUpdate ghi Note khi thật sự có liên quan tới ghi chú (record có
