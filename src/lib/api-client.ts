@@ -273,8 +273,10 @@ export const api = {
     request<{ ok: true }>(`/api/config/cpa-review-sheet?month=${encodeURIComponent(month)}`, { method: "DELETE" }),
   /** Cho popup "Hướng dẫn" trên tab CPA Review — email Service Account để Admin dán vào ô
    * Share Sheet, không phải bí mật. */
-  getCpaReviewSyncInfo: () =>
-    request<{ serviceAccountConfigured: boolean; serviceAccountEmail: string | null }>("/api/config/cpa-review-sheet"),
+  getCpaReviewSyncInfo: (month: string) =>
+    request<{ serviceAccountConfigured: boolean; serviceAccountEmail: string | null; appsScript: string | null }>(
+      `/api/config/cpa-review-sheet?month=${encodeURIComponent(month)}`
+    ),
 
   listEditHistory: () => request<EditHistoryRecord[]>("/api/history/edits"),
   createEditHistoryEntry: (entry: Omit<EditHistoryRecord, "id" | "editedByUserId" | "editedAt">) =>

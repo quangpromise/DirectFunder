@@ -36,7 +36,13 @@ function yearNoteColumnsJson(): string {
 }
 
 function buildAppsScript(webhookUrl: string, secret: string, tabName: string): string {
-  return `function onEdit(e) {
+  return `// LƯU Ý: hàm này CỐ Ý không tên "onEdit" — Apps Script tự chạy bất kỳ hàm nào tên
+// đúng "onEdit" dưới dạng SIMPLE TRIGGER, mà simple trigger LUÔN chạy ở chế độ hạn chế
+// (restricted authorization) và KHÔNG BAO GIỜ được phép gọi UrlFetchApp dù đã Run cấp
+// quyền cho cả project — gặp lỗi thật "Specified permissions are not sufficient to call
+// UrlFetchApp.fetch" (2026-08-15). Phải đăng ký làm INSTALLABLE TRIGGER (xem
+// installCpaReviewTriggers bên dưới) thì mới chạy full authorization, gọi UrlFetchApp được.
+function onCpaReviewEdit(e) {
   var sheet = e.range.getSheet();
   var row = e.range.getRow();
   if (row < 4) return; // bỏ qua hàng tiêu đề/tổng (1-3)
@@ -99,16 +105,20 @@ function syncCpaReviewNotes() {
 }
 
 // Chạy hàm NÀY 1 lần (chọn "installCpaReviewTriggers" ở dropdown rồi bấm Run) để vừa cấp
-// quyền vừa cài trigger hẹn giờ quét Note mỗi 5 phút — KHÔNG cần làm lại trừ khi Sheet bị
-// ngắt kết nối rồi kết nối lại (secret đổi).
+// quyền vừa cài 2 trigger: onCpaReviewEdit (installable — chạy full authorization, khác
+// simple trigger "onEdit" mặc định bị hạn chế) cho sửa ô tức thời, và trigger hẹn giờ quét
+// Note mỗi 5 phút. KHÔNG cần làm lại trừ khi Sheet bị ngắt kết nối rồi kết nối lại (secret
+// đổi) — hoặc script này được dán ĐÈ lên 1 bản cũ hơn (xoá trigger cũ trước khi cài lại).
 function installCpaReviewTriggers() {
   var triggers = ScriptApp.getProjectTriggers();
   for (var i = 0; i < triggers.length; i++) {
-    if (triggers[i].getHandlerFunction() === "syncCpaReviewNotes") {
+    var handler = triggers[i].getHandlerFunction();
+    if (handler === "syncCpaReviewNotes" || handler === "onCpaReviewEdit") {
       ScriptApp.deleteTrigger(triggers[i]);
     }
   }
   ScriptApp.newTrigger("syncCpaReviewNotes").timeBased().everyMinutes(5).create();
+  ScriptApp.newTrigger("onCpaReviewEdit").forSpreadsheet(SpreadsheetApp.getActiveSpreadsheet()).onEdit().create();
 }`;
 }
 
@@ -125,13 +135,32 @@ async function requireManageAccess() {
 
 /** Cho popup "Hướng dẫn" trên tab CPA Review — email Service Account (để Admin share quyền
  * Editor Sheet) không phải bí mật (chỉ là 1 địa chỉ email để mời làm Editor, giống mời 1
- * người bình thường), an toàn hiện cho bất kỳ ai có quyền `manageCpaReviewSheet`. */
-export async function GET() {
+ * người bình thường), an toàn hiện cho bất kỳ ai có quyền `manageCpaReviewSheet`.
+ *
+ * Kèm `?month=YYYY-MM` (tháng ĐÃ kết nối) -> trả thêm `appsScript` build lại từ đúng
+ * secret/tabName đã lưu — cho phép xem/copy lại đoạn script bất kỳ lúc nào (vd khi script
+ * generator có sửa lỗi, hoặc script trong Sheet bị xoá nhầm) mà KHÔNG cần ngắt kết nối rồi
+ * kết nối lại (sẽ đổi secret, phải dán Apps Script mới + mất rowIndex cache đã quét). Thêm
+ * 2026-08-15 sau khi phát hiện lỗi "onEdit" giản đơn không gọi được UrlFetchApp.
+ */
+export async function GET(request: NextRequest) {
   const auth = await requireManageAccess();
   if ("error" in auth) return auth.error;
+
+  const month = request.nextUrl.searchParams.get("month") ?? "";
+  let appsScript: string | null = null;
+  if (isValidMonthKey(month)) {
+    const map = await getCpaReviewSheetConfigMap();
+    const existing = map[month];
+    if (existing?.sheetId) {
+      appsScript = buildAppsScript(buildWebhookUrl(request), existing.webhookSecret, existing.tabName);
+    }
+  }
+
   return NextResponse.json({
     serviceAccountConfigured: isServiceAccountConfigured(),
     serviceAccountEmail: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL ?? null,
+    appsScript,
   });
 }
 

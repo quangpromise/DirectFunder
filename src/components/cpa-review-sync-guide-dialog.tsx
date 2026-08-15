@@ -16,19 +16,34 @@ import { monthKeyLabel } from "@/lib/cpa-review-month";
  */
 export function CpaReviewSyncGuideDialog({ month }: { month: string }) {
   const [open, setOpen] = useState(false);
-  const [info, setInfo] = useState<{ serviceAccountConfigured: boolean; serviceAccountEmail: string | null } | null>(null);
+  const [info, setInfo] = useState<{
+    serviceAccountConfigured: boolean;
+    serviceAccountEmail: string | null;
+    appsScript: string | null;
+  } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [scriptCopied, setScriptCopied] = useState(false);
 
   useEffect(() => {
     if (!open || info) return;
-    api.getCpaReviewSyncInfo().then(setInfo, () => setInfo({ serviceAccountConfigured: false, serviceAccountEmail: null }));
-  }, [open, info]);
+    api
+      .getCpaReviewSyncInfo(month)
+      .then(setInfo, () => setInfo({ serviceAccountConfigured: false, serviceAccountEmail: null, appsScript: null }));
+  }, [open, info, month]);
 
   function copyEmail() {
     if (!info?.serviceAccountEmail) return;
     navigator.clipboard.writeText(info.serviceAccountEmail).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
+    });
+  }
+
+  function copyScript() {
+    if (!info?.appsScript) return;
+    navigator.clipboard.writeText(info.appsScript).then(() => {
+      setScriptCopied(true);
+      setTimeout(() => setScriptCopied(false), 1500);
     });
   }
 
@@ -100,6 +115,21 @@ export function CpaReviewSyncGuideDialog({ month }: { month: string }) {
                     hết code mẫu có sẵn (thường là <span className="font-mono text-[11px]">function myFunction() {"{}"}</span>), dán
                     đoạn script app vừa đưa vào, rồi bấm biểu tượng đĩa mềm để Save.
                   </p>
+                  {info?.appsScript && (
+                    <div className="mt-1.5 flex items-center justify-between gap-2 rounded-lg border border-border bg-bg-elevated px-2.5 py-1.5">
+                      <span className="text-[11px] text-text-faint">
+                        Đã kết nối tháng này — bấm để lấy lại đúng đoạn script (dùng khi lỡ xoá, hoặc script generator vừa có bản
+                        sửa lỗi mới) mà không cần ngắt kết nối.
+                      </span>
+                      <button
+                        onClick={copyScript}
+                        className="flex shrink-0 items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] text-text-dim transition hover:bg-surface-hover hover:text-text"
+                      >
+                        {scriptCopied ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                        {scriptCopied ? "Đã copy" : "Copy script"}
+                      </button>
+                    </div>
+                  )}
                 </GuideStep>
 
                 <GuideStep n={4} title="Chạy 1 lần để cấp quyền + bật đồng bộ Ghi chú">
