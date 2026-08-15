@@ -52,10 +52,31 @@ export async function POST(request: Request, ctx: RouteContext<"/api/cases/[id]/
   const caseRecord = toCaseRecord(row);
   const custom = buildCpaReviewCustomFromCase(caseRecord, reviewYears, note);
   const month = currentMonthKey();
-  const created = await prisma.cpaReviewRecord.create({
-    data: { month, custom: custom as unknown as Prisma.InputJsonValue, sortOrder: await nextAppendCpaReviewSortOrder(month) },
-  });
-  const record = toCpaReviewRecord(created);
+
+  // Gộp vào dòng CPA Review đã có (khớp SSN, cùng tháng) thay vì luôn tạo dòng mới — bấm
+  // "Test Sheet" nhiều lần cho CÙNG hồ sơ (vd lần đầu chọn năm 2024, lần sau thêm năm 2025)
+  // trước đây tạo ra 2 CpaReviewRecord riêng biệt cùng SSN, phá vỡ giả định "1 SSN = 1 dòng/
+  // tháng" mà cả cache rowIndex (đẩy App→Sheet) lẫn webhook (khớp Sheet→App theo SSN) đều
+  // dựa vào — hậu quả thật gặp trên production (case "Dinh Hieu Huynh", 2026-08-15): 2 dòng
+  // DB giành cùng 1 dòng Sheet, ghi đè lẫn nhau, nhìn như "dòng cũ bị xoá, dòng mới thay vào".
+  const ssn = typeof custom.ssn === "string" ? custom.ssn.trim() : "";
+  const existing = ssn
+    ? (await prisma.cpaReviewRecord.findMany({ where: { month } })).find((r) => {
+        const c = r.custom as Record<string, unknown>;
+        return typeof c.ssn === "string" && c.ssn.trim() === ssn;
+      })
+    : undefined;
+
+  const saved = existing
+    ? await prisma.cpaReviewRecord.update({
+        where: { id: existing.id },
+        // Giữ nguyên field cũ (vd năm đã gửi trước đó), chỉ ghi đè/thêm field lần gửi này.
+        data: { custom: { ...(existing.custom as Record<string, unknown>), ...custom } as Prisma.InputJsonValue },
+      })
+    : await prisma.cpaReviewRecord.create({
+        data: { month, custom: custom as unknown as Prisma.InputJsonValue, sortOrder: await nextAppendCpaReviewSortOrder(month) },
+      });
+  const record = toCpaReviewRecord(saved);
   after(() => syncRecordToCpaReviewSheet(record));
   await broadcastCpaReviewChanged(record.id, request.headers.get("x-pusher-socket-id"));
 

@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sheetChangeToPatch } from "@/lib/cpa-review-sheet-columns";
 import { yearNoteKey, CPA_REVIEW_YEARS } from "@/lib/cpa-review-columns";
 import { getCpaReviewSheetConfigMap, findCpaReviewConfigBySecret, getCrmSourceOptions } from "@/lib/cpa-review-sheet-sync";
+import { extractChangedYearStatuses, syncCpaReviewStatusToCase } from "@/lib/cpa-review-case-sync";
 import { broadcastCpaReviewChanged } from "@/lib/pusher-server";
 import type { Prisma } from "@prisma/client";
 
@@ -104,6 +105,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, skipped: "column_not_writable_or_unparseable" });
   }
 
+  // Status theo năm (key `status_<năm>`) đổi sang Accepted/TTS Refund/Done/Resubmitted qua
+  // SHEET (khác đổi tay trong app, vốn đã xử lý ở PATCH /api/cpa-review/[id]) -> cũng phải
+  // tự đổi refundYearStatus tương ứng của Case khớp SSN — trước đây route này hoàn toàn
+  // thiếu bước này (chỉ PATCH mới có), khiến đổi Status trực tiếp trên Sheet không bao giờ
+  // phản ánh sang popup "Refund by years" (bug thật gặp trên production 2026-08-15, case
+  // "Dinh Hieu Huynh"). Dùng lại đúng `ssn` webhook nhận được (đã trim).
+  const changedYearStatuses = extractChangedYearStatuses({ [patch.key]: patch.value });
+
   const rows = await prisma.cpaReviewRecord.findMany({ where: { month } });
   const row = rows.find((r) => {
     const custom = r.custom as Record<string, unknown>;
@@ -118,6 +127,9 @@ export async function POST(request: NextRequest) {
     const created = await prisma.cpaReviewRecord.create({
       data: { custom: initialCustom, sortOrder: -Date.now(), month },
     });
+    if (changedYearStatuses.length > 0) {
+      after(() => syncCpaReviewStatusToCase(ssn, changedYearStatuses));
+    }
     // Không có Pusher socket của trình duyệt nào để loại trừ (nguồn là Apps Script, không
     // phải 1 tab đang mở) -> socketId luôn null, mọi tab đều tự refetch (xem use-realtime.ts).
     await broadcastCpaReviewChanged(created.id, null);
@@ -139,6 +151,9 @@ export async function POST(request: NextRequest) {
     where: { id: row.id },
     data: { custom: merged as Prisma.InputJsonValue },
   });
+  if (changedYearStatuses.length > 0) {
+    after(() => syncCpaReviewStatusToCase(ssn, changedYearStatuses));
+  }
   await broadcastCpaReviewChanged(updated.id, null);
 
   return NextResponse.json({ ok: true, updatedAt: updated.updatedAt.toISOString() });

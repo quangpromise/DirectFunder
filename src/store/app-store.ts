@@ -1688,9 +1688,13 @@ export const useAppStore = create<AppState>()(
           const result = await api.sendCaseRowToCpaReview(caseId, reviewYears, note);
           set((s) => ({
             cases: s.cases.map((c) => (c.id === caseId ? { ...c, cpaReviewTestSentAt: result.cpaReviewTestSentAt } : c)),
-            // Nối vào cuối (dòng trống tiếp theo) — record.sortOrder đã được server tính đúng
-            // (nextAppendCpaReviewSortOrder), mảng vẫn giữ thứ tự sortOrder asc.
-            cpaReviewRecords: [...s.cpaReviewRecords, result.record],
+            // Server GỘP vào dòng đã có nếu cùng SSN/tháng (thêm 2026-08-15, tránh tạo 2 dòng
+            // trùng SSN phá cache đồng bộ Sheet — xem test-cpa-review-sheet/route.ts) nên
+            // record trả về có thể là 1 dòng ĐÃ CÓ SẴN trong state, không phải luôn luôn mới:
+            // thay ID trùng nếu có, chỉ nối vào cuối nếu thực sự chưa từng thấy id này.
+            cpaReviewRecords: s.cpaReviewRecords.some((r) => r.id === result.record.id)
+              ? s.cpaReviewRecords.map((r) => (r.id === result.record.id ? result.record : r))
+              : [...s.cpaReviewRecords, result.record],
           }));
           logEdit(caseId, "Test Sheet (CPA Review)", "", "Đã gửi");
           return { ok: true } as const;
