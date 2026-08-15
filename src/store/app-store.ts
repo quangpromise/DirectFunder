@@ -172,11 +172,6 @@ interface AppState {
 
   /** true khi đã hydrate xong dữ liệu thật từ server ít nhất 1 lần trong phiên này. */
   hydrated: boolean;
-  /** Nonce (timestamp) đổi mỗi lần 1 hồ sơ VỪA chuyển status sang "cpa_review" — chỉ dùng
-   * để trigger overlay video ăn mừng ở StatusCelebrationOverlay, không persist lâu dài,
-   * không đồng bộ cho tài khoản khác (chỉ hiện cho người vừa thao tác trên trình duyệt
-   * của họ). */
-  celebration: number | null;
   login: (email: string, password: string) => Promise<boolean>;
   logout: () => void;
   /** Nạp lại users/cases/columns/featurePermissions mới nhất từ database — gọi sau khi
@@ -458,7 +453,6 @@ export const useAppStore = create<AppState>()(
       return {
       currentUserId: null,
       hydrated: false,
-      celebration: null,
       language: "vi",
       theme: "dark",
       notificationSoundMuted: false,
@@ -573,10 +567,6 @@ export const useAppStore = create<AppState>()(
           oldRaw = isCustom ? kase.custom[columnKey] : (kase as unknown as Record<string, unknown>)[columnKey];
           logEdit(caseId, col?.label ?? columnKey, formatHistoryValue(oldRaw, col), formatHistoryValue(value, col));
         }
-        // Hồ sơ VỪA chuyển status sang "CPA Review" (không tính trường hợp đã ở đó rồi
-        // set lại) -> trigger overlay video ăn mừng (StatusCelebrationOverlay đọc field
-        // này, tự ẩn sau 4 giây).
-        const justEnteredCpaReview = !isCustom && columnKey === "status" && value === "cpa_review" && oldRaw !== "cpa_review";
         // "Processing Date" tự động lấy theo LẦN GẦN NHẤT status chuyển sang "processing"
         // (yêu cầu 2026-08-14) — cập nhật optimistic ở đây để popup "Edit Hồ sơ" thấy ngay
         // giá trị mới không cần đợi refetch, khớp đúng logic server ở PATCH /api/cases/[id]
@@ -595,7 +585,6 @@ export const useAppStore = create<AppState>()(
               updatedAt: new Date().toISOString(),
             };
           }),
-          celebration: justEnteredCpaReview ? Date.now() : s.celebration,
         }));
         syncInBackground(
           "updateCell",
@@ -764,13 +753,16 @@ export const useAppStore = create<AppState>()(
           money: 0,
           refunds: {},
           orders: [],
-          // Tự gán cho người tạo nếu là Agent/Processor, để hồ sơ mới không biến mất
-          // khỏi danh sách hồ sơ họ được thấy (đã lọc theo canViewCase). Agent Leader/
-          // Processor Leader không tự gán vào assignedTo/assignedProcessor (2 field đó
-          // dành cho thành viên trong nhóm) — thay vào đó createdBy giữ hồ sơ hiển thị
-          // trong bảng của leader cho tới khi được gán cho ai đó trong nhóm.
+          // Agent tự gán cho chính mình nếu là người tạo, để hồ sơ mới không biến mất
+          // khỏi danh sách hồ sơ họ được thấy (đã lọc theo canViewCase). Agent Leader
+          // không tự gán vào assignedTo (field đó dành cho thành viên trong nhóm) — thay
+          // vào đó createdBy giữ hồ sơ hiển thị trong bảng của leader cho tới khi được
+          // gán cho ai đó trong nhóm.
           assignedTo: creatorRole === "agent" ? creatorId : null,
-          assignedProcessor: creatorRole === "processor" ? creatorId : null,
+          // Processor LUÔN tự gán cho người tạo hồ sơ, bất kể role gì (thêm 2026-08-15,
+          // yêu cầu "khi add row thì mặc định cột Processor assign to tài khoản addrow")
+          // — khác Agent (chỉ tự gán khi người tạo đúng là role Agent).
+          assignedProcessor: creatorId,
           // Slot 2 luôn bắt đầu trống — chỉ slot 1 tự gán cho người tạo (hành vi cũ).
           assignedTo2: null,
           assignedProcessor2: null,

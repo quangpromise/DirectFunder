@@ -84,6 +84,7 @@ const dict: Record<Language, Record<string, string>> = {
     "common.confirm": "Xác nhận",
     "common.warning": "Cảnh báo",
     "common.gotIt": "Đã hiểu",
+    "common.delete": "Xóa",
 
     // Cases page
     "cases.supportBlocked": "Tài khoản Support chỉ có quyền truy cập tab Order.",
@@ -547,6 +548,7 @@ const dict: Record<Language, Record<string, string>> = {
     "common.confirm": "Confirm",
     "common.warning": "Warning",
     "common.gotIt": "Got it",
+    "common.delete": "Delete",
 
     // Cases page
     "cases.supportBlocked": "Support accounts only have access to the Order tab.",

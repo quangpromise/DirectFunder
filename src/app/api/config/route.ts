@@ -2,20 +2,33 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
 import { hasFeature } from "@/lib/rbac";
-import type { CpaReviewSheetConfig, FeaturePermissions } from "@/lib/types";
+import type { CpaReviewSheetConfig, CpaReviewSheetConfigMap, FeaturePermissions } from "@/lib/types";
 import type { Prisma } from "@prisma/client";
 
 /** Lược bỏ webhookSecret khỏi mọi response đọc chung (GET /api/config) — secret chỉ trả
  * về đúng 1 lần trong response POST /api/config/cpa-review-sheet (connect), nơi Admin
  * copy vào Apps Script. Đọc lại bí mật này ở đây sẽ lộ cho MỌI user gọi được GET /api/config
- * (ai đăng nhập cũng gọi được, không riêng người có quyền manageCpaReviewSheet). */
-function redactCpaReviewSheetConfig(raw: unknown): Omit<CpaReviewSheetConfig, "webhookSecret" | "rowIndex"> | null {
-  const config = raw as CpaReviewSheetConfig | null;
-  if (!config?.sheetId) return null;
-  const { webhookSecret: _webhookSecret, rowIndex: _rowIndex, ...rest } = config;
-  void _webhookSecret;
-  void _rowIndex;
-  return rest;
+ * (ai đăng nhập cũng gọi được, không riêng người có quyền manageCpaReviewSheet).
+ *
+ * `cpaReviewSheetConfig` là MAP theo từng tháng (Record<"YYYY-MM", CpaReviewSheetConfig>,
+ * xem mục 4.22 "Bổ sung 2026-08-14" trong deployment-database-sync.md) — hàm này trước đây
+ * viết theo shape CŨ (1 object duy nhất, `config?.sheetId`), luôn đọc `undefined` trên map
+ * nên LUÔN trả về null bất kể DB có dữ liệu hay không. Hậu quả: mỗi lần refresh trang, dialog
+ * "Kết nối Sheet" tưởng lầm là chưa kết nối tháng nào, chỉ còn hiện ô nhập link (sửa
+ * 2026-08-15). */
+function redactCpaReviewSheetConfig(
+  raw: unknown
+): Record<string, Omit<CpaReviewSheetConfig, "webhookSecret" | "rowIndex">> {
+  const map = (raw as CpaReviewSheetConfigMap | null) ?? {};
+  const result: Record<string, Omit<CpaReviewSheetConfig, "webhookSecret" | "rowIndex">> = {};
+  for (const [month, config] of Object.entries(map)) {
+    if (!config?.sheetId) continue;
+    const { webhookSecret: _webhookSecret, rowIndex: _rowIndex, ...rest } = config;
+    void _webhookSecret;
+    void _rowIndex;
+    result[month] = rest;
+  }
+  return result;
 }
 
 export async function GET() {

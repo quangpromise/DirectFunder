@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { useAppStore, useCurrentUser } from "@/store/app-store";
 import { useRealtime } from "@/hooks/use-realtime";
 import { TopNav } from "@/components/top-nav";
-import { StatusCelebrationOverlay } from "@/components/status-celebration-overlay";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -89,7 +88,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <div className="app-bg-overlay" aria-hidden />
       <TopNav />
       <main className="flex-1 overflow-auto">{children}</main>
-      <StatusCelebrationOverlay />
     </div>
   );
 }

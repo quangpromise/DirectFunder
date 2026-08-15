@@ -205,7 +205,8 @@ export async function POST(request: NextRequest) {
       orders: [],
       ssn: [null, null],
       assignedTo: me.role === "agent" ? me.id : null,
-      assignedProcessor: null,
+      // Processor luôn tự gán cho người tạo hồ sơ (khớp mặc định ở app-store.ts addRow).
+      assignedProcessor: me.id,
       assignedTo2: null,
       assignedProcessor2: null,
       createdBy: me.id,
