@@ -380,15 +380,16 @@ export default function CpaReviewPage() {
                   className="whitespace-nowrap border-b border-r border-border bg-table-head-bg px-2 py-2 text-center text-[11px] font-semibold"
                   style={stickyColStyle(col.key, 30, headerOffset.row2)}
                 >
-                  {col.label}
-                  {/* Tổng số lượng (KHÔNG phải tổng tiền) cộng dồn "Tổng" (đếm số dòng có
-                      Tổng > 0) của cả 3 năm — chỉ hiện Ở TIÊU ĐỀ cột Intake Date, KHÔNG phải
-                      từng dòng, theo yêu cầu 2026-08-15 ("sum chỉ ở ô intake... đếm số lượng
-                      chứ không đếm số tiền"). */}
-                  {col.key === "intakeDate" && (
-                    <span className="ml-1 font-semibold text-amber-400">
-                      ({CPA_REVIEW_VISIBLE_YEARS.reduce((sum, year) => sum + (totalCountByYear[year] ?? 0), 0)})
+                  {/* Cột Intake Date: bỏ hẳn label chữ, chỉ hiện số tổng cộng số lượng (KHÔNG
+                      phải tổng tiền) cộng dồn "Tổng" (đếm số dòng có Tổng > 0) của cả 3 năm,
+                      KHÔNG có dấu ngoặc đơn — theo yêu cầu 2026-08-15 ("bỏ text intake đi và
+                      số sum ko có ()"). Các cột A-F còn lại vẫn hiện label chữ như cũ. */}
+                  {col.key === "intakeDate" ? (
+                    <span className="font-semibold text-amber-400">
+                      {CPA_REVIEW_VISIBLE_YEARS.reduce((sum, year) => sum + (totalCountByYear[year] ?? 0), 0)}
                     </span>
+                  ) : (
+                    col.label
                   )}
                 </th>
               ))}
