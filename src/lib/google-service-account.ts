@@ -21,26 +21,53 @@ export class ServiceAccountNotConfiguredError extends Error {}
 
 let cachedClient: InstanceType<typeof google.auth.JWT> | null = null;
 
+/** Dán 1 khối PEM nhiều dòng (hoặc chuỗi "\n" literal) qua ô nhập text của Vercel/nơi lưu
+ * env var rất dễ bị lệch định dạng (thừa/thiếu khoảng trắng, quote bao ngoài dính vào giá
+ * trị, trình duyệt tự đổi \n literal thành newline thật hoặc ngược lại tuỳ cách paste) —
+ * đã gặp thật (2026-08-15, dán lại nhiều lần vẫn báo "Không xác thực được Service
+ * Account"). Ưu tiên đọc `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY_BASE64` nếu có: base64 là 1
+ * dòng, chỉ gồm ký tự an toàn, KHÔNG có \n/quote nào để bị mangle qua textarea — cách chắc
+ * chắn nhất. Chỉ dùng biến `_PRIVATE_KEY` (PEM thô) làm phương án dự phòng cho tương thích
+ * ngược. Sinh giá trị base64 bằng: `node -e "console.log(Buffer.from(require('fs').readFileSync('key.json','utf8').match(/\"private_key\":\s*\"(.+?)\"/)[1].replace(/\\\\n/g,'\n')).toString('base64'))"`
+ * hoặc đơn giản hơn: base64 encode nguyên field `private_key` (đã có \n thật) từ file JSON
+ * Service Account tải về từ Google Cloud Console. */
+function resolvePrivateKey(): string | null {
+  const b64 = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY_BASE64;
+  if (b64 && b64.trim()) {
+    try {
+      const decoded = Buffer.from(b64.trim(), "base64").toString("utf8");
+      if (decoded.includes("BEGIN PRIVATE KEY")) return decoded;
+    } catch {
+      // rơi xuống nhánh rawKey bên dưới nếu base64 tự thân không decode được.
+    }
+  }
+  const rawKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
+  if (!rawKey) return null;
+  // Bỏ quote bao ngoài nếu người dán lỡ copy nguyên cả `"..."` từ file .env thay vì chỉ
+  // phần giá trị bên trong, rồi mới thay "\n" literal thành newline thật.
+  const unquoted = rawKey.trim().replace(/^"([\s\S]*)"$/, "$1");
+  return unquoted.replace(/\\n/g, "\n");
+}
+
 function getServiceAccountClient() {
   if (cachedClient) return cachedClient;
   const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-  // Private key thường dán qua Vercel env dạng 1 dòng với "\n" literal thay vì xuống dòng
-  // thật — cần thay lại thành newline thật thì JWT mới parse được (cùng cách xử lý phổ
-  // biến với mọi biến private key PEM dán qua env var).
-  const rawKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
-  if (!email || !rawKey) {
+  const privateKey = resolvePrivateKey();
+  if (!email || !privateKey) {
     throw new ServiceAccountNotConfiguredError(
-      "Thiếu GOOGLE_SERVICE_ACCOUNT_EMAIL/GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY trong biến môi trường"
+      "Thiếu GOOGLE_SERVICE_ACCOUNT_EMAIL/GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY(_BASE64) trong biến môi trường"
     );
   }
-  const privateKey = rawKey.replace(/\\n/g, "\n");
   cachedClient = new google.auth.JWT({ email, key: privateKey, scopes: SCOPES });
   return cachedClient;
 }
 
 /** true nếu đã cấu hình đủ env — dùng để UI/API tự tắt tính năng thay vì throw giữa chừng. */
 export function isServiceAccountConfigured(): boolean {
-  return Boolean(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY);
+  return Boolean(
+    process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL &&
+      (process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY_BASE64 || process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY)
+  );
 }
 
 export function getServiceAccountSheetsClient(): ReturnType<typeof google.sheets> {
