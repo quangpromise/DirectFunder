@@ -433,11 +433,19 @@ export const useAppStore = create<AppState>()(
        * ma trận phân quyền (server chỉ chấp nhận role manager, request khác sẽ bị 403
        * và log lỗi ra console, không rollback local — chấp nhận được ở giai đoạn này vì
        * trang cài đặt cột/phân quyền vốn chỉ hiện cho manager). */
+      // Nhiều lần sửa liên tiếp nhanh (vd đổi màu chữ rồi màu nền của cùng 1 Status ở
+      // CpaReviewStatusOptionsButton) trước đây mỗi lần gọi syncConfig() bắn 1 request PUT
+      // ĐỘC LẬP, không đảm bảo thứ tự tới server — nếu request CŨ (đọc state SỚM hơn) tới
+      // server SAU request MỚI (do trễ mạng), nó ghi đè mất bản mới nhất, đúng triệu chứng
+      // "đổi màu xong reload lại về màu cũ" (bug thật gặp 2026-08-15). Xếp hàng qua 1 promise
+      // chain — mỗi lần gọi CHỜ lần trước xong rồi mới đọc `get()` (luôn lấy state MỚI NHẤT
+      // tại đúng lượt của nó, không phải state lúc gọi syncConfig()) rồi mới gửi, đảm bảo
+      // không có 2 request nào chạy đồng thời và request sau luôn thấy dữ liệu đầy đủ nhất.
+      let configSyncChain: Promise<unknown> = Promise.resolve();
       function syncConfig() {
-        const state = get();
-        syncInBackground(
-          "config",
-          api.putConfig(
+        configSyncChain = configSyncChain.catch(() => {}).then(() => {
+          const state = get();
+          return api.putConfig(
             state.columns,
             state.featurePermissions,
             state.cpaEmailDefaults,
@@ -446,8 +454,9 @@ export const useAppStore = create<AppState>()(
             state.refundYearStatusOptions,
             state.collectingColumns,
             state.cpaReviewStatusOptions
-          )
-        );
+          );
+        });
+        syncInBackground("config", configSyncChain);
       }
 
       return {

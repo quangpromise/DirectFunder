@@ -9,6 +9,7 @@ import {
 } from "./cpa-review-columns";
 import { CellWrite, NoteWrite } from "./google-sheets";
 import { columnIndexToLetter } from "./spreadsheet-letters";
+import { formatDateValue } from "./date-format";
 import type { CpaReviewRecord, SelectOption } from "./types";
 
 export function letterFor(index: number): string {
@@ -64,6 +65,13 @@ export function buildCpaReviewSheetCells(
       const options = key === "crmSource" ? crmSourceOptions : (col.options ?? []);
       const opt = options.find((o) => o.id === value);
       cells.push({ column: letterFor(index), value: opt?.label ?? String(value) });
+      continue;
+    }
+    // Cột kiểu ngày lưu ISO "YYYY-MM-DD" trong custom — ghi thẳng ISO lên Sheet trước đây
+    // không khớp định dạng mm/dd/yy đang dùng ở mọi nơi khác (app + các dòng có sẵn trên
+    // chính Sheet này), gây lệch định dạng giữa app và Sheet (báo cáo thật 2026-08-15).
+    if (col?.type === "date" && typeof value === "string") {
+      cells.push({ column: letterFor(index), value: formatDateValue(value, "mdy2") });
       continue;
     }
     if (typeof value === "number") {

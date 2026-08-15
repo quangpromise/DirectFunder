@@ -440,6 +440,16 @@ export async function clearRecordFromCpaReviewSheet(record: CpaReviewRecord): Pr
     await writeCells(sheets, sheetConfig.sheetId, sheetConfig.tabName, targetRow, cells);
     const notes = CPA_REVIEW_YEARS.map((year) => ({ columnIndex: yearNoteColumnIndex(year), note: "" }));
     await writeCellNotes(sheets, sheetConfig.sheetId, sheetConfig.tabName, targetRow, notes);
+
+    // Xoá luôn entry khỏi rowIndex cache (thêm 2026-08-15) — trước đây bỏ sót bước này, để
+    // lại entry "ma" trỏ tới dòng đã xoá. Vì `Math.max(...occupied)` trong pushRecordToSheet
+    // vẫn tính cả entry đó, dòng kế tiếp được thêm sẽ nhảy qua dòng vừa xoá bỏ trống thay vì
+    // dùng lại — nhiều lần xoá/thêm liên tục tạo ra khoảng cách ngày càng lớn giữa các dòng
+    // có dữ liệu thật trên Sheet (báo cáo thật 2026-08-15).
+    const nextRowIndex = { ...sheetConfig.rowIndex };
+    delete nextRowIndex[record.id];
+    delete nextRowIndex[ssn];
+    await saveCpaReviewSheetConfigMap({ ...map, [record.month]: { ...sheetConfig, rowIndex: nextRowIndex } });
   } catch (err) {
     console.error("clearRecordFromCpaReviewSheet thất bại (bỏ qua, không ảnh hưởng response chính):", err);
   }
