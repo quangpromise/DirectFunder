@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ShieldAlert, Plus, Trash2, ExternalLink, StickyNote, FileSpreadsheet } from "lucide-react";
+import { ShieldAlert, Plus, Trash2, ExternalLink, StickyNote, FileSpreadsheet, X, Filter } from "lucide-react";
 import { useAppStore, useCurrentUser } from "@/store/app-store";
 import { hasFeature } from "@/lib/rbac";
 import {
@@ -153,18 +153,67 @@ export default function CpaReviewPage() {
   // không đoán cứng số px vì phụ thuộc font-size/padding thực tế lúc render.
   const row1Ref = useRef<HTMLTableRowElement>(null);
   const row2Ref = useRef<HTMLTableRowElement>(null);
-  const [headerOffset, setHeaderOffset] = useState({ row2: 0, row3: 0 });
+  const row3Ref = useRef<HTMLTableRowElement>(null);
+  const [headerOffset, setHeaderOffset] = useState({ row2: 0, row3: 0, row4: 0 });
 
   useLayoutEffect(() => {
     function measure() {
       const h1 = row1Ref.current?.getBoundingClientRect().height ?? 0;
       const h2 = row2Ref.current?.getBoundingClientRect().height ?? 0;
-      setHeaderOffset((prev) => (prev.row2 === h1 && prev.row3 === h1 + h2 ? prev : { row2: h1, row3: h1 + h2 }));
+      const h3 = row3Ref.current?.getBoundingClientRect().height ?? 0;
+      setHeaderOffset((prev) =>
+        prev.row2 === h1 && prev.row3 === h1 + h2 && prev.row4 === h1 + h2 + h3
+          ? prev
+          : { row2: h1, row3: h1 + h2, row4: h1 + h2 + h3 }
+      );
     }
     measure();
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
   }, []);
+
+  // Hàng lọc theo cột (thêm 2026-08-15, yêu cầu "thêm row 3 mặc định, mỗi cột là filter của
+  // cột đó") — đặt NGAY DƯỚI 2 hàng tiêu đề, đúng vị trí dòng số 3 trên Sheet thật (dòng 1-3
+  // dành riêng cho tiêu đề, dữ liệu thật bắt đầu từ dòng 4 — xem "row < 4 return" trong
+  // buildAppsScript). Trước đây app chỉ có 2 hàng tiêu đề (dữ liệu hiện thành "dòng 3"), lệch
+  // 1 dòng so với quy ước thật của Sheet — thêm hàng lọc này vừa có filter vừa khớp đúng số
+  // dòng thật. Key filter TRÙNG với key trong `custom` (vd `status_2024`, `crmSource`,
+  // `processorUserId`) — so khớp CHÍNH XÁC (dropdown) với cột kiểu select/assign, so khớp
+  // CHỨA (text, không phân biệt hoa/thường) với các cột còn lại. Cột "Tổng" mỗi năm là công
+  // thức tự tính (không lưu trong custom) nên KHÔNG có ô lọc riêng.
+  // Ẩn mặc định (yêu cầu 2026-08-15 "ẩn row này đi, mặc định row 4 sẽ là row đầu tiên để add
+  // row hay sent mới") — bấm nút "Lọc" ở toolbar mới hiện ra. Số dòng gutter (i+4) KHÔNG đổi
+  // dù ẩn/hiện — luôn khớp đúng dòng 4 thật của Sheet (dòng 1-3 dành riêng cho tiêu đề), dòng
+  // 3 chỉ đơn giản là không render ra khi ẩn, không phải đổi lại quy ước đánh số. Dòng mới
+  // (thêm tay qua nút "Thêm" hay tạo qua "Test Sheet") đã tự lên đầu danh sách sẵn
+  // (sortOrder: -Date.now(), sort asc) nên luôn hiện ở đúng vị trí dòng 4 đầu tiên.
+  const [showFilterRow, setShowFilterRow] = useState(false);
+  const [filters, setFilters] = useState<Record<string, string>>({});
+  const hasActiveFilters = Object.values(filters).some(Boolean);
+  function setFilter(key: string, value: string) {
+    setFilters((f) => ({ ...f, [key]: value }));
+  }
+  // Tắt hàng lọc thì xoá luôn bộ lọc đang áp — tránh tình trạng lọc "vô hình" (ẩn hàng lọc đi
+  // nhưng bảng vẫn thiếu dòng do bộ lọc cũ còn hiệu lực, không có gì báo cho biết).
+  function toggleFilterRow() {
+    setShowFilterRow((v) => {
+      if (v) setFilters({});
+      return !v;
+    });
+  }
+  const filteredRows = rows.filter((row) => {
+    for (const [key, value] of Object.entries(filters)) {
+      if (!value) continue;
+      if (key === "processorUserId" || key === "agentUserId" || key === "crmSource" || key.startsWith("status_")) {
+        if (((row.custom[key] as string | undefined) ?? "") !== value) return false;
+        continue;
+      }
+      const cell = row.custom[key];
+      const text = cell == null ? "" : String(cell);
+      if (!text.toLowerCase().includes(value.trim().toLowerCase())) return false;
+    }
+    return true;
+  });
 
   if (!user) return null;
 
@@ -233,6 +282,18 @@ export default function CpaReviewPage() {
             </>
           )}
           {canManageStatus && <CpaReviewStatusOptionsButton />}
+          <button
+            onClick={toggleFilterRow}
+            className={`flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm transition ${
+              showFilterRow
+                ? "border-accent bg-accent-soft text-accent"
+                : "border-border bg-surface text-text-dim hover:bg-surface-hover hover:text-text"
+            }`}
+          >
+            <Filter size={14} />
+            Lọc
+            {hasActiveFilters && <span className="h-1.5 w-1.5 rounded-full bg-accent" />}
+          </button>
           {canAdd && (
             <button
               onClick={addCpaReviewRow}
@@ -255,6 +316,18 @@ export default function CpaReviewPage() {
         </div>
       )}
 
+      {rows.length > 0 && filteredRows.length === 0 && (
+        <div className="mt-4 flex items-center gap-2 rounded-xl border border-dashed border-border-strong bg-surface px-4 py-3 text-xs text-text-faint">
+          <span>
+            Không có dòng nào khớp bộ lọc hiện tại —{" "}
+            <button onClick={() => setFilters({})} className="font-medium text-accent hover:underline">
+              xoá tất cả bộ lọc
+            </button>
+            .
+          </span>
+        </div>
+      )}
+
       <div className="mt-4 flex-1 overflow-auto rounded-xl border border-border-strong">
         {/* border-separate (KHÔNG border-collapse) — bắt buộc để position:sticky trên
             <td>/<th> hoạt động đúng khi cuộn NGANG, tránh lỗi cột A-F "dính" luôn cả khi
@@ -267,8 +340,9 @@ export default function CpaReviewPage() {
           <thead className="bg-table-head-bg text-table-head-text">
             {/* Hàng chữ cái kiểu Google Sheet (A, B, C...) — thêm 2026-08-14 theo yêu cầu
                 "cột thứ tự sắp xếp bắt đầu từ A như Google Sheet". Hàng này KHÔNG tính là 1
-                dòng số (yêu cầu "không tính dòng đầu") — 2 hàng con phía dưới (nhóm năm +
-                tiêu đề cột con) mới là dòng 1/2 thật, dữ liệu bắt đầu từ dòng 3. */}
+                dòng số (yêu cầu "không tính dòng đầu") — 3 hàng con phía dưới (nhóm năm +
+                tiêu đề cột con + hàng lọc, thêm 2026-08-15) mới là dòng 1/2/3 thật, dữ liệu
+                bắt đầu từ dòng 4, khớp đúng quy ước Sheet thật. */}
             <tr ref={row1Ref}>
               <th className="border-b border-r border-border bg-table-head-bg" style={gutterHeadStyle(0)} />
               {Array.from({ length: totalDataColumns }).map((_, i) => {
@@ -307,6 +381,15 @@ export default function CpaReviewPage() {
                   style={stickyColStyle(col.key, 30, headerOffset.row2)}
                 >
                   {col.label}
+                  {/* Tổng số lượng (KHÔNG phải tổng tiền) cộng dồn "Tổng" (đếm số dòng có
+                      Tổng > 0) của cả 3 năm — chỉ hiện Ở TIÊU ĐỀ cột Intake Date, KHÔNG phải
+                      từng dòng, theo yêu cầu 2026-08-15 ("sum chỉ ở ô intake... đếm số lượng
+                      chứ không đếm số tiền"). */}
+                  {col.key === "intakeDate" && (
+                    <span className="ml-1 font-semibold text-amber-400">
+                      ({CPA_REVIEW_VISIBLE_YEARS.reduce((sum, year) => sum + (totalCountByYear[year] ?? 0), 0)})
+                    </span>
+                  )}
                 </th>
               ))}
               {CPA_REVIEW_VISIBLE_YEARS.flatMap((year) => [
@@ -360,7 +443,7 @@ export default function CpaReviewPage() {
                 </th>
               ))}
             </tr>
-            <tr>
+            <tr ref={row3Ref}>
               <th
                 className="border-b border-r border-border bg-table-head-bg text-center text-[10px] font-normal text-text-faint"
                 style={gutterHeadStyle(headerOffset.row3)}
@@ -398,18 +481,125 @@ export default function CpaReviewPage() {
                 </th>,
               ])}
             </tr>
+            {/* Hàng lọc theo cột — DÒNG SỐ 3 thật (gutter "3"), khớp đúng quy ước Sheet thật
+                (dòng 1-3 dành cho tiêu đề, dữ liệu bắt đầu dòng 4 — xem "row < 4 return" trong
+                buildAppsScript), thêm 2026-08-15. Ẩn mặc định (bấm nút "Lọc" ở toolbar để
+                hiện) — số dòng gutter dữ liệu vẫn luôn tính từ 4 dù ẩn/hiện hàng này. */}
+            {showFilterRow && (
+            <tr>
+              <th
+                className="border-b border-r border-border bg-table-head-bg text-center text-[10px] font-normal text-text-faint"
+                style={gutterHeadStyle(headerOffset.row4)}
+              >
+                {hasActiveFilters ? (
+                  <button
+                    onClick={() => setFilters({})}
+                    className="flex h-full w-full items-center justify-center text-accent transition hover:text-red-400"
+                    title="Xoá tất cả bộ lọc"
+                  >
+                    <X size={11} />
+                  </button>
+                ) : (
+                  "3"
+                )}
+              </th>
+              {CPA_REVIEW_COLUMNS.slice(0, 6).map((col) => (
+                <th
+                  key={`${col.key}-filter`}
+                  className="border-b border-r border-border bg-table-head-bg p-0 text-left font-normal"
+                  style={stickyColStyle(col.key, 30, headerOffset.row4)}
+                >
+                  <FilterInput value={filters[col.key] ?? ""} onChange={(v) => setFilter(col.key, v)} />
+                </th>
+              ))}
+              {CPA_REVIEW_VISIBLE_YEARS.flatMap((year) => [
+                <th
+                  key={`${year}-date-filter`}
+                  style={yearHeaderStyle(year, headerOffset.row4, 20)}
+                  className="border-b border-r border-border p-0 text-left font-normal"
+                >
+                  <FilterInput value={filters[yearEfileDateKey(year)] ?? ""} onChange={(v) => setFilter(yearEfileDateKey(year), v)} />
+                </th>,
+                <th
+                  key={`${year}-status-filter`}
+                  style={yearHeaderStyle(year, headerOffset.row4, 20)}
+                  className="border-b border-r border-border p-0 text-left font-normal"
+                >
+                  <FilterSelect
+                    value={filters[yearStatusKey(year)] ?? ""}
+                    onChange={(v) => setFilter(yearStatusKey(year), v)}
+                    options={statusOptions}
+                  />
+                </th>,
+                <th
+                  key={`${year}-amount-filter`}
+                  style={yearHeaderStyle(year, headerOffset.row4, 20)}
+                  className="border-b border-r border-border p-0 text-left font-normal"
+                >
+                  <FilterInput value={filters[yearAmountKey(year)] ?? ""} onChange={(v) => setFilter(yearAmountKey(year), v)} />
+                </th>,
+                <th
+                  key={`${year}-adjustment-filter`}
+                  style={yearHeaderStyle(year, headerOffset.row4, 20)}
+                  className="border-b border-r border-border p-0 text-left font-normal"
+                >
+                  <FilterInput
+                    value={filters[yearAdjustmentKey(year)] ?? ""}
+                    onChange={(v) => setFilter(yearAdjustmentKey(year), v)}
+                  />
+                </th>,
+                // Cột "Tổng" — công thức tự tính, không lưu trong custom -> không có ô lọc.
+                <th
+                  key={`${year}-total-filter`}
+                  style={yearHeaderStyle(year, headerOffset.row4, 20)}
+                  className="border-b border-r border-border bg-table-head-bg"
+                />,
+              ])}
+              <th className="border-b border-r border-border bg-table-head-bg p-0 text-left font-normal" style={headTopStyle(headerOffset.row4, 20)}>
+                <FilterInput value={filters.note ?? ""} onChange={(v) => setFilter("note", v)} />
+              </th>
+              <th className="border-b border-r border-border bg-table-head-bg p-0 text-left font-normal" style={headTopStyle(headerOffset.row4, 20)}>
+                <FilterSelect
+                  value={filters.processorUserId ?? ""}
+                  onChange={(v) => setFilter("processorUserId", v)}
+                  options={processorUsers.map((u) => ({ id: u.id, label: u.name }))}
+                />
+              </th>
+              <th className="border-b border-r border-border bg-table-head-bg p-0 text-left font-normal" style={headTopStyle(headerOffset.row4, 20)}>
+                <FilterSelect
+                  value={filters.agentUserId ?? ""}
+                  onChange={(v) => setFilter("agentUserId", v)}
+                  options={agentUsers.map((u) => ({ id: u.id, label: u.name }))}
+                />
+              </th>
+              {CPA_REVIEW_COLUMNS.slice(6 + CPA_REVIEW_YEARS.length * YEAR_COLUMN_COUNT + 1).map((col) => (
+                <th
+                  key={`${col.key}-filter`}
+                  className="border-b border-r border-border bg-table-head-bg p-0 text-left font-normal"
+                  style={headTopStyle(headerOffset.row4, 20)}
+                >
+                  {col.key === "crmSource" ? (
+                    <FilterSelect value={filters.crmSource ?? ""} onChange={(v) => setFilter("crmSource", v)} options={crmSourceOptions} />
+                  ) : (
+                    <FilterInput value={filters[col.key] ?? ""} onChange={(v) => setFilter(col.key, v)} />
+                  )}
+                </th>
+              ))}
+            </tr>
+            )}
           </thead>
           <tbody>
-            {rows.map((row: CpaReviewRecord, i) => {
+            {filteredRows.map((row: CpaReviewRecord, i) => {
               const rowBg = i % 2 === 0 ? "bg-bg" : "bg-[var(--row-alt-bg)]";
               return (
               <tr key={row.id} className={rowBg}>
                 <td className={`group border-b border-r border-border p-0 align-middle ${rowBg}`} style={GUTTER_STYLE_BODY}>
                   {/* Số dòng từ trên xuống (giống gutter Google Sheet) — ẩn đi, thay bằng
-                      nút xoá khi hover, theo yêu cầu 2026-08-14. 2 hàng tiêu đề tính là dòng
-                      1/2 (xem thead ở trên) nên dữ liệu bắt đầu từ dòng 3, không phải 1. */}
+                      nút xoá khi hover, theo yêu cầu 2026-08-14. 3 hàng tiêu đề (chữ cái
+                      không tính, "1"/"2"/"3" có tính) khớp đúng quy ước Sheet thật (dòng 1-3
+                      dành cho tiêu đề, dữ liệu bắt đầu dòng 4), thêm 2026-08-15. */}
                   <div className="relative flex h-full w-full items-center justify-center">
-                    <span className="text-[11px] text-text-faint transition-opacity [tr:hover_&]:opacity-0">{i + 3}</span>
+                    <span className="text-[11px] text-text-faint transition-opacity [tr:hover_&]:opacity-0">{i + 4}</span>
                     {canDelete && (
                       <button
                         onClick={() => handleDelete(row.id)}
@@ -555,6 +745,46 @@ function Cell({ children, className }: { children: React.ReactNode; className?: 
     <td className={`group border-b border-r border-border p-0 align-middle ${className ?? ""}`}>
       {children}
     </td>
+  );
+}
+
+/** Ô lọc dạng text (hàng lọc "3", thêm 2026-08-15) — so khớp CHỨA, không phân biệt hoa/thường,
+ * dùng cho mọi cột không phải select/assign (xem CpaReviewPage). */
+function FilterInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <input
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder="Lọc..."
+      className="h-7 w-full min-w-0 border-none bg-transparent px-2 text-[11px] font-normal text-text outline-none placeholder:text-text-faint"
+    />
+  );
+}
+
+/** Ô lọc dạng dropdown (hàng lọc "3") — dùng cho cột select (Status mỗi năm, CRM Source) và
+ * Processor/Agent (options build từ danh sách user), so khớp CHÍNH XÁC theo id. */
+function FilterSelect({
+  value,
+  onChange,
+  options,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: { id: string; label: string }[];
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="h-7 w-full min-w-0 border-none bg-transparent px-1 text-[11px] font-normal text-text outline-none"
+    >
+      <option value="">Tất cả</option>
+      {options.map((o) => (
+        <option key={o.id} value={o.id}>
+          {o.label}
+        </option>
+      ))}
+    </select>
   );
 }
 

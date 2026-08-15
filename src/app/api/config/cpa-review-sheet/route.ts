@@ -74,33 +74,21 @@ function onCpaReviewEdit(e) {
 // yêu cầu "xoá phải giống nhau ở cả 2 chiều": app xoá dòng thì đã xoá thật dòng Sheet, nên
 // Sheet xoá dòng cũng phải xoá thật record trong app). onEdit KHÔNG bắt được sự kiện xoá
 // dòng (chỉ bắt sửa GIÁ TRỊ ô), phải dùng onChange (cũng cần cài installable trigger, cùng
-// lý do onEdit ở trên). onChange không cho biết CHÍNH XÁC dòng nào bị xoá/SSN gì (dữ liệu đã
-// mất khi sự kiện bắn ra) — tự so sánh danh sách SSN hiện tại với snapshot lần trước lưu ở
-// PropertiesService, SSN nào biến mất coi là dòng đó vừa bị xoá.
+// lý do onEdit ở trên).
+//
+// SỬA LẠI cùng ngày (bug thật gặp trên production): bản đầu tự so sánh SSN hiện tại với
+// snapshot lưu ở PropertiesService, nhưng snapshot đó CHỈ được cập nhật lúc XOÁ — dòng thêm
+// mới (qua Sheet hoặc qua "Test Sheet") không bao giờ được ghi vào snapshot, nên xoá dòng đó
+// sau này không phát hiện được gì; đồng thời so khớp theo TẬP HỢP SSN không phân biệt được
+// SỐ LƯỢNG dòng cùng SSN (2 dòng cùng SSN xoá 1 dòng vẫn coi là "không đổi gì"). Bỏ hẳn
+// snapshot — hàm này giờ CHỈ báo "vừa có dòng bị xoá", server tự quét lại toàn bộ cột SSN để
+// biết chính xác bản ghi nào không còn khớp dòng nào nữa (xem webhook route).
 function onCpaReviewChange(e) {
   if (e.changeType !== "REMOVE_ROW" && e.changeType !== "REMOVE_GRID") return;
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("${tabName}");
-  var lastRow = sheet.getLastRow();
-  var currentSsns = {};
-  if (lastRow >= 4) {
-    var values = sheet.getRange(4, 4, lastRow - 3, 1).getValues();
-    for (var i = 0; i < values.length; i++) {
-      var ssn = String(values[i][0] || "").split("\\n")[0].trim();
-      if (ssn) currentSsns[ssn] = true;
-    }
-  }
-  var props = PropertiesService.getScriptProperties();
-  var prevSsns = JSON.parse(props.getProperty("cpaReviewSsnSnapshot") || "{}");
-  var removed = [];
-  for (var prevSsn in prevSsns) {
-    if (!currentSsns[prevSsn]) removed.push(prevSsn);
-  }
-  props.setProperty("cpaReviewSsnSnapshot", JSON.stringify(currentSsns));
-  if (removed.length === 0) return;
   UrlFetchApp.fetch("${webhookUrl}", {
     method: "post",
     contentType: "application/json",
-    payload: JSON.stringify({ secret: "${secret}", deletedSsns: removed })
+    payload: JSON.stringify({ secret: "${secret}", rowsRemoved: true })
   });
 }
 
@@ -158,20 +146,6 @@ function installCpaReviewTriggers() {
   ScriptApp.newTrigger("syncCpaReviewNotes").timeBased().everyMinutes(5).create();
   ScriptApp.newTrigger("onCpaReviewEdit").forSpreadsheet(SpreadsheetApp.getActiveSpreadsheet()).onEdit().create();
   ScriptApp.newTrigger("onCpaReviewChange").forSpreadsheet(SpreadsheetApp.getActiveSpreadsheet()).onChange().create();
-
-  // Khởi tạo snapshot SSN ngay lúc cài đặt — để lần xoá dòng ĐẦU TIÊN sau khi cài cũng phát
-  // hiện đúng (không cần đợi 1 thay đổi trước đó để snapshot có sẵn dữ liệu).
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("${tabName}");
-  var lastRow = sheet.getLastRow();
-  var snapshot = {};
-  if (lastRow >= 4) {
-    var values = sheet.getRange(4, 4, lastRow - 3, 1).getValues();
-    for (var i = 0; i < values.length; i++) {
-      var ssn = String(values[i][0] || "").split("\\n")[0].trim();
-      if (ssn) snapshot[ssn] = true;
-    }
-  }
-  PropertiesService.getScriptProperties().setProperty("cpaReviewSsnSnapshot", JSON.stringify(snapshot));
 }`;
 }
 

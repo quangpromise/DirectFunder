@@ -92,42 +92,39 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, updated: updatedIds.size });
   }
 
-  // Payload báo XOÁ dòng trực tiếp trên Sheet (thêm 2026-08-15, yêu cầu "xoá phải giống nhau
-  // ở cả 2 chiều" — App xoá dòng đã xoá thật dòng Sheet, nên Sheet xoá dòng cũng phải xoá
-  // thật record trong app, không để lại dữ liệu rác). Apps Script không biết CHÍNH XÁC dòng
-  // nào bị xoá (`onChange` chỉ báo "có dòng bị xoá", dữ liệu dòng đó đã mất khi sự kiện bắn
-  // ra) — thay vào đó tự so sánh danh sách SSN hiện tại với snapshot lần trước, gửi lên
-  // NHỮNG SSN không còn thấy nữa (xem buildAppsScript, onCpaReviewChange).
-  if (Array.isArray(body?.deletedSsns)) {
-    const deletedSsns = (body.deletedSsns as unknown[])
-      .filter((s): s is string => typeof s === "string" && s.trim().length > 0)
-      .map((s) => s.trim());
-    if (deletedSsns.length === 0) {
-      return NextResponse.json({ ok: true, skipped: "no_valid_ssns" });
-    }
-
-    const rows = await prisma.cpaReviewRecord.findMany({ where: { month } });
-    const toDelete = rows.filter((r) => {
-      const custom = r.custom as Record<string, unknown>;
-      return typeof custom.ssn === "string" && deletedSsns.includes(custom.ssn.trim());
-    });
-    // "App luôn thắng" — record vừa được app cập nhật gần đây (vd Test Sheet vừa tạo, hoặc
-    // vừa sửa xong) không xoá, coi tín hiệu Sheet là stale/đụng độ thời điểm.
-    const idsToDelete = toDelete.filter((r) => !isRecentlyUpdatedByApp(r.updatedAt)).map((r) => r.id);
-    if (idsToDelete.length > 0) {
-      await prisma.cpaReviewRecord.deleteMany({ where: { id: { in: idsToDelete } } });
-    }
-
-    // Xây lại rowIndex từ đầu bằng cách quét lại cột SSN thật trên Sheet — đơn giản/chắc
-    // chắn đúng hơn tính dịch chuyển tăng dần, nhất là khi nhiều dòng bị xoá cùng lúc.
+  // Tín hiệu "có dòng vừa bị xoá trực tiếp trên Sheet" (thêm 2026-08-15, yêu cầu "xoá phải
+  // giống nhau ở cả 2 chiều"; SỬA LẠI cùng ngày sau khi phát hiện bug thật trên production —
+  // bản đầu (so khớp SSN với snapshot PropertiesService) có 2 lỗi: (1) snapshot CHỈ được cập
+  // nhật lúc XOÁ, không bao giờ cập nhật lúc THÊM dòng (kể cả thêm qua "Test Sheet"/Service
+  // Account) -> dòng thêm sau lần xoá gần nhất không có trong snapshot -> xoá dòng đó sau này
+  // không phát hiện được gì (prevSsns/currentSsns giống hệt nhau); (2) so khớp theo TẬP HỢP
+  // SSN (Set) không phân biệt được SỐ LƯỢNG dòng cùng SSN — 2 dòng cùng SSN (đúng thiết kế
+  // "Test Sheet" gửi nhiều năm, không gộp) mà xoá 1 dòng thì SSN vẫn còn xuất hiện (dòng kia)
+  // nên coi như "không có gì xoá". SỬA TRIỆT ĐỂ: bỏ hẳn snapshot, Apps Script chỉ cần báo
+  // "vừa có dòng bị xoá" (không cần biết SSN/dòng nào) — server tự QUÉT LẠI TOÀN BỘ cột SSN
+  // (rebuildCpaReviewRowIndex, đã sửa để khớp ĐÚNG THỨ TỰ khi nhiều bản ghi cùng SSN) rồi so
+  // với danh sách record đang có trong DB: bản ghi nào KHÔNG khớp được dòng nào nữa (không có
+  // mặt trong rowIndex mới) coi là đã bị xoá trên Sheet -> xoá luôn trong DB. Không còn phụ
+  // thuộc trạng thái lưu ở phía Apps Script nên không thể bị "quên cập nhật" như trước.
+  if (body?.rowsRemoved === true) {
     const sheets = getServiceAccountSheetsClient();
     const nextRowIndex = await rebuildCpaReviewRowIndex(sheets, sheetConfig, month);
+    const matchedIds = new Set(Object.keys(nextRowIndex));
+
+    const rows = await prisma.cpaReviewRecord.findMany({ where: { month } });
+    // "App luôn thắng" — record vừa được app cập nhật gần đây (vd Test Sheet vừa tạo, hoặc
+    // vừa sửa xong) không xoá dù chưa khớp được dòng nào, coi tín hiệu Sheet là stale/đụng độ
+    // thời điểm (chưa kịp đẩy App->Sheet xong thì Sheet đã báo xoá).
+    const missing = rows.filter((r) => !matchedIds.has(r.id) && !isRecentlyUpdatedByApp(r.updatedAt));
+    if (missing.length > 0) {
+      await prisma.cpaReviewRecord.deleteMany({ where: { id: { in: missing.map((r) => r.id) } } });
+    }
     await saveCpaReviewSheetConfigMap({ ...configMap, [month]: { ...sheetConfig, rowIndex: nextRowIndex } });
 
-    for (const id of idsToDelete) {
-      await broadcastCpaReviewChanged(id, null);
+    for (const r of missing) {
+      await broadcastCpaReviewChanged(r.id, null);
     }
-    return NextResponse.json({ ok: true, deleted: idsToDelete.length });
+    return NextResponse.json({ ok: true, deleted: missing.length });
   }
 
   const ssn = typeof body?.ssn === "string" ? body.ssn.trim() : "";

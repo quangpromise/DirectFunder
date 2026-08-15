@@ -16,14 +16,15 @@ export async function getCrmSourceOptions(): Promise<SelectOption[]> {
   return caseStatusOptionsForCrmSource(columns);
 }
 
-/** sortOrder cho 1 dòng CPA Review MỚI trong đúng tháng — LUÔN nối vào "dòng trống tiếp
- * theo" ở CUỐI bảng (giá trị lớn hơn mọi sortOrder hiện có, ORDER BY sortOrder ASC) thay vì
- * lên đầu như hành vi mặc định ở Cases/Collecting (thêm 2026-08-14, yêu cầu "chèn vào row
- * trống tiếp theo, không chèn lên đầu") — dùng chung cho cả nút "Thêm" trong tab CPA Review
- * lẫn nút "Test Sheet" ở bảng Hồ sơ. */
-export async function nextAppendCpaReviewSortOrder(month: string): Promise<number> {
-  const agg = await prisma.cpaReviewRecord.aggregate({ where: { month }, _max: { sortOrder: true } });
-  return (agg._max.sortOrder ?? 0) + 1;
+/** sortOrder cho 1 dòng CPA Review MỚI trong đúng tháng — LUÔN lên ĐẦU bảng (giá trị nhỏ hơn
+ * mọi sortOrder hiện có, ORDER BY sortOrder ASC), khớp đúng dòng 4 (dòng dữ liệu đầu tiên,
+ * xem cpa-review/page.tsx) — ĐẢO LẠI so với yêu cầu 2026-08-14 trước đó ("chèn vào row trống
+ * tiếp theo, không chèn lên đầu"), theo yêu cầu MỚI 2026-08-15 ("mặc định row 4 sẽ là row đầu
+ * tiên để add row hay sent mới"). Dùng chung cho cả nút "Thêm" trong tab CPA Review lẫn nút
+ * "Test Sheet" ở bảng Hồ sơ. Không còn cần đọc DB nữa (khác trước) nên bỏ luôn tham số
+ * `month` khỏi chữ ký hàm. */
+export async function nextAppendCpaReviewSortOrder(): Promise<number> {
+  return -Date.now();
 }
 
 const SSN_COLUMN_INDEX = 3; // cột D
@@ -322,18 +323,34 @@ export async function rebuildCpaReviewRowIndex(
     range: `'${sheetConfig.tabName}'!${letterFor(SSN_COLUMN_INDEX)}${SCAN_START_ROW}:${letterFor(SSN_COLUMN_INDEX)}${SCAN_START_ROW + SCAN_ROW_LIMIT - 1}`,
   });
   const rows = res.data.values ?? [];
-  const records = await prisma.cpaReviewRecord.findMany({ where: { month }, select: { id: true, custom: true } });
-  const bySsn = new Map<string, string>();
+  // HÀNG ĐỢI theo SSN (KHÔNG phải 1-1) — nhiều CpaReviewRecord có thể CÙNG 1 SSN (nút "Test
+  // Sheet" gửi nhiều lần, mỗi lần 1 năm khác nhau, KHÔNG gộp — xem pushRecordToSheet). Map
+  // cũ (1 SSN -> 1 record.id) khiến bản ghi thứ 2 trở đi của cùng SSN không bao giờ khớp được
+  // dòng nào -> không phát hiện được lúc bị xoá (bug thật gặp production 2026-08-15, case
+  // "Dinh Hieu Huynh"). Khớp THEO THỨ TỰ xuất hiện: dòng Sheet đầu tiên có SSN X khớp bản ghi
+  // CŨ NHẤT (createdAt) còn SSN X chưa được khớp, dòng thứ 2 khớp bản ghi kế tiếp, v.v. — xác
+  // định (deterministic), đủ dùng vì các bản ghi cùng SSN không phân biệt được gì khác ngoài
+  // thứ tự tạo.
+  const records = await prisma.cpaReviewRecord.findMany({
+    where: { month },
+    select: { id: true, custom: true },
+    orderBy: { createdAt: "asc" },
+  });
+  const bySsn = new Map<string, string[]>();
   for (const r of records) {
     const custom = r.custom as Record<string, unknown>;
-    if (typeof custom.ssn === "string" && custom.ssn.trim()) bySsn.set(custom.ssn.trim(), r.id);
+    if (typeof custom.ssn !== "string" || !custom.ssn.trim()) continue;
+    const ssn = custom.ssn.trim();
+    const queue = bySsn.get(ssn) ?? [];
+    queue.push(r.id);
+    bySsn.set(ssn, queue);
   }
 
   const nextRowIndex: Record<string, number> = {};
   rows.forEach((row, i) => {
     const ssn = (row[0] ?? "").toString().trim().split("\n")[0]?.trim();
     if (!ssn) return;
-    const recordId = bySsn.get(ssn);
+    const recordId = bySsn.get(ssn)?.shift();
     if (recordId) nextRowIndex[recordId] = SCAN_START_ROW + i;
   });
   return nextRowIndex;
