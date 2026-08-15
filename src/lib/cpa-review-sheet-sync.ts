@@ -79,6 +79,57 @@ export async function resolveTabNameFromGid(
   return match.properties.title;
 }
 
+/** Đảm bảo tab đủ lớn để chứa layout A-AH x 3000+ dòng — Sheet MỚI tạo (hoặc tab trống)
+ * mặc định chỉ 1000 dòng x 26 cột (Z), trong khi mọi range quét/ghi của tính năng này dùng
+ * tới cột AH (34) và dòng 3003 — Google Sheets API TỪ CHỐI thẳng bất kỳ range nào vượt quá
+ * kích thước grid khai báo của tab (lỗi "exceeds grid limits"), khác với range nằm trong
+ * grid nhưng không có dữ liệu (vẫn trả về rỗng bình thường). Gặp thật 2026-08-15 khi kết
+ * nối 1 tab mới ("Sheet31", chưa từng resize). CHỈ tăng kích thước (rowCount/columnCount),
+ * không bao giờ giảm — không đụng/mất dữ liệu hiện có trên Sheet. */
+export async function ensureSheetGridSize(
+  sheets: ReturnType<typeof google.sheets>,
+  spreadsheetId: string,
+  gid: string,
+  minRows: number,
+  minCols: number
+): Promise<void> {
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId,
+    fields: "sheets.properties(sheetId,gridProperties)",
+  });
+  const match = meta.data.sheets?.find((s) => String(s.properties?.sheetId ?? "") === gid);
+  const grid = match?.properties?.gridProperties;
+  const currentRows = grid?.rowCount ?? 1000;
+  const currentCols = grid?.columnCount ?? 26;
+  if (currentRows >= minRows && currentCols >= minCols) return;
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [
+        {
+          updateSheetProperties: {
+            properties: {
+              sheetId: Number(gid),
+              gridProperties: {
+                rowCount: Math.max(currentRows, minRows),
+                columnCount: Math.max(currentCols, minCols),
+              },
+            },
+            fields: "gridProperties.rowCount,gridProperties.columnCount",
+          },
+        },
+      ],
+    },
+  });
+}
+
+/** Kích thước tối thiểu tab cần có cho layout CPA Review — dùng chung cho connect/resync. */
+export const CPA_REVIEW_MIN_GRID = {
+  rows: SCAN_START_ROW + SCAN_ROW_LIMIT - 1,
+  cols: FULL_ROW_LAST_COL + 1,
+} as const;
+
 /** Quét cột Processor (AC) + Agent (AD) — trả về danh sách tên PHÂN BIỆT xuất hiện trong
  * Sheet, dùng để Admin ánh xạ sang User.id qua UI (nameToUserId) sau lần kết nối đầu. */
 export async function scanDistinctNames(
@@ -290,6 +341,11 @@ export async function resyncAllRecordsToSheet(month: string): Promise<number> {
   const map = await getCpaReviewSheetConfigMap();
   const sheetConfig = map[month];
   if (!sheetConfig?.sheetId) throw new Error("Chưa kết nối Sheet CPA Review cho tháng này");
+
+  // Cùng lý do ở connect (xem ensureSheetGridSize) — Sheet có thể đã bị Admin/người dùng
+  // vô tình thu nhỏ tab lại sau khi kết nối, phòng hờ trước khi ghi hàng loạt.
+  const sheets = getServiceAccountSheetsClient();
+  await ensureSheetGridSize(sheets, sheetConfig.sheetId, sheetConfig.gid, CPA_REVIEW_MIN_GRID.rows, CPA_REVIEW_MIN_GRID.cols);
 
   const users = (await prisma.user.findMany()) as unknown as User[];
   const rows = await prisma.cpaReviewRecord.findMany({ where: { month } });

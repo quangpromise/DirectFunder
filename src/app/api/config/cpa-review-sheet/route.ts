@@ -14,6 +14,8 @@ import {
   saveCpaReviewSheetConfigMap,
   mapSheetsError,
   SheetNotAccessibleError,
+  ensureSheetGridSize,
+  CPA_REVIEW_MIN_GRID,
 } from "@/lib/cpa-review-sheet-sync";
 import { yearNoteColumnIndex } from "@/lib/cpa-review-sheet-columns";
 import { CPA_REVIEW_YEARS } from "@/lib/cpa-review-columns";
@@ -160,6 +162,10 @@ export async function POST(request: NextRequest) {
       const sheetId = extractSheetId(link);
       const gid = extractGid(link) ?? "0";
       const tabName = await resolveTabNameFromGid(sheets, sheetId, gid);
+      // Tab mới/trống mặc định chỉ 1000 dòng x 26 cột (Z) — nhỏ hơn layout A-AH x 3003 dòng
+      // cần dùng, tự phóng to trước khi quét/ghi để tránh lỗi "exceeds grid limits" (gặp
+      // thật 2026-08-15). Chỉ tăng, không đụng dữ liệu hiện có.
+      await ensureSheetGridSize(sheets, sheetId, gid, CPA_REVIEW_MIN_GRID.rows, CPA_REVIEW_MIN_GRID.cols);
       // Bảng độc lập hoàn toàn (không liên kết Case) — kết nối lần đầu NHẬP TOÀN BỘ dòng
       // có SSN trong Sheet thành CpaReviewRecord mới, gắn vào đúng THÁNG đang kết nối (khác
       // thiết kế cũ chỉ quét/đối chiếu Case có sẵn), xem deployment-database-sync.md mục 4.22.
