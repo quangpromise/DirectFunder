@@ -73,10 +73,13 @@ function computeProcessorStats(rows: CpaReviewRecord[], processorUsers: User[]):
   return Array.from(stats.values()).sort((a, b) => b.totalCase - a.totalCase);
 }
 
+// Màu pastel (text-*-300) đọc tốt trên nền tối mặc định; thêm light:text-*-700/800 + viền/nền
+// đậm hơn cho nền sáng (theo pattern role-badge.tsx) — chữ nhạt gốc gần như vô hình trên nền
+// trắng, đã sửa theo phản hồi 2026-08-16 "text báo cáo... hơi mờ, icon hạng 1,2,3 cũng vậy".
 const RANK_STYLES = [
-  "border-amber-400/50 bg-amber-400/10 text-amber-300", // #1 vàng
-  "border-slate-300/40 bg-slate-300/10 text-slate-200", // #2 bạc
-  "border-orange-500/40 bg-orange-500/10 text-orange-300", // #3 đồng
+  "border-amber-400/50 bg-amber-400/10 text-amber-300 light:border-amber-500 light:bg-amber-100 light:text-amber-800", // #1 vàng
+  "border-slate-300/40 bg-slate-300/10 text-slate-200 light:border-slate-400 light:bg-slate-200 light:text-slate-700", // #2 bạc
+  "border-orange-500/40 bg-orange-500/10 text-orange-300 light:border-orange-500 light:bg-orange-100 light:text-orange-800", // #3 đồng
 ];
 /** Highlight nhẹ cả HÀNG cho top 3 (khác RANK_STYLES chỉ áp cho badge thứ hạng) — theo yêu
  * cầu "3 hạng đầu sẽ highlight lên". */
@@ -228,7 +231,7 @@ export function CpaReviewReportView({
       <div className="flex flex-col gap-4 lg:flex-row">
         <div className="flex-1 rounded-xl border border-border-strong bg-surface">
           <div className="border-b border-border px-4 py-3">
-            <h3 className="text-sm font-semibold text-amber-400">Báo cáo Agent</h3>
+            <h3 className="text-sm font-semibold text-amber-400 light:text-amber-700">Báo cáo Agent</h3>
           </div>
           {/* max-h + overflow-y-auto — cuộn riêng từng bảng nếu danh sách dài (yêu cầu
               2026-08-16), <thead> sticky để tiêu đề + hàng Tổng KHÔNG biến mất khi cuộn. */}
@@ -298,7 +301,7 @@ export function CpaReviewReportView({
 
         <div className="flex-1 rounded-xl border border-border-strong bg-surface">
           <div className="border-b border-border px-4 py-3">
-            <h3 className="text-sm font-semibold text-amber-400">Báo cáo Processor</h3>
+            <h3 className="text-sm font-semibold text-amber-400 light:text-amber-700">Báo cáo Processor</h3>
           </div>
           <div className="max-h-[480px] overflow-auto">
             <table className="w-full text-sm">
