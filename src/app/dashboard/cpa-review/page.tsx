@@ -2,8 +2,9 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ShieldAlert, Plus, Trash2, ExternalLink, StickyNote, FileSpreadsheet, X, Filter, EyeOff, Table2, BarChart3 } from "lucide-react";
+import { ShieldAlert, Plus, Trash2, ExternalLink, StickyNote, FileSpreadsheet, X, Filter, EyeOff, Table2, BarChart3, Search } from "lucide-react";
 import { CpaReviewReportView } from "@/components/cpa-review-report";
+import { digitsOnly } from "@/lib/ssn";
 import { useAppStore, useCurrentUser } from "@/store/app-store";
 import { hasFeature } from "@/lib/rbac";
 import {
@@ -205,6 +206,11 @@ export default function CpaReviewPage() {
   // Tab con "Dữ liệu"/"Báo cáo" trong chính CPA Review (thêm 2026-08-16) — "Báo cáo" tính
   // theo THÁNG đang chọn (dùng chung `rows`/`filteredRows` bên dưới), xem cpa-review-report.tsx.
   const [view, setView] = useState<"table" | "report">("table");
+  // Ô tìm kiếm nhanh theo Name/Phone/SSN (thêm 2026-08-16) — TÁCH RIÊNG khỏi hàng lọc theo
+  // cột (bộ lọc "3", ẩn mặc định) vì luôn cần thấy/gõ được ngay, không cần bấm "Lọc" trước.
+  // So khớp CHỨA (không phân biệt hoa/thường) trên tên, và thêm so khớp CHỈ CHỮ SỐ cho
+  // Phone/SSN (giống ô tìm kiếm bảng Hồ sơ chính) để gõ không dấu gạch ngang vẫn ra kết quả.
+  const [search, setSearch] = useState("");
   const [showFilterRow, setShowFilterRow] = useState(false);
   const [filters, setFilters] = useState<Record<string, string>>({});
   const hasActiveFilters = Object.values(filters).some(Boolean);
@@ -220,6 +226,19 @@ export default function CpaReviewPage() {
     });
   }
   const filteredRows = rows.filter((row) => {
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      const qDigits = digitsOnly(search);
+      const name = typeof row.custom.name === "string" ? row.custom.name.toLowerCase() : "";
+      const phone = typeof row.custom.phone === "string" ? row.custom.phone : "";
+      const ssn = typeof row.custom.ssn === "string" ? row.custom.ssn : "";
+      const matches =
+        name.includes(q) ||
+        phone.toLowerCase().includes(q) ||
+        ssn.toLowerCase().includes(q) ||
+        (qDigits && (digitsOnly(phone).includes(qDigits) || digitsOnly(ssn).includes(qDigits)));
+      if (!matches) return false;
+    }
     for (const [key, value] of Object.entries(filters)) {
       if (!value) continue;
       if (key === "processorUserId" || key === "agentUserId" || key === "crmSource" || key.startsWith("status_")) {
@@ -328,6 +347,17 @@ export default function CpaReviewPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {view === "table" && (
+            <div className="relative">
+              <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-text-faint" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Tìm Name, Phone, SSN..."
+                className="w-48 rounded-lg border border-border bg-surface py-2 pl-8 pr-3 text-sm outline-none focus:border-accent lg:w-56"
+              />
+            </div>
+          )}
           <CpaReviewMonthPicker value={selectedMonth} onChange={setSelectedMonth} />
           {view === "table" && canManageStatus && (
             <>
@@ -383,9 +413,15 @@ export default function CpaReviewPage() {
       {view === "table" && rows.length > 0 && filteredRows.length === 0 && (
         <div className="mt-4 flex items-center gap-2 rounded-xl border border-dashed border-border-strong bg-surface px-4 py-3 text-xs text-text-faint">
           <span>
-            Không có dòng nào khớp bộ lọc hiện tại —{" "}
-            <button onClick={() => setFilters({})} className="font-medium text-accent hover:underline">
-              xoá tất cả bộ lọc
+            Không có dòng nào khớp tìm kiếm/bộ lọc hiện tại —{" "}
+            <button
+              onClick={() => {
+                setFilters({});
+                setSearch("");
+              }}
+              className="font-medium text-accent hover:underline"
+            >
+              xoá tất cả
             </button>
             .
           </span>
