@@ -2,14 +2,7 @@ import { google } from "googleapis";
 import { prisma } from "./prisma";
 import { getServiceAccountSheetsClient, isServiceAccountConfigured } from "./google-service-account";
 import { ensureRowExists, writeCells, writeCellNotes, mapSheetsError, type CellWrite } from "./google-sheets";
-import {
-  buildCpaReviewSheetCells,
-  buildCpaReviewSheetNotes,
-  yearNoteColumnIndex,
-  letterFor,
-  sheetChangeToPatch,
-  CPA_REVIEW_MANAGED_COLUMN_INDEXES,
-} from "./cpa-review-sheet-columns";
+import { buildCpaReviewSheetCells, buildCpaReviewSheetNotes, letterFor, sheetChangeToPatch } from "./cpa-review-sheet-columns";
 import { CPA_REVIEW_YEARS, yearNoteKey, caseStatusOptionsForCrmSource } from "./cpa-review-columns";
 import type { ColumnDef, CpaReviewRecord, CpaReviewSheetConfig, CpaReviewSheetConfigMap, SelectOption, User } from "./types";
 import type { Prisma } from "@prisma/client";
@@ -314,6 +307,38 @@ function recordSsn(record: CpaReviewRecord): string | null {
   return typeof ssn === "string" && ssn.trim() ? ssn.trim() : null;
 }
 
+/** Quét lại toàn bộ cột SSN (cột D) trên Sheet để XÂY LẠI `rowIndex` (key = record.id) từ
+ * đầu — dùng sau khi 1 hoặc nhiều dòng bị xoá TRỰC TIẾP trên Sheet (Sheet→App, xem webhook).
+ * Tín hiệu xoá từ Apps Script chỉ cho biết "SSN nào không còn nữa", không biết CHÍNH XÁC bao
+ * nhiêu dòng đã dịch chuyển (có thể xoá nhiều dòng cùng lúc) — quét lại từ đầu đơn giản và
+ * chắc chắn đúng hơn nhiều so với cố tính toán dịch chuyển tăng dần cho từng trường hợp. */
+export async function rebuildCpaReviewRowIndex(
+  sheets: ReturnType<typeof google.sheets>,
+  sheetConfig: CpaReviewSheetConfig,
+  month: string
+): Promise<Record<string, number>> {
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: sheetConfig.sheetId,
+    range: `'${sheetConfig.tabName}'!${letterFor(SSN_COLUMN_INDEX)}${SCAN_START_ROW}:${letterFor(SSN_COLUMN_INDEX)}${SCAN_START_ROW + SCAN_ROW_LIMIT - 1}`,
+  });
+  const rows = res.data.values ?? [];
+  const records = await prisma.cpaReviewRecord.findMany({ where: { month }, select: { id: true, custom: true } });
+  const bySsn = new Map<string, string>();
+  for (const r of records) {
+    const custom = r.custom as Record<string, unknown>;
+    if (typeof custom.ssn === "string" && custom.ssn.trim()) bySsn.set(custom.ssn.trim(), r.id);
+  }
+
+  const nextRowIndex: Record<string, number> = {};
+  rows.forEach((row, i) => {
+    const ssn = (row[0] ?? "").toString().trim().split("\n")[0]?.trim();
+    if (!ssn) return;
+    const recordId = bySsn.get(ssn);
+    if (recordId) nextRowIndex[recordId] = SCAN_START_ROW + i;
+  });
+  return nextRowIndex;
+}
+
 /** Ghi 1 dòng vào đúng vị trí trong Sheet CPA Review — tự tra rowIndex cache, append dòng
  * mới nếu chưa có. Trả về thông tin cache cần lưu lại nếu có gì thay đổi (dòng mới, hoặc
  * vừa tự chuyển từ cache kiểu cũ sang kiểu mới — xem giải thích dưới), null nếu không cần
@@ -423,8 +448,14 @@ export async function syncRecordToCpaReviewSheet(record: CpaReviewRecord): Promi
   }
 }
 
-/** Xoá giá trị dòng tương ứng khi 1 record bị xoá trong app. */
-export async function clearRecordFromCpaReviewSheet(record: CpaReviewRecord): Promise<void> {
+/** Xoá THẬT dòng tương ứng trên Sheet khi 1 record bị xoá trong app (thêm 2026-08-15, thay
+ * cho hành vi cũ chỉ xoá giá trị/để lại dòng trống — yêu cầu "nên delete luôn row đó, không
+ * phải xóa dữ liệu") — dùng `deleteDimension` để xoá hẳn dòng, các dòng phía dưới tự dịch
+ * lên 1. QUAN TRỌNG: sau khi dòng thật sự dịch chuyển trên Sheet, MỌI entry khác trong
+ * `rowIndex` có số dòng LỚN HƠN dòng vừa xoá đều phải giảm đi 1 để khớp lại vị trí thật —
+ * nếu bỏ sót bước này, mọi dòng phía dưới dòng vừa xoá sẽ bị ghi/đọc NHẦM sang dòng kế bên
+ * (lệch 1 dòng) ở lần đồng bộ tiếp theo. */
+export async function deleteRecordRowFromCpaReviewSheet(record: CpaReviewRecord): Promise<void> {
   if (!isServiceAccountConfigured()) return;
   const ssn = recordSsn(record);
   if (!ssn) return;
@@ -436,22 +467,35 @@ export async function clearRecordFromCpaReviewSheet(record: CpaReviewRecord): Pr
     const targetRow = sheetConfig.rowIndex[record.id] ?? sheetConfig.rowIndex[ssn];
     if (!targetRow) return;
     const sheets = getServiceAccountSheetsClient();
-    const cells: CellWrite[] = CPA_REVIEW_MANAGED_COLUMN_INDEXES.map((index) => ({ column: letterFor(index), value: "" }));
-    await writeCells(sheets, sheetConfig.sheetId, sheetConfig.tabName, targetRow, cells);
-    const notes = CPA_REVIEW_YEARS.map((year) => ({ columnIndex: yearNoteColumnIndex(year), note: "" }));
-    await writeCellNotes(sheets, sheetConfig.sheetId, sheetConfig.tabName, targetRow, notes);
 
-    // Xoá luôn entry khỏi rowIndex cache (thêm 2026-08-15) — trước đây bỏ sót bước này, để
-    // lại entry "ma" trỏ tới dòng đã xoá. Vì `Math.max(...occupied)` trong pushRecordToSheet
-    // vẫn tính cả entry đó, dòng kế tiếp được thêm sẽ nhảy qua dòng vừa xoá bỏ trống thay vì
-    // dùng lại — nhiều lần xoá/thêm liên tục tạo ra khoảng cách ngày càng lớn giữa các dòng
-    // có dữ liệu thật trên Sheet (báo cáo thật 2026-08-15).
-    const nextRowIndex = { ...sheetConfig.rowIndex };
-    delete nextRowIndex[record.id];
-    delete nextRowIndex[ssn];
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: sheetConfig.sheetId,
+      requestBody: {
+        requests: [
+          {
+            deleteDimension: {
+              range: {
+                sheetId: Number(sheetConfig.gid),
+                dimension: "ROWS",
+                startIndex: targetRow - 1, // 0-based, inclusive
+                endIndex: targetRow, // 0-based, exclusive
+              },
+            },
+          },
+        ],
+      },
+    });
+
+    // Xoá entry của record vừa xoá, đồng thời dịch lại (-1) mọi entry có row > targetRow —
+    // khớp đúng việc các dòng phía dưới đã tự dịch lên sau deleteDimension.
+    const nextRowIndex: Record<string, number> = {};
+    for (const [key, row] of Object.entries(sheetConfig.rowIndex)) {
+      if (key === record.id || key === ssn) continue;
+      nextRowIndex[key] = row > targetRow ? row - 1 : row;
+    }
     await saveCpaReviewSheetConfigMap({ ...map, [record.month]: { ...sheetConfig, rowIndex: nextRowIndex } });
   } catch (err) {
-    console.error("clearRecordFromCpaReviewSheet thất bại (bỏ qua, không ảnh hưởng response chính):", err);
+    console.error("deleteRecordRowFromCpaReviewSheet thất bại (bỏ qua, không ảnh hưởng response chính):", err);
   }
 }
 

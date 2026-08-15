@@ -8,7 +8,9 @@ import {
   findCpaReviewConfigBySecret,
   findRowIndexKeyByRow,
   getCrmSourceOptions,
+  rebuildCpaReviewRowIndex,
 } from "@/lib/cpa-review-sheet-sync";
+import { getServiceAccountSheetsClient } from "@/lib/google-service-account";
 import { extractChangedYearStatuses, syncCpaReviewStatusToCase } from "@/lib/cpa-review-case-sync";
 import { broadcastCpaReviewChanged } from "@/lib/pusher-server";
 import type { Prisma } from "@prisma/client";
@@ -88,6 +90,44 @@ export async function POST(request: NextRequest) {
       await broadcastCpaReviewChanged(id, null);
     }
     return NextResponse.json({ ok: true, updated: updatedIds.size });
+  }
+
+  // Payload báo XOÁ dòng trực tiếp trên Sheet (thêm 2026-08-15, yêu cầu "xoá phải giống nhau
+  // ở cả 2 chiều" — App xoá dòng đã xoá thật dòng Sheet, nên Sheet xoá dòng cũng phải xoá
+  // thật record trong app, không để lại dữ liệu rác). Apps Script không biết CHÍNH XÁC dòng
+  // nào bị xoá (`onChange` chỉ báo "có dòng bị xoá", dữ liệu dòng đó đã mất khi sự kiện bắn
+  // ra) — thay vào đó tự so sánh danh sách SSN hiện tại với snapshot lần trước, gửi lên
+  // NHỮNG SSN không còn thấy nữa (xem buildAppsScript, onCpaReviewChange).
+  if (Array.isArray(body?.deletedSsns)) {
+    const deletedSsns = (body.deletedSsns as unknown[])
+      .filter((s): s is string => typeof s === "string" && s.trim().length > 0)
+      .map((s) => s.trim());
+    if (deletedSsns.length === 0) {
+      return NextResponse.json({ ok: true, skipped: "no_valid_ssns" });
+    }
+
+    const rows = await prisma.cpaReviewRecord.findMany({ where: { month } });
+    const toDelete = rows.filter((r) => {
+      const custom = r.custom as Record<string, unknown>;
+      return typeof custom.ssn === "string" && deletedSsns.includes(custom.ssn.trim());
+    });
+    // "App luôn thắng" — record vừa được app cập nhật gần đây (vd Test Sheet vừa tạo, hoặc
+    // vừa sửa xong) không xoá, coi tín hiệu Sheet là stale/đụng độ thời điểm.
+    const idsToDelete = toDelete.filter((r) => !isRecentlyUpdatedByApp(r.updatedAt)).map((r) => r.id);
+    if (idsToDelete.length > 0) {
+      await prisma.cpaReviewRecord.deleteMany({ where: { id: { in: idsToDelete } } });
+    }
+
+    // Xây lại rowIndex từ đầu bằng cách quét lại cột SSN thật trên Sheet — đơn giản/chắc
+    // chắn đúng hơn tính dịch chuyển tăng dần, nhất là khi nhiều dòng bị xoá cùng lúc.
+    const sheets = getServiceAccountSheetsClient();
+    const nextRowIndex = await rebuildCpaReviewRowIndex(sheets, sheetConfig, month);
+    await saveCpaReviewSheetConfigMap({ ...configMap, [month]: { ...sheetConfig, rowIndex: nextRowIndex } });
+
+    for (const id of idsToDelete) {
+      await broadcastCpaReviewChanged(id, null);
+    }
+    return NextResponse.json({ ok: true, deleted: idsToDelete.length });
   }
 
   const ssn = typeof body?.ssn === "string" ? body.ssn.trim() : "";

@@ -70,6 +70,40 @@ function onCpaReviewEdit(e) {
   });
 }
 
+// Phát hiện XOÁ dòng trực tiếp trên Sheet -> báo app xoá record tương ứng (thêm 2026-08-15,
+// yêu cầu "xoá phải giống nhau ở cả 2 chiều": app xoá dòng thì đã xoá thật dòng Sheet, nên
+// Sheet xoá dòng cũng phải xoá thật record trong app). onEdit KHÔNG bắt được sự kiện xoá
+// dòng (chỉ bắt sửa GIÁ TRỊ ô), phải dùng onChange (cũng cần cài installable trigger, cùng
+// lý do onEdit ở trên). onChange không cho biết CHÍNH XÁC dòng nào bị xoá/SSN gì (dữ liệu đã
+// mất khi sự kiện bắn ra) — tự so sánh danh sách SSN hiện tại với snapshot lần trước lưu ở
+// PropertiesService, SSN nào biến mất coi là dòng đó vừa bị xoá.
+function onCpaReviewChange(e) {
+  if (e.changeType !== "REMOVE_ROW" && e.changeType !== "REMOVE_GRID") return;
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("${tabName}");
+  var lastRow = sheet.getLastRow();
+  var currentSsns = {};
+  if (lastRow >= 4) {
+    var values = sheet.getRange(4, 4, lastRow - 3, 1).getValues();
+    for (var i = 0; i < values.length; i++) {
+      var ssn = String(values[i][0] || "").split("\\n")[0].trim();
+      if (ssn) currentSsns[ssn] = true;
+    }
+  }
+  var props = PropertiesService.getScriptProperties();
+  var prevSsns = JSON.parse(props.getProperty("cpaReviewSsnSnapshot") || "{}");
+  var removed = [];
+  for (var prevSsn in prevSsns) {
+    if (!currentSsns[prevSsn]) removed.push(prevSsn);
+  }
+  props.setProperty("cpaReviewSsnSnapshot", JSON.stringify(currentSsns));
+  if (removed.length === 0) return;
+  UrlFetchApp.fetch("${webhookUrl}", {
+    method: "post",
+    contentType: "application/json",
+    payload: JSON.stringify({ secret: "${secret}", deletedSsns: removed })
+  });
+}
+
 // Đồng bộ Ghi chú (Note, chuột phải ô → Insert note) ở ô "Ngày" mỗi năm — Google Sheets
 // KHÔNG bắn sự kiện onEdit khi thêm/sửa Note (chỉ bắt được khi sửa GIÁ TRỊ ô), nên phải quét
 // định kỳ qua trigger hẹn giờ thay vì tức thời như onEdit ở trên.
@@ -108,20 +142,36 @@ function syncCpaReviewNotes() {
 }
 
 // Chạy hàm NÀY 1 lần (chọn "installCpaReviewTriggers" ở dropdown rồi bấm Run) để vừa cấp
-// quyền vừa cài 2 trigger: onCpaReviewEdit (installable — chạy full authorization, khác
-// simple trigger "onEdit" mặc định bị hạn chế) cho sửa ô tức thời, và trigger hẹn giờ quét
-// Note mỗi 5 phút. KHÔNG cần làm lại trừ khi Sheet bị ngắt kết nối rồi kết nối lại (secret
-// đổi) — hoặc script này được dán ĐÈ lên 1 bản cũ hơn (xoá trigger cũ trước khi cài lại).
+// quyền vừa cài 3 trigger: onCpaReviewEdit (installable — chạy full authorization, khác
+// simple trigger "onEdit" mặc định bị hạn chế) cho sửa ô tức thời, onCpaReviewChange cho xoá
+// dòng, và trigger hẹn giờ quét Note mỗi 5 phút. KHÔNG cần làm lại trừ khi Sheet bị ngắt kết
+// nối rồi kết nối lại (secret đổi) — hoặc script này được dán ĐÈ lên 1 bản cũ hơn (xoá
+// trigger cũ trước khi cài lại).
 function installCpaReviewTriggers() {
   var triggers = ScriptApp.getProjectTriggers();
   for (var i = 0; i < triggers.length; i++) {
     var handler = triggers[i].getHandlerFunction();
-    if (handler === "syncCpaReviewNotes" || handler === "onCpaReviewEdit") {
+    if (handler === "syncCpaReviewNotes" || handler === "onCpaReviewEdit" || handler === "onCpaReviewChange") {
       ScriptApp.deleteTrigger(triggers[i]);
     }
   }
   ScriptApp.newTrigger("syncCpaReviewNotes").timeBased().everyMinutes(5).create();
   ScriptApp.newTrigger("onCpaReviewEdit").forSpreadsheet(SpreadsheetApp.getActiveSpreadsheet()).onEdit().create();
+  ScriptApp.newTrigger("onCpaReviewChange").forSpreadsheet(SpreadsheetApp.getActiveSpreadsheet()).onChange().create();
+
+  // Khởi tạo snapshot SSN ngay lúc cài đặt — để lần xoá dòng ĐẦU TIÊN sau khi cài cũng phát
+  // hiện đúng (không cần đợi 1 thay đổi trước đó để snapshot có sẵn dữ liệu).
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("${tabName}");
+  var lastRow = sheet.getLastRow();
+  var snapshot = {};
+  if (lastRow >= 4) {
+    var values = sheet.getRange(4, 4, lastRow - 3, 1).getValues();
+    for (var i = 0; i < values.length; i++) {
+      var ssn = String(values[i][0] || "").split("\\n")[0].trim();
+      if (ssn) snapshot[ssn] = true;
+    }
+  }
+  PropertiesService.getScriptProperties().setProperty("cpaReviewSsnSnapshot", JSON.stringify(snapshot));
 }`;
 }
 

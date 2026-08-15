@@ -2,7 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
 import { hasFeature } from "@/lib/rbac";
-import { syncRecordToCpaReviewSheet, clearRecordFromCpaReviewSheet } from "@/lib/cpa-review-sheet-sync";
+import { syncRecordToCpaReviewSheet, deleteRecordRowFromCpaReviewSheet } from "@/lib/cpa-review-sheet-sync";
 import { extractChangedYearStatuses, syncCpaReviewStatusToCase } from "@/lib/cpa-review-case-sync";
 import { broadcastCpaReviewChanged } from "@/lib/pusher-server";
 import { toCpaReviewRecord } from "@/app/api/cpa-review/route";
@@ -76,7 +76,7 @@ export async function DELETE(request: NextRequest, ctx: RouteContext<"/api/cpa-r
   await prisma.cpaReviewRecord.delete({ where: { id } });
 
   if (existing) {
-    after(() => clearRecordFromCpaReviewSheet(toCpaReviewRecord(existing)));
+    after(() => deleteRecordRowFromCpaReviewSheet(toCpaReviewRecord(existing)));
   }
   await broadcastCpaReviewChanged(id, request.headers.get("x-pusher-socket-id"));
 

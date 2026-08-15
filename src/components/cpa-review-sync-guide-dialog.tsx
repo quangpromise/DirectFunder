@@ -132,7 +132,7 @@ export function CpaReviewSyncGuideDialog({ month }: { month: string }) {
                   )}
                 </GuideStep>
 
-                <GuideStep n={4} title="Chạy 1 lần để cấp quyền + bật đồng bộ Ghi chú">
+                <GuideStep n={4} title="Chạy 1 lần để cấp quyền + bật đồng bộ Ghi chú/Xoá dòng">
                   <p>
                     Ở thanh công cụ phía trên (cạnh nút ▶ Run), chọn hàm{" "}
                     <span className="font-mono text-[11px] text-text">installCpaReviewTriggers</span> (KHÔNG chọn{" "}
@@ -148,7 +148,9 @@ export function CpaReviewSyncGuideDialog({ month }: { month: string }) {
                   <p>
                     Sửa 1 ô bất kỳ trong app → Sheet cập nhật trong vài giây. Sửa trực tiếp trong Sheet → app tự cập nhật gần như
                     ngay lập tức (không cần F5). Riêng <span className="font-medium text-text">Ghi chú</span> (chuột phải ô → Insert
-                    note) đồng bộ chiều Sheet→App có độ trễ tối đa 5 phút (Google Sheets không báo sự kiện khi thêm Ghi chú).
+                    note) đồng bộ chiều Sheet→App có độ trễ tối đa 5 phút (Google Sheets không báo sự kiện khi thêm Ghi chú). Xoá
+                    dòng cũng đồng bộ 2 chiều: xoá dòng trong app sẽ xoá hẳn dòng trên Sheet (không chỉ xoá dữ liệu), và xoá dòng
+                    trực tiếp trên Sheet cũng tự xoá đúng hồ sơ tương ứng trong app.
                   </p>
                 </GuideStep>
 
