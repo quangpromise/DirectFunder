@@ -1,6 +1,8 @@
 "use client";
 
-import { Trophy } from "lucide-react";
+import { useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { Trophy, ChevronDown, Check } from "lucide-react";
 import { CPA_REVIEW_VISIBLE_YEARS, yearAmountKey, yearStatusKey } from "@/lib/cpa-review-columns";
 import type { CpaReviewRecord, User } from "@/lib/types";
 
@@ -11,6 +13,12 @@ import type { CpaReviewRecord, User } from "@/lib/types";
  * nhận của user. "Total Case" đếm số LƯỢT năm có "Số tiền" > 0 (không phải Tổng, không tính
  * Other Refund) cộng dồn qua MỌI hồ sơ được gán cho người đó — ví dụ 1 hồ sơ có tiền ở 3 năm
  * thì tính 3, không phải 1.
+ *
+ * Bổ sung 2026-08-16 — 2 dropdown chọn Agent/Processor: MẶC ĐỊNH hiện đủ mọi người (khớp
+ * hành vi cũ, không cần thao tác gì), bấm mở dropdown mới bắt đầu tự chọn lọc theo đúng
+ * người đã tick — tự động vẫn hiện người MỚI thêm sau này miễn chưa từng đụng vào dropdown
+ * (selection = null nghĩa là "chưa can thiệp, hiện tất cả"), khớp yêu cầu "tài khoản nào được
+ * chọn mới show trong báo cáo" mà không cần chọn tay lại mỗi khi có nhân viên mới.
  */
 
 interface AgentStat {
@@ -86,6 +94,99 @@ function RankBadge({ rank }: { rank: number }) {
   );
 }
 
+/** Dropdown multi-select dùng chung cho cả 2 bộ lọc Agent/Processor — `selected === null`
+ * nghĩa là "chưa lọc, hiện tất cả" (mặc định), khác `selected` là 1 Set rỗng (đã lọc còn 0
+ * người, cố ý ẩn hết). */
+function MultiSelectFilter({
+  label,
+  users,
+  selected,
+  onChange,
+}: {
+  label: string;
+  users: User[];
+  selected: Set<string> | null;
+  onChange: (next: Set<string> | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+
+  function openPopup() {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (rect) setPos({ x: Math.min(rect.left, window.innerWidth - 260), y: rect.bottom + 4 });
+    setOpen((o) => !o);
+  }
+
+  function toggle(id: string) {
+    const base = selected ?? new Set(users.map((u) => u.id));
+    const next = new Set(base);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    onChange(next);
+  }
+
+  const isAll = selected === null;
+  const count = selected ? selected.size : users.length;
+
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        onClick={openPopup}
+        className={`flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm transition ${
+          isAll
+            ? "border-border bg-surface text-text-dim hover:bg-surface-hover hover:text-text"
+            : "border-accent bg-accent-soft text-accent"
+        }`}
+      >
+        {label}
+        <span className="text-xs text-text-faint">
+          ({count}/{users.length})
+        </span>
+        <ChevronDown size={13} />
+      </button>
+
+      {open &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <>
+            <div className="fixed inset-0 z-[90]" onClick={() => setOpen(false)} />
+            <div className="popover fixed z-[100] w-60 rounded-xl p-2 shadow-2xl shadow-black/60" style={{ left: pos.x, top: pos.y }}>
+              <div className="mb-1 flex items-center justify-between px-1">
+                <span className="text-[11px] font-semibold text-text-faint">Chọn {label.toLowerCase()} hiện trong báo cáo</span>
+                {!isAll && (
+                  <button onClick={() => onChange(null)} className="text-[11px] font-medium text-accent hover:underline">
+                    Chọn tất cả
+                  </button>
+                )}
+              </div>
+              <div className="flex max-h-72 flex-col gap-0.5 overflow-y-auto">
+                {users.length === 0 && <p className="px-2 py-2 text-xs text-text-faint">Chưa có ai.</p>}
+                {users.map((u) => {
+                  const checked = isAll || selected!.has(u.id);
+                  return (
+                    <label key={u.id} className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-surface-hover">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggle(u.id)}
+                        className="h-3.5 w-3.5 accent-[var(--accent)]"
+                      />
+                      <span className="min-w-0 flex-1 truncate">{u.name}</span>
+                      {checked && <Check size={12} className="shrink-0 text-accent" />}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          </>,
+          document.body
+        )}
+    </>
+  );
+}
+
 export function CpaReviewReportView({
   rows,
   agentUsers,
@@ -95,11 +196,22 @@ export function CpaReviewReportView({
   agentUsers: User[];
   processorUsers: User[];
 }) {
-  const agentStats = computeAgentStats(rows, agentUsers);
-  const processorStats = computeProcessorStats(rows, processorUsers);
+  const [selectedAgentIds, setSelectedAgentIds] = useState<Set<string> | null>(null);
+  const [selectedProcessorIds, setSelectedProcessorIds] = useState<Set<string> | null>(null);
+
+  const visibleAgentUsers = selectedAgentIds ? agentUsers.filter((u) => selectedAgentIds.has(u.id)) : agentUsers;
+  const visibleProcessorUsers = selectedProcessorIds ? processorUsers.filter((u) => selectedProcessorIds.has(u.id)) : processorUsers;
+
+  const agentStats = computeAgentStats(rows, visibleAgentUsers);
+  const processorStats = computeProcessorStats(rows, visibleProcessorUsers);
 
   return (
     <div className="flex h-full flex-col gap-4 overflow-auto px-4 py-6 sm:px-6">
+      <div className="flex flex-wrap items-center gap-2">
+        <MultiSelectFilter label="Agent" users={agentUsers} selected={selectedAgentIds} onChange={setSelectedAgentIds} />
+        <MultiSelectFilter label="Processor" users={processorUsers} selected={selectedProcessorIds} onChange={setSelectedProcessorIds} />
+      </div>
+
       <div className="flex flex-col gap-4 lg:flex-row">
         <div className="flex-1 rounded-xl border border-border-strong bg-surface">
           <div className="border-b border-border px-4 py-3">
@@ -121,7 +233,7 @@ export function CpaReviewReportView({
                 {agentStats.length === 0 && (
                   <tr>
                     <td colSpan={6} className="px-3 py-6 text-center text-xs text-text-faint">
-                      Chưa có Agent nào trong hệ thống.
+                      {agentUsers.length === 0 ? "Chưa có Agent nào trong hệ thống." : "Không có Agent nào đang được chọn."}
                     </td>
                   </tr>
                 )}
@@ -168,7 +280,7 @@ export function CpaReviewReportView({
                 {processorStats.length === 0 && (
                   <tr>
                     <td colSpan={3} className="px-3 py-6 text-center text-xs text-text-faint">
-                      Chưa có Processor nào trong hệ thống.
+                      {processorUsers.length === 0 ? "Chưa có Processor nào trong hệ thống." : "Không có Processor nào đang được chọn."}
                     </td>
                   </tr>
                 )}
