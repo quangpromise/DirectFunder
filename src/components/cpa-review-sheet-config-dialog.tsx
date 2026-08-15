@@ -223,7 +223,7 @@ export function CpaReviewSheetConfigDialog({ month }: { month: string }) {
                     <p className="font-medium text-text">
                       Đã nhập {connectResult.importedCount} dòng từ Sheet. Dán đoạn script sau vào Extensions → Apps Script
                       của Sheet, Save, rồi chọn hàm <span className="font-mono">installCpaReviewTriggers</span> ở dropdown
-                      và bấm Run 1 lần (vừa cấp quyền, vừa cài lịch quét Ghi chú mỗi 5 phút):
+                      và bấm Run 1 lần (vừa cấp quyền, vừa cài lịch quét Ghi chú mỗi 1 phút):
                     </p>
                     <textarea
                       readOnly

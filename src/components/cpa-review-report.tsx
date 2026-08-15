@@ -228,7 +228,7 @@ export function CpaReviewReportView({
       <div className="flex flex-col gap-4 lg:flex-row">
         <div className="flex-1 rounded-xl border border-border-strong bg-surface">
           <div className="border-b border-border px-4 py-3">
-            <h3 className="text-sm font-semibold text-text">Báo cáo Agent</h3>
+            <h3 className="text-sm font-semibold text-amber-400">Báo cáo Agent</h3>
           </div>
           {/* max-h + overflow-y-auto — cuộn riêng từng bảng nếu danh sách dài (yêu cầu
               2026-08-16), <thead> sticky để tiêu đề + hàng Tổng KHÔNG biến mất khi cuộn. */}
@@ -246,12 +246,13 @@ export function CpaReviewReportView({
                 {/* Hàng "Tổng" đặt NGAY TRONG <thead> (không phải <tbody>) — tách hẳn khỏi
                     danh sách tên/xếp hạng để không bị nhầm là 1 Agent, theo yêu cầu
                     2026-08-16 "đẩy nó lên trên cùng hoặc bôi xanh background đậm để dễ phân
-                    biệt" — nền XANH ĐẬM đặc (không phải accent-soft mờ như trước) + chữ trắng
-                    để tương phản rõ, tách khỏi cả hàng tiêu đề lẫn danh sách bên dưới. Cộng
+                    biệt" — nền ĐỒNG (orange-600, cùng tông với huy chương hạng 3, đổi từ xanh
+                    dương theo yêu cầu 2026-08-16) đặc + chữ trắng để tương phản rõ, tách khỏi
+                    cả hàng tiêu đề lẫn danh sách bên dưới. Cộng
                     dồn Total Case/>1000/<1000/Collected của MỌI Agent đang hiện (theo bộ lọc
                     phía trên). */}
                 {agentStats.length > 0 && (
-                  <tr className="bg-blue-600">
+                  <tr className="bg-orange-600">
                     <td className="px-3 py-2"></td>
                     <td className="px-3 py-2 text-sm font-bold text-white">Tổng</td>
                     <td className="px-3 py-2 text-center text-sm font-bold text-white">{agentTotals.totalCase}</td>
@@ -297,7 +298,7 @@ export function CpaReviewReportView({
 
         <div className="flex-1 rounded-xl border border-border-strong bg-surface">
           <div className="border-b border-border px-4 py-3">
-            <h3 className="text-sm font-semibold text-text">Báo cáo Processor</h3>
+            <h3 className="text-sm font-semibold text-amber-400">Báo cáo Processor</h3>
           </div>
           <div className="max-h-[480px] overflow-auto">
             <table className="w-full text-sm">
@@ -307,10 +308,10 @@ export function CpaReviewReportView({
                   <th className="px-3 py-2 text-left">Processor</th>
                   <th className="px-3 py-2 text-center">Total Case</th>
                 </tr>
-                {/* Hàng "Tổng" đặt trong <thead>, nền xanh đậm — xem giải thích ở bảng Agent
-                    phía trên. */}
+                {/* Hàng "Tổng" đặt trong <thead>, nền đồng (orange-600) — xem giải thích ở bảng
+                    Agent phía trên. */}
                 {processorStats.length > 0 && (
-                  <tr className="bg-blue-600">
+                  <tr className="bg-orange-600">
                     <td className="px-3 py-2"></td>
                     <td className="px-3 py-2 text-sm font-bold text-white">Tổng</td>
                     <td className="px-3 py-2 text-center text-sm font-bold text-white">{processorTotalCase}</td>

@@ -142,7 +142,7 @@ function syncCpaReviewNotes() {
 // Chạy hàm NÀY 1 lần (chọn "installCpaReviewTriggers" ở dropdown rồi bấm Run) để vừa cấp
 // quyền vừa cài 3 trigger: onCpaReviewEdit (installable — chạy full authorization, khác
 // simple trigger "onEdit" mặc định bị hạn chế) cho sửa ô tức thời, onCpaReviewChange cho xoá
-// dòng, và trigger hẹn giờ quét Note mỗi 5 phút. KHÔNG cần làm lại trừ khi Sheet bị ngắt kết
+// dòng, và trigger hẹn giờ quét Note mỗi 1 phút. KHÔNG cần làm lại trừ khi Sheet bị ngắt kết
 // nối rồi kết nối lại (secret đổi) — hoặc script này được dán ĐÈ lên 1 bản cũ hơn (xoá
 // trigger cũ trước khi cài lại).
 function installCpaReviewTriggers() {
@@ -153,7 +153,7 @@ function installCpaReviewTriggers() {
       ScriptApp.deleteTrigger(triggers[i]);
     }
   }
-  ScriptApp.newTrigger("syncCpaReviewNotes").timeBased().everyMinutes(5).create();
+  ScriptApp.newTrigger("syncCpaReviewNotes").timeBased().everyMinutes(1).create();
   ScriptApp.newTrigger("onCpaReviewEdit").forSpreadsheet(SpreadsheetApp.getActiveSpreadsheet()).onEdit().create();
   ScriptApp.newTrigger("onCpaReviewChange").forSpreadsheet(SpreadsheetApp.getActiveSpreadsheet()).onChange().create();
 }`;
