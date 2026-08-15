@@ -6,10 +6,13 @@ import {
   CPA_REVIEW_KEY_TO_SHEET_COLUMN,
   yearEfileDateKey,
   yearNoteKey,
+  yearAmountKey,
+  yearAdjustmentKey,
+  yearTotalColumnIndex,
 } from "./cpa-review-columns";
 import { CellWrite, NoteWrite } from "./google-sheets";
 import { columnIndexToLetter } from "./spreadsheet-letters";
-import { formatDateValue } from "./date-format";
+import { formatDateValue, formatDateOfBirth } from "./date-format";
 import type { CpaReviewRecord, SelectOption } from "./types";
 
 export function letterFor(index: number): string {
@@ -74,6 +77,19 @@ export function buildCpaReviewSheetCells(
       cells.push({ column: letterFor(index), value: formatDateValue(value, "mdy2") });
       continue;
     }
+    // DOB kiểu "text" (không phải "date", có thể chứa 2 ngày cách nhau bằng \n — xem
+    // cpa-review-columns.ts) nên KHÔNG rơi vào nhánh date ở trên — trước đây ghi thẳng ISO
+    // thô lên Sheet, không đúng mm/dd/yyyy như app hiển thị (báo cáo thật 2026-08-16). Format
+    // riêng từng dòng (nếu có 2 ngày) bằng formatDateOfBirth (LUÔN 4 số năm, khác mdy2 2 số
+    // năm dùng cho các cột ngày khác).
+    if (key === "dob" && typeof value === "string") {
+      const formatted = value
+        .split("\n")
+        .map((seg) => formatDateOfBirth(seg.trim()))
+        .join("\n");
+      cells.push({ column: letterFor(index), value: formatted });
+      continue;
+    }
     if (typeof value === "number") {
       cells.push({ column: letterFor(index), value });
       continue;
@@ -81,6 +97,26 @@ export function buildCpaReviewSheetCells(
     cells.push({ column: letterFor(index), value: String(value) });
   }
 
+  return cells;
+}
+
+/** Ô "Tổng" mỗi năm (= Số tiền + Other Refund, khớp đúng công thức `=O+P` thật trên Sheet) —
+ * CHỈ dùng cho DÒNG MỚI app vừa thêm (ô Tổng chắc chắn còn trống, chưa có công thức Admin
+ * nào để lỡ ghi đè), thêm 2026-08-16 theo yêu cầu "ô tổng... nếu chưa set công thức thì sẽ
+ * lấy theo công thức tab CPA Review... gắn trực tiếp số đang có ở tổng vào Google sheet để
+ * đồng bộ 2 chiều". KHÔNG gọi hàm này khi ghi đè lên 1 dòng ĐÃ CÓ SẴN trên Sheet (xem
+ * pushRecordToSheet) — dòng đó có thể đã có công thức thật, ghi đè sẽ xoá mất công thức đó
+ * (đúng nguyên tắc đã thống nhất từ trước, không tự set/ghi đè công thức Sheet có sẵn). */
+export function buildCpaReviewYearTotalCells(record: CpaReviewRecord): CellWrite[] {
+  const cells: CellWrite[] = [];
+  const custom = record.custom;
+  for (const year of CPA_REVIEW_YEARS) {
+    const amount = custom[yearAmountKey(year)];
+    const adjustment = custom[yearAdjustmentKey(year)];
+    const total = (typeof amount === "number" ? amount : 0) + (typeof adjustment === "number" ? adjustment : 0);
+    if (total <= 0) continue;
+    cells.push({ column: letterFor(yearTotalColumnIndex(year)), value: total });
+  }
   return cells;
 }
 

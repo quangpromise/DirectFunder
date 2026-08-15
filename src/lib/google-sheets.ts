@@ -247,6 +247,40 @@ export async function writeCellNotes(
   });
 }
 
+/** Căn giữa (ngang + dọc) TOÀN BỘ 1 dòng vừa được app THÊM MỚI trên Sheet — trước đây dòng
+ * mới app tự thêm giữ định dạng mặc định của Google Sheets (căn trái/dưới), lệch hẳn với các
+ * dòng có sẵn do Admin gõ tay (thường đã căn giữa), báo cáo thật 2026-08-16 ("row nên là Row
+ * center"). CHỈ áp dụng cho dòng MỚI (gọi từ nơi biết chắc đây là append, không phải update
+ * dòng có sẵn) — không đụng định dạng dòng cũ Admin có thể đã tuỳ chỉnh riêng. */
+export async function centerAlignRow(
+  sheets: ReturnType<typeof google.sheets>,
+  spreadsheetId: string,
+  gid: number,
+  row: number,
+  lastColumnIndex: number
+): Promise<void> {
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [
+        {
+          repeatCell: {
+            range: {
+              sheetId: gid,
+              startRowIndex: row - 1,
+              endRowIndex: row,
+              startColumnIndex: 0,
+              endColumnIndex: lastColumnIndex + 1,
+            },
+            cell: { userEnteredFormat: { horizontalAlignment: "CENTER", verticalAlignment: "MIDDLE" } },
+            fields: "userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment",
+          },
+        },
+      ],
+    },
+  });
+}
+
 /** Ghi 1 nhóm ô (cùng 1 valueInputOption) vào `targetRow` — mỗi ô 1 range riêng theo đúng
  * chữ cái cột Admin đã gán, không gộp/không suy đoán vị trí liền kề. */
 async function writeCellGroup(

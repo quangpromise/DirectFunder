@@ -1,8 +1,14 @@
 import { google } from "googleapis";
 import { prisma } from "./prisma";
 import { getServiceAccountSheetsClient, isServiceAccountConfigured } from "./google-service-account";
-import { ensureRowExists, writeCells, writeCellNotes, mapSheetsError, type CellWrite } from "./google-sheets";
-import { buildCpaReviewSheetCells, buildCpaReviewSheetNotes, letterFor, sheetChangeToPatch } from "./cpa-review-sheet-columns";
+import { ensureRowExists, writeCells, writeCellNotes, centerAlignRow, mapSheetsError, type CellWrite } from "./google-sheets";
+import {
+  buildCpaReviewSheetCells,
+  buildCpaReviewSheetNotes,
+  buildCpaReviewYearTotalCells,
+  letterFor,
+  sheetChangeToPatch,
+} from "./cpa-review-sheet-columns";
 import { CPA_REVIEW_YEARS, yearNoteKey, caseStatusOptionsForCrmSource } from "./cpa-review-columns";
 import type { ColumnDef, CpaReviewRecord, CpaReviewSheetConfig, CpaReviewSheetConfigMap, SelectOption, User } from "./types";
 import type { Prisma } from "@prisma/client";
@@ -412,7 +418,17 @@ async function pushRecordToSheet(
   // đụng gì tới cấu hình dropdown Admin đã set (yêu cầu 2026-08-15).
   await ensureRowExists(sheets, config.sheetId, config.tabName, targetRow);
   const cellsWithSsn: CellWrite[] = [...cells, { column: letterFor(SSN_COLUMN_INDEX), value: ssn }];
-  await writeCells(sheets, config.sheetId, config.tabName, targetRow, cellsWithSsn);
+  // 2 việc CHỈ áp dụng cho DÒNG MỚI (appendedRow), không đụng dòng đã có sẵn (thêm
+  // 2026-08-16): (1) ghi thẳng giá trị "Tổng" mỗi năm (=Số tiền+Other Refund) — ô này chắc
+  // chắn còn trống ở dòng mới nên an toàn ghi số trực tiếp, khác dòng có sẵn có thể đã có
+  // công thức Sheet thật (không tự ghi đè, giữ nguyên nguyên tắc cũ); (2) căn giữa cả dòng —
+  // dòng app tự thêm trước đây giữ định dạng mặc định (căn trái/dưới), lệch với các dòng có
+  // sẵn do Admin gõ tay.
+  const cellsToWrite = appendedRow !== undefined ? [...cellsWithSsn, ...buildCpaReviewYearTotalCells(record)] : cellsWithSsn;
+  await writeCells(sheets, config.sheetId, config.tabName, targetRow, cellsToWrite);
+  if (appendedRow !== undefined) {
+    await centerAlignRow(sheets, config.sheetId, Number(config.gid), targetRow, FULL_ROW_LAST_COL);
+  }
   // Chỉ tốn thêm 1 lệnh batchUpdate ghi Note khi thật sự có liên quan tới ghi chú (record có
   // Note hoặc lần lưu này đụng tới field ghi chú) — tránh gọi API thừa mỗi lần sửa 1 ô KHÔNG
   // liên quan gì tới Note (vd chỉ đổi Status).

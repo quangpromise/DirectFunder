@@ -141,8 +141,20 @@ CPA_REVIEW_YEARS.forEach((year, i) => {
   CPA_REVIEW_SHEET_COLUMN_MAP[base + 1] = yearStatusKey(year);
   CPA_REVIEW_SHEET_COLUMN_MAP[base + 2] = yearAmountKey(year);
   CPA_REVIEW_SHEET_COLUMN_MAP[base + 3] = yearAdjustmentKey(year);
-  // base+4 (cột Q, "Tổng") CỐ Ý không map — công thức Sheet, không đọc/ghi (xem trên).
+  // base+4 (cột Q, "Tổng") CỐ Ý không map ở đây — công thức Sheet, không tham gia đọc/ghi 2
+  // chiều qua CPA_REVIEW_SHEET_COLUMN_MAP như các cột khác. Vẫn cần biết CHỈ SỐ CỘT này riêng
+  // (yearTotalColumnIndex bên dưới) cho 1 trường hợp hẹp: ghi trực tiếp giá trị Tổng vào ô
+  // này khi thêm DÒNG MỚI (ô chắc chắn còn trống, chưa có công thức nào để ghi đè) — thêm
+  // 2026-08-16, yêu cầu "ô tổng... nếu chưa set công thức thì sẽ lấy theo công thức tab CPA
+  // Review... gắn trực tiếp số đang có ở tổng vào Google sheet".
 });
+
+/** Chỉ số cột 0-based (A=0) của ô "Tổng" (công thức `=Số tiền+Other Refund` trên Sheet thật)
+ * mỗi năm — xem giải thích ở trên. */
+export function yearTotalColumnIndex(year: string): number {
+  const i = CPA_REVIEW_YEARS.indexOf(year as CpaReviewYear);
+  return YEAR_BLOCK_START + i * YEAR_BLOCK_SIZE + 4;
+}
 
 /** Chiều ngược lại (key -> chỉ số cột Sheet) — dùng khi đẩy App->Sheet. */
 export const CPA_REVIEW_KEY_TO_SHEET_COLUMN: Record<string, number> = Object.fromEntries(
