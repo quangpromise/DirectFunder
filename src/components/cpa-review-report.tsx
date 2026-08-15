@@ -241,12 +241,13 @@ export function CpaReviewReportView({
                   <th className="px-3 py-2 text-center">&lt;$1000</th>
                   <th className="px-3 py-2 text-center">Collected</th>
                 </tr>
-              </thead>
-              <tbody>
-                {/* Hàng "Tổng" — cộng dồn Total Case/>1000/<1000/Collected của MỌI Agent đang
-                    hiện (theo bộ lọc phía trên), thêm 2026-08-16. */}
+                {/* Hàng "Tổng" đặt NGAY TRONG <thead> (không phải <tbody>) — tách hẳn khỏi
+                    danh sách tên/xếp hạng để không bị nhầm là 1 Agent, theo yêu cầu
+                    2026-08-16 "đặt ở row trên cùng, không đặt cùng với các tên". Cộng dồn
+                    Total Case/>1000/<1000/Collected của MỌI Agent đang hiện (theo bộ lọc
+                    phía trên). */}
                 {agentStats.length > 0 && (
-                  <tr className="border-b-2 border-accent/40 bg-accent-soft">
+                  <tr className="border-b-2 border-accent/50 bg-accent-soft">
                     <td className="px-3 py-2"></td>
                     <td className="px-3 py-2 text-sm font-bold text-text">Tổng</td>
                     <td className="px-3 py-2 text-center text-sm font-bold text-text">{agentTotals.totalCase}</td>
@@ -255,6 +256,8 @@ export function CpaReviewReportView({
                     <td className="px-3 py-2 text-center text-sm font-bold text-text">{agentTotals.collected}</td>
                   </tr>
                 )}
+              </thead>
+              <tbody>
                 {agentStats.length === 0 && (
                   <tr>
                     <td colSpan={6} className="px-3 py-6 text-center text-xs text-text-faint">
@@ -300,15 +303,17 @@ export function CpaReviewReportView({
                   <th className="px-3 py-2 text-left">Processor</th>
                   <th className="px-3 py-2 text-center">Total Case</th>
                 </tr>
-              </thead>
-              <tbody>
+                {/* Hàng "Tổng" đặt trong <thead>, tách khỏi danh sách tên — xem giải thích ở
+                    bảng Agent phía trên. */}
                 {processorStats.length > 0 && (
-                  <tr className="border-b-2 border-accent/40 bg-accent-soft">
+                  <tr className="border-b-2 border-accent/50 bg-accent-soft">
                     <td className="px-3 py-2"></td>
                     <td className="px-3 py-2 text-sm font-bold text-text">Tổng</td>
                     <td className="px-3 py-2 text-center text-sm font-bold text-text">{processorTotalCase}</td>
                   </tr>
                 )}
+              </thead>
+              <tbody>
                 {processorStats.length === 0 && (
                   <tr>
                     <td colSpan={3} className="px-3 py-6 text-center text-xs text-text-faint">
