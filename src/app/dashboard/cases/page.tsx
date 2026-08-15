@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Search, Plus, Trash2, FileText, DollarSign, GripVertical, ShieldAlert, Download, Upload, Layers, CheckCircle2, X, BarChart3, Maximize2, Minimize2 } from "lucide-react";
+import { Search, Plus, Trash2, FileText, DollarSign, GripVertical, ShieldAlert, Download, Upload, Layers, CheckCircle2, X, BarChart3, Maximize2, Minimize2, SlidersHorizontal } from "lucide-react";
 import { downloadCaseTemplate, parseCaseExcelFile, formatDuplicateSsnLines } from "@/lib/excel";
 import { useAppStore, useCurrentUser } from "@/store/app-store";
 import { canEditCase, canEditColumn, canViewCase, hasFeature } from "@/lib/rbac";
@@ -308,6 +308,12 @@ export default function CasesPage() {
   /** Popup danh sách thống kê (Tổng/theo Status/Giá trị) trên di động — thay cho dãy chip
    * nằm ngang vốn tràn màn hình nhỏ, gộp vào 1 nút mở popup thay vì hiện tất cả cùng lúc. */
   const [statsPopupOpen, setStatsPopupOpen] = useState(false);
+  /** Popup "Thêm" trên di động (thêm 2026-08-16, yêu cầu "mobile chỉ hiển thị table và tìm
+   * kiếm/xem thống kê, còn lại gộp vào 1 nút mở popup") — gom mọi nút/điều khiển KHÁC (đổi
+   * chế độ đếm case/client, EC Qualification, focus mode, tải mẫu Excel, upload Excel, lọc
+   * Status/Processor/Agent, thêm cột, lịch sử, thêm dòng) vào 1 popup duy nhất, để trên di
+   * động chỉ còn Bảng + ô tìm kiếm + nút "Xem thống kê" hiện thẳng ngoài toolbar. */
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   /** Chế độ đếm cho dãy chip tổng hợp — "case": đếm theo TỪNG NĂM refund (dữ liệu ở popup
    * mắt cột "Case", mỗi năm có refund > 0 tính 1 đơn vị, nhóm theo trạng thái riêng của
    * năm đó). "client": giữ hành vi cũ, đếm theo TỪNG HỒ SƠ (row), nhóm theo cột Status
@@ -701,7 +707,7 @@ export default function CasesPage() {
             (không chỉ desktop) vì áp dụng cho cả 2 cách hiển thị thống kê bên dưới. Ô tính
             "EC Qualification" (2026-08-13) đặt ngang hàng, đẩy sang góc phải bằng
             justify-between — thuần công cụ tính tay, không liên quan bộ đếm case/client. */}
-        <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="hidden flex-wrap items-center justify-between gap-2 sm:flex">
           <div className="flex shrink-0 gap-1 self-start rounded-lg border border-border bg-surface p-1">
             <button
               onClick={() => {
@@ -860,6 +866,17 @@ export default function CasesPage() {
             />
           </div>
 
+          {/* Nút "Thêm" trên di động — mở popup gộp mọi điều khiển còn lại (xem moreMenuOpen).
+              Trên desktop các điều khiển đó vẫn hiện thẳng ở nhóm hidden sm:flex bên dưới. */}
+          <button
+            onClick={() => setMoreMenuOpen(true)}
+            className="flex h-9 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-sm text-text-dim transition hover:bg-surface-hover hover:text-text sm:hidden"
+          >
+            <SlidersHorizontal size={14} />
+            {t("cases.moreOptions")}
+          </button>
+
+          <div className="hidden flex-wrap items-center gap-2 sm:flex">
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
@@ -939,8 +956,179 @@ export default function CasesPage() {
               {t("common.addRow")}
             </button>
           )}
+          </div>
         </div>
       </div>
+
+      {/* Popup "Thêm" trên di động — gộp mọi điều khiển KHÔNG phải Bảng/Tìm kiếm/Xem thống
+          kê (xem moreMenuOpen ở trên): đổi chế độ đếm, EC Qualification, focus mode, tải
+          mẫu/upload Excel, lọc Status/Processor/Agent, thêm cột, lịch sử, thêm dòng. Cùng
+          component (AddColumnDialog/HistoryDialog...) được render LẠI ở đây (khác instance
+          với bản desktop ẩn qua hidden sm:flex) — mỗi dialog tự quản lý trạng thái mở/đóng
+          riêng nên dùng song song an toàn, cùng cách "Xem thống kê" đã làm ở trên. */}
+      {moreMenuOpen &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[100] flex items-end justify-center bg-black/80 sm:hidden"
+            onClick={() => setMoreMenuOpen(false)}
+          >
+            <div
+              className="popover flex max-h-[85vh] w-full flex-col gap-3 overflow-y-auto rounded-t-2xl p-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold">{t("cases.moreOptions")}</h3>
+                <button onClick={() => setMoreMenuOpen(false)} className="text-text-faint hover:text-text">
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex shrink-0 gap-1 rounded-lg border border-border bg-surface p-1">
+                  <button
+                    onClick={() => {
+                      setCaseSummaryMode("client");
+                      setCaseYearStatusFilter("all");
+                    }}
+                    className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
+                      caseSummaryMode === "client" ? "gradient-btn text-white" : "text-text-faint hover:text-text-dim"
+                    }`}
+                  >
+                    {t("cases.summaryMode.client")}
+                  </button>
+                  <button
+                    onClick={() => setCaseSummaryMode("case")}
+                    className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
+                      caseSummaryMode === "case" ? "gradient-btn text-white" : "text-text-faint hover:text-text-dim"
+                    }`}
+                  >
+                    {t("cases.summaryMode.case")}
+                  </button>
+                </div>
+                <EcQualificationBox />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                  onClick={() => setTableFocusMode((v) => !v)}
+                  title={tableFocusMode ? t("cases.focusMode.show") : t("cases.focusMode.hide")}
+                  className="flex h-8 items-center gap-1 rounded-md border border-border bg-surface px-2.5 text-xs text-text-dim transition hover:bg-surface-hover hover:text-text"
+                >
+                  {tableFocusMode ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
+                  {tableFocusMode ? t("cases.focusMode.show") : t("cases.focusMode.hide")}
+                </button>
+
+                <button
+                  onClick={downloadCaseTemplate}
+                  title={t("cases.downloadTemplate")}
+                  className="flex h-8 items-center gap-1 rounded-md border border-border bg-surface px-2.5 text-xs text-text-dim transition hover:bg-surface-hover hover:text-text"
+                >
+                  <Download size={12} />
+                  {t("cases.downloadTemplate")}
+                </button>
+
+                {canAddRowFeature && (
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={importing}
+                    title={t("cases.uploadExcel")}
+                    className="flex h-8 items-center gap-1 rounded-md border border-border bg-surface px-2.5 text-xs text-text-dim transition hover:bg-surface-hover hover:text-text disabled:cursor-default disabled:opacity-60"
+                  >
+                    <Upload size={12} />
+                    {importing ? t("cases.importing") : t("cases.uploadExcel")}
+                  </button>
+                )}
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="w-full rounded-lg border border-border bg-bg-elevated px-3 py-2 text-sm text-text outline-none focus:border-accent"
+                >
+                  <option value="all" style={{ backgroundColor: "#17171a", color: "#f2f0ec" }}>
+                    {t("common.allStatus")}
+                  </option>
+                  {tabStatusOptions.map((o) => (
+                    <option key={o.id} value={o.id} style={{ backgroundColor: "#17171a", color: "#f2f0ec" }}>
+                      {translateOptionLabel(language, o.id, o.label)}
+                    </option>
+                  ))}
+                </select>
+
+                {(user.role === "processor_leader" || user.role === "agent") && (
+                  <select
+                    value={processorFilter}
+                    onChange={(e) => setProcessorFilter(e.target.value)}
+                    className="w-full rounded-lg border border-border bg-bg-elevated px-3 py-2 text-sm text-text outline-none focus:border-accent"
+                  >
+                    <option value="all" style={{ backgroundColor: "#17171a", color: "#f2f0ec" }}>
+                      {t("cases.filter.allProcessors")}
+                    </option>
+                    <option value="unassigned" style={{ backgroundColor: "#17171a", color: "#f2f0ec" }}>
+                      {t("orders.dashboard.unassigned")}
+                    </option>
+                    {processorUsers.map((pu) => (
+                      <option key={pu.id} value={pu.id} style={{ backgroundColor: "#17171a", color: "#f2f0ec" }}>
+                        {pu.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+
+                {(user.role === "agent_leader" || user.role === "processor") && (
+                  <select
+                    value={agentFilter}
+                    onChange={(e) => setAgentFilter(e.target.value)}
+                    className="w-full rounded-lg border border-border bg-bg-elevated px-3 py-2 text-sm text-text outline-none focus:border-accent"
+                  >
+                    <option value="all" style={{ backgroundColor: "#17171a", color: "#f2f0ec" }}>
+                      {t("cases.filter.allAgents")}
+                    </option>
+                    {user.role === "agent_leader" && (
+                      <option value={user.id} style={{ backgroundColor: "#17171a", color: "#f2f0ec" }}>
+                        {t("cases.filter.myCases")}
+                      </option>
+                    )}
+                    <option value="unassigned" style={{ backgroundColor: "#17171a", color: "#f2f0ec" }}>
+                      {t("orders.dashboard.unassigned")}
+                    </option>
+                    {(user.role === "agent_leader"
+                      ? agentUsers.filter((au) => au.id !== user.id && au.role === "agent" && user.teamMemberIds?.includes(au.id))
+                      : agentUsers
+                    ).map((au) => (
+                      <option key={au.id} value={au.id} style={{ backgroundColor: "#17171a", color: "#f2f0ec" }}>
+                        {au.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {canAddColumnFeature && <AddColumnDialog onAdd={addColumn} />}
+                <HistoryDialog editHistory={editHistory} deletionHistory={deletionHistory} users={users} />
+              </div>
+
+              {canAddRowFeature && (
+                <button
+                  onClick={async () => {
+                    if (await confirm(t("cases.addRowConfirm"), { title: t("cases.addRowTitle") })) {
+                      addRow(user.id, user.role);
+                    }
+                    setMoreMenuOpen(false);
+                  }}
+                  className="gradient-btn flex h-10 items-center justify-center gap-1.5 rounded-lg text-sm font-medium text-white shadow-lg shadow-blue-950/30"
+                >
+                  <Plus size={14} />
+                  {t("common.addRow")}
+                </button>
+              )}
+            </div>
+          </div>,
+          document.body
+        )}
 
       <div className="flex-1 overflow-auto">
         <div className="grid text-sm" data-grid-root style={{ gridTemplateColumns }}>
