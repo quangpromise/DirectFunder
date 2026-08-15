@@ -27,6 +27,24 @@ function formatMmDdYy(raw: string): string {
   return trimmed;
 }
 
+/** Giống formatMmDdYy nhưng giữ nguyên 4 số năm — dùng riêng cho cột DOB của tab "CPA
+ * Review" (thêm 2026-08-15, yêu cầu "DOB đang hiển thị sai định dạng, nên là mm/dd/yyyy" —
+ * khác với quy ước mm/dd/YY chung của các cột ngày khác trong tab đó). */
+function formatMmDdYyyy(raw: string): string {
+  const trimmed = raw.trim();
+  const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(trimmed);
+  if (iso) {
+    const [, y, m, d] = iso;
+    return `${m.padStart(2, "0")}/${d.padStart(2, "0")}/${y}`;
+  }
+  const mdy = /^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/.exec(trimmed);
+  if (mdy) {
+    const [, m, d, y] = mdy;
+    return `${m.padStart(2, "0")}/${d.padStart(2, "0")}/${y.length === 2 ? `20${y}` : y}`;
+  }
+  return trimmed;
+}
+
 export function EditableCell({
   value,
   type,
@@ -65,7 +83,7 @@ export function EditableCell({
    * đổi CÁCH HIỂN THỊ ở view mode) — dùng cho tab "CPA Review" (thêm 2026-08-14, yêu cầu
    * "Tất cả cột ngày tháng theo format mm/dd/yy"). Kết hợp với breakOnSpace thì định dạng
    * TỪNG đoạn tách được. Mặc định không định dạng (giữ nguyên hành vi cũ mọi nơi khác). */
-  dateFormat?: "mmddyy";
+  dateFormat?: "mmddyy" | "mmddyyyy";
   /** Căn chữ trong ô — mặc định "center" (giữ nguyên hành vi cũ mọi nơi khác). "left" dùng
    * cho cột Name của tab "CPA Review" (thêm 2026-08-14, yêu cầu "Text sang trái"). */
   align?: "left" | "center";
@@ -131,11 +149,12 @@ export function EditableCell({
       ? `$${value.toLocaleString("en-US")}`
       : value !== null && value !== "" ? String(value) : "";
 
+  const formatDate = dateFormat === "mmddyyyy" ? formatMmDdYyyy : dateFormat === "mmddyy" ? formatMmDdYy : null;
   if (displayText && breakOnSpace) {
     const segments = displayText.split(/\s+/).filter(Boolean);
-    displayText = (dateFormat === "mmddyy" ? segments.map(formatMmDdYy) : segments).join("\n");
-  } else if (displayText && dateFormat === "mmddyy") {
-    displayText = formatMmDdYy(displayText);
+    displayText = (formatDate ? segments.map(formatDate) : segments).join("\n");
+  } else if (displayText && formatDate) {
+    displayText = formatDate(displayText);
   }
 
   // pre-wrap (không phải normal) — giữ lại xuống dòng thủ công người dùng chèn bằng

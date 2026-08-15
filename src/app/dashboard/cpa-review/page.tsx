@@ -681,7 +681,10 @@ export default function CpaReviewPage() {
                           // cùng 1 ô (dữ liệu thật từ Sheet) — xuống dòng riêng cho dễ đọc thay
                           // vì hiện dính liền 1 dòng dài, theo yêu cầu 2026-08-14.
                           breakOnSpace={col.key === "phone" || col.key === "ssn" || col.key === "dob"}
-                          dateFormat={col.type === "date" || col.key === "dob" ? "mmddyy" : undefined}
+                          // DOB riêng luôn 4 số năm (mm/dd/yyyy) — khác quy ước mm/dd/YY (2
+                          // số năm) chung của các cột ngày khác trong tab này, theo yêu cầu
+                          // 2026-08-15 ("DOB đang hiển thị sai định dạng, nên là mm/dd/yyyy").
+                          dateFormat={col.key === "dob" ? "mmddyyyy" : col.type === "date" ? "mmddyy" : undefined}
                           // Ctrl+Enter xuống dòng trong ô text box (Name/SSN/DOB) — không có
                           // tác dụng gì với các type khác (intakeDate/phone/zipcode), EditableCell
                           // tự bỏ qua nếu type !== "text". Thêm 2026-08-14.
