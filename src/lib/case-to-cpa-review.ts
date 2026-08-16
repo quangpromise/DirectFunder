@@ -15,17 +15,19 @@ function joinPair(a: string | null | undefined, b: string | null | undefined): s
  * Dựng `CpaReviewRecord.custom` từ 1 hồ sơ (Case) đang có trên bảng Hồ sơ — dùng cho nút
  * "Test Sheet" cạnh Status (thêm 2026-08-14), hoạt động tương tự nút "Send row to Google
  * Sheet" cũ (kể cả popup chọn năm) nhưng gửi sang tab "CPA Review" độc lập thay vì Sheet cá
- * nhân. Chỉ điền đúng các trường đã xác nhận với user — Note/Status/Ngày E-file mỗi năm CỐ
- * Ý bỏ trống (không nằm trong yêu cầu), CRM Source luôn để trống. `reviewYears` = danh sách
- * năm đã chọn ở popup — CHỈ những năm này mới có số tiền, năm không chọn bỏ trống (không
- * phải 0) để phân biệt "chưa xét năm đó" với "refund năm đó = 0". `note` (thêm 2026-08-15) —
- * ô nhập tay tự do ở popup chọn năm, đổ thẳng vào cột "Note" của dòng CPA Review vừa tạo —
- * bỏ trống nếu không gõ gì.
+ * nhân. Chỉ điền đúng các trường đã xác nhận với user — Status/Ngày E-file mỗi năm CỐ Ý bỏ
+ * trống (không nằm trong yêu cầu). `reviewYears` = danh sách năm đã chọn ở popup — CHỈ những
+ * năm này mới có số tiền, năm không chọn bỏ trống (không phải 0) để phân biệt "chưa xét năm
+ * đó" với "refund năm đó = 0". `note` (thêm 2026-08-15) — ô nhập tay tự do ở popup chọn năm,
+ * đổ thẳng vào cột "Note" của dòng CPA Review vừa tạo — bỏ trống nếu không gõ gì. `crmSource`
+ * (thêm 2026-08-16) — dropdown chọn 1 option của cột Status (cùng nguồn dữ liệu với dropdown
+ * CRM Source sẵn có trong tab CPA Review), trước đó luôn để trống.
  */
 export function buildCpaReviewCustomFromCase(
   c: CaseRecord,
   reviewYears: string[],
-  note?: string
+  note?: string,
+  crmSource?: string
 ): Record<string, string | number | boolean | null> {
   const custom: Record<string, string | number | boolean | null> = {
     intakeDate: todayIsoDate(),
@@ -43,6 +45,9 @@ export function buildCpaReviewCustomFromCase(
   };
   if (c.clientLink) custom.nameLink = c.clientLink;
   if (note && note.trim()) custom.note = note.trim();
+  // id của SelectOption trong cột Status — chọn ở popup "Test Sheet" (thêm 2026-08-16),
+  // trước đó luôn để trống (xem lịch sử ở đầu file).
+  if (crmSource && crmSource.trim()) custom.crmSource = crmSource.trim();
   for (const year of reviewYears) {
     custom[yearAmountKey(year)] = c.refunds?.[year] ?? 0;
   }

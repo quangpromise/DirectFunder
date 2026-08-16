@@ -33,6 +33,8 @@ import { OrderCell } from "@/components/order-cell";
 import { SendToSheetButton } from "@/components/send-to-sheet-button";
 import { SendCpaEmailDialog } from "@/components/send-cpa-email-dialog";
 import { TestSheetButton } from "@/components/test-sheet-button";
+import { caseStatusOptionsForCrmSource } from "@/lib/cpa-review-columns";
+import { canShowSendButtonsForStatusLabel } from "@/lib/send-buttons-status";
 import { SendClientEmailButton } from "@/components/send-client-email-button";
 import { ForProcessorButton } from "@/components/for-processor-dialog";
 import { HistoryDialog } from "@/components/history-dialog";
@@ -80,28 +82,6 @@ type CaseStatusGroup = Exclude<CaseTab, "all">;
 // -> tab Done, mọi status còn lại (kể cả status tùy chỉnh thêm sau này) -> tab Processing.
 const CANNOT_PROCESS_STATUS_IDS = new Set(["on_hold", "cancelled"]);
 const DONE_STATUS_IDS = new Set(["cpa_review", "approved"]);
-
-// Status nào hiện nút "Send row to Google Sheet"/"Send mail to CPA" — đổi từ allowlist sang
-// DENYLIST (2026-08-13, yêu cầu "trừ các status X, tất cả status khác đều thấy nút"): mọi
-// status ĐỀU hiện nút trừ nhóm liệt kê dưới đây (giai đoạn đầu xử lý hồ sơ, chưa tới lúc gửi
-// CPA/Google Sheet) — bao gồm cả status TÙY CHỈNH Admin thêm sau này (không cần sửa code mỗi
-// khi thêm status mới, khác cơ chế allowlist cũ). id các status TÙY CHỈNH dạng "opt-xxxxx"
-// random KHÁC NHAU giữa các environment nên vẫn phải so khớp theo LABEL (không thể hardcode
-// id) — chuẩn hoá cả 2 vế (lowercase, bỏ ký tự không phải chữ/số, bỏ "s" cuối) để khớp được
-// dù Admin gõ "Missing Doc"/"Missing Docs", "On-Hold"/"Onhold"... Nếu Admin đổi tên 1 trong
-// các status dưới đây, cần sửa lại danh sách này theo tên mới.
-const EXCLUDED_SEND_BUTTONS_STATUS_LABELS = new Set(
-  ["Pre-processing", "Processing", "Missing Doc", "Cancelled", "Onhold", "Disqualified", "Duplicate"].map(
-    normalizeStatusLabel
-  )
-);
-
-function normalizeStatusLabel(label: string): string {
-  return label
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, "")
-    .replace(/s$/, "");
-}
 
 function getCaseTab(statusId: string): CaseStatusGroup {
   if (CANNOT_PROCESS_STATUS_IDS.has(statusId)) return "cannot_process";
@@ -434,7 +414,7 @@ export default function CasesPage() {
   const sendButtonsStatusIds = useMemo(
     () =>
       new Set(
-        statusOptions.filter((o) => !EXCLUDED_SEND_BUTTONS_STATUS_LABELS.has(normalizeStatusLabel(o.label))).map((o) => o.id)
+        statusOptions.filter((o) => canShowSendButtonsForStatusLabel(o.label)).map((o) => o.id)
       ),
     [statusOptions]
   );
@@ -1697,6 +1677,7 @@ function RowCells({
                   caseId={row.id}
                   cpaReviewTestSentAt={row.cpaReviewTestSentAt}
                   refunds={row.refunds}
+                  crmSourceOptions={caseStatusOptionsForCrmSource(columns)}
                   confirm={confirm}
                   alertWarn={alertWarn}
                   sendCaseRowToCpaReview={sendCaseRowToCpaReview}

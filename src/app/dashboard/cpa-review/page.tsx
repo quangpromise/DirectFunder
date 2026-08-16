@@ -56,9 +56,13 @@ const GUTTER_WIDTH = 34;
 const STICKY_COLUMN_WIDTHS: Record<string, number> = {
   intakeDate: 80,
   name: 128,
-  phone: 92,
-  ssn: 86,
-  dob: 80,
+  // Phone/SSN/DOB thường chứa 2 giá trị cách nhau bằng khoảng trắng (Taxpayer & Spouse),
+  // mỗi giá trị xuống 1 dòng riêng (breakOnSpace) — nới rộng đủ để hiện trọn cả 2 dòng
+  // KHÔNG bị xuống dòng lần 2 giữa chừng (vd giữa dấu gạch ngang SSN), thay vì độ rộng cũ
+  // quá hẹp gây vỡ dòng (thêm 2026-08-16).
+  phone: 116,
+  ssn: 116,
+  dob: 108,
   zipcode: 56,
 };
 const STICKY_COLUMN_KEYS = ["intakeDate", "name", "phone", "ssn", "dob", "zipcode"];

@@ -7,10 +7,15 @@ import { getColumnValue, SEND_DATE_COLUMN_ID } from "@/lib/sheet-row-columns";
 import { formatDateValue, todayIsoDate } from "@/lib/date-format";
 import { buildMonthYear } from "@/lib/month-year";
 import { toCaseRecord } from "@/app/api/cases/route";
+import { canShowSendButtonsForStatusLabel } from "@/lib/send-buttons-status";
 import type { ColumnDef, FeaturePermissions, GoogleSheetConfig } from "@/lib/types";
 
 /** Đẩy 1 dòng dữ liệu hồ sơ vào tab tháng hiện tại của Google Sheet chung — chỉ cho hồ sơ
- * đang ở trạng thái "cpa_review" (nút Send ở cột Status chỉ hiện trong trạng thái này).
+ * đang ở 1 trong các status ĐƯỢC PHÉP (denylist `canShowSendButtonsForStatusLabel`, cùng
+ * nguồn logic với nút Send/"Test Sheet" ẩn-hiện trên UI, xem `src/lib/send-buttons-status.ts`
+ * — trước 2026-08-16 route này còn hard-code check `status !== "cpa_review"` từ thiết kế
+ * allowlist cũ, không theo kịp denylist mới nên "Mark as sent"/gửi thật LUÔN báo lỗi 400 với
+ * mọi status khác đúng id "cpa_review", dù nút vẫn hiện đúng trên UI cho các status khác).
  * Lưu `sheetSentAt` xuống bảng Case (gửi thật hoặc "Mark as sent" thủ công đều lưu) để
  * nút Send giữ đúng trạng thái xanh (đã gửi) qua reload/deploy lại — trước đây chỉ lưu ở
  * React state nên mất ngay khi F5. `clear: true` (bấm "muốn gửi lại") xoá lại giá trị này.
@@ -40,8 +45,10 @@ export async function POST(request: Request, ctx: RouteContext<"/api/cases/[id]/
   const { id } = await ctx.params;
   const row = await prisma.case.findUnique({ where: { id } });
   if (!row) return NextResponse.json({ error: "Không tìm thấy hồ sơ" }, { status: 404 });
-  if (row.status !== "cpa_review") {
-    return NextResponse.json({ error: "Hồ sơ không còn ở trạng thái Kế toán duyệt" }, { status: 400 });
+  const columns = (config?.columns as unknown as ColumnDef[] | undefined) ?? [];
+  const statusOption = columns.find((c) => c.id === "status")?.options?.find((o) => o.id === row.status);
+  if (!statusOption || !canShowSendButtonsForStatusLabel(statusOption.label)) {
+    return NextResponse.json({ error: "Hồ sơ đang ở trạng thái không cho phép gửi" }, { status: 400 });
   }
 
   if (clear) {
@@ -66,7 +73,6 @@ export async function POST(request: Request, ctx: RouteContext<"/api/cases/[id]/
     return NextResponse.json({ error: "GOOGLE_NOT_CONNECTED" }, { status: 428 });
   }
 
-  const columns = (config?.columns as unknown as ColumnDef[]) ?? [];
   const columnById = new Map(columns.map((c) => [c.id, c]));
   const caseRecord = toCaseRecord(row);
   // Mặc định mm/dd/yy khi Admin chưa từng lưu lựa chọn (googleSheetConfig.dateFormat

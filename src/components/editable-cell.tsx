@@ -114,9 +114,25 @@ export function EditableCell({
     if (editing) (inputRef.current ?? textareaRef.current)?.focus();
   }, [editing]);
 
+  /** Với ô `breakOnSpace` (Phone/SSN/DOB tab CPA Review), draft đang giữ dạng đã tách xuống
+   * dòng (xem nơi bấm mở ô sửa bên dưới) — ghép lại đúng định dạng lưu trữ "giá trị1
+   * giá trị2" (1 khoảng trắng) trước khi so sánh/lưu, bỏ dòng trống nếu người dùng lỡ để
+   * thừa (thêm 2026-08-16, sửa lỗi hiển thị vỡ dòng giữa cụm số khi đang sửa). */
+  function normalizedDraft(): Value {
+    if (breakOnSpace && typeof draft === "string") {
+      return draft
+        .split(/\n+/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .join(" ");
+    }
+    return draft;
+  }
+
   function commit() {
     setEditing(false);
-    if (draft !== value) onCommit(draft);
+    const next = normalizedDraft();
+    if (next !== value) onCommit(next);
   }
 
   if (type === "boolean") {
@@ -160,7 +176,11 @@ export function EditableCell({
 
   // pre-wrap (không phải normal) — giữ lại xuống dòng thủ công người dùng chèn bằng
   // Ctrl+Enter (multilineEdit), đồng thời vẫn tự wrap khi chữ dài quá bề rộng cột.
-  const viewTextClass = wrap ? "whitespace-pre-wrap break-words" : breakOnSpace ? "whitespace-pre-line break-words" : "truncate";
+  // breakOnSpace dùng "pre" (không phải "pre-line") — giữ đúng 2 dòng đã tách (mỗi giá trị 1
+  // dòng) nhưng KHÔNG tự ngắt dòng lần 2 nếu 1 dòng vẫn dài hơn cột (cột đã nới đủ rộng ở
+  // STICKY_COLUMN_WIDTHS cho Phone/SSN/DOB, thêm 2026-08-16 — trước đó "pre-line" vẫn tự wrap
+  // giữa chừng khi cột hẹp, gây vỡ dòng giữa cụm số).
+  const viewTextClass = wrap ? "whitespace-pre-wrap break-words" : breakOnSpace ? "whitespace-pre" : "truncate";
   const alignClass = align === "left" ? "text-left" : "text-center";
   const colorClass = accent ? "text-accent" : undefined;
 
@@ -182,7 +202,7 @@ export function EditableCell({
       <textarea
         ref={textareaRef}
         value={(draft as string) ?? ""}
-        rows={2}
+        rows={breakOnSpace && typeof draft === "string" ? Math.max(2, draft.split("\n").length) : 2}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => {
@@ -213,7 +233,11 @@ export function EditableCell({
           handleCellTab(e, commit);
         }}
         {...{ [CELL_NAV_ATTR]: "1" }}
-        className={`w-full resize-y rounded-md border border-accent bg-bg-elevated px-2 py-1 text-left text-xs outline-none`}
+        // breakOnSpace (Phone/SSN/DOB) không còn cần thoát khỏi cột bằng position:absolute
+        // (bản trước gây lỗi dòng 2 vô hình — xem lịch sử) — cột Phone/SSN/DOB đã nới đủ rộng
+        // ở STICKY_COLUMN_WIDTHS (page.tsx) nên w-full bình thường là đủ chỗ hiển thị trọn cả
+        // 2 dòng đã tách sẵn ở trên, không cần ngắt dòng lần 2.
+        className="w-full resize-y rounded-md border border-accent bg-bg-elevated px-2 py-1 text-left text-xs outline-none"
       />
     );
   }
@@ -253,7 +277,15 @@ export function EditableCell({
 
   return (
     <button
-      onClick={() => setEditing(true)}
+      onClick={() => {
+        // breakOnSpace — tách sẵn draft xuống dòng đúng theo từng giá trị (giống view mode)
+        // TRƯỚC khi mở ô sửa, để không phải dựa vào trình duyệt tự ngắt dòng giữa chừng
+        // (normalizedDraft() ghép lại đúng định dạng lưu trữ lúc commit).
+        if (breakOnSpace && typeof value === "string" && value) {
+          setDraft(value.split(/\s+/).filter(Boolean).join("\n"));
+        }
+        setEditing(true);
+      }}
       {...{ [CELL_NAV_ATTR]: "1" }}
       className={`w-full rounded-md ${alignClass} transition hover:bg-surface-hover ${viewTextClass} ${
         dense ? "px-1.5 py-1.5 text-[11px] font-semibold" : "px-2.5 py-1.5 text-xs"
