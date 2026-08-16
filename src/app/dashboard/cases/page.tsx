@@ -35,6 +35,7 @@ import { SendCpaEmailDialog } from "@/components/send-cpa-email-dialog";
 import { TestSheetButton } from "@/components/test-sheet-button";
 import { caseStatusOptionsForCrmSource } from "@/lib/cpa-review-columns";
 import { canShowSendButtonsForStatusLabel } from "@/lib/send-buttons-status";
+import { SendActionsMenuButton } from "@/components/send-actions-menu-button";
 import { SendClientEmailButton } from "@/components/send-client-email-button";
 import { ForProcessorButton } from "@/components/for-processor-dialog";
 import { HistoryDialog } from "@/components/history-dialog";
@@ -1644,61 +1645,77 @@ function RowCells({
         {((sendButtonsStatusIds.has(row.status) && (canSendToSheetFeature || canSendCpaEmailFeature)) ||
           (canSendClientEmailFeature && row.email.trim())) && (
           // -translate-x-1 — dịch sang trái 1 chút, tránh nằm sát nút Edit Hồ sơ ở cột
-          // Client Name ngay bên phải, dễ bấm nhầm.
-          <div className="flex -translate-x-1 flex-col gap-0.5">
-            {sendButtonsStatusIds.has(row.status) && (canSendToSheetFeature || canSendCpaEmailFeature) && (
-              <>
-                {canSendToSheetFeature && (
-                  <SendToSheetButton
+          // Client Name ngay bên phải, dễ bấm nhầm. Gộp 4 nút gửi thành 1 nút (icon
+          // send-data.png, thêm 2026-08-16) mở popup liệt kê — trước đó xếp dọc thành 1 cụm
+          // icon chật hẹp ngay cạnh Status.
+          <div className="-translate-x-1">
+            <SendActionsMenuButton>
+              {sendButtonsStatusIds.has(row.status) && (canSendToSheetFeature || canSendCpaEmailFeature) && (
+                <>
+                  {canSendToSheetFeature && (
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs text-text-dim">{t("sheet.sendBtn")}</span>
+                      <SendToSheetButton
+                        caseId={row.id}
+                        sheetSentAt={row.sheetSentAt}
+                        refunds={row.refunds}
+                        confirm={confirm}
+                        alertWarn={alertWarn}
+                        sendCaseRowToSheet={sendCaseRowToSheet}
+                        markCaseSheetSent={markCaseSheetSent}
+                        connectGoogleAccount={connectGoogleAccount}
+                      />
+                    </div>
+                  )}
+                  {canSendCpaEmailFeature && (
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs text-text-dim">{t("cpaEmail.dialogTitle")}</span>
+                      <SendCpaEmailDialog
+                        disabled={false}
+                        caseRecord={row}
+                        defaults={cpaEmailDefaults}
+                        statusLabel={cpaEmailStatusLabel}
+                        senderEmail={cpaSenderEmail}
+                        senderName={user.name}
+                        confirm={confirm}
+                        onSend={(payload) => sendCpaEmail(row.id, payload)}
+                        markCpaEmailSent={markCpaEmailSent}
+                      />
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-text-dim">{t("testSheet.notSentTitle")}</span>
+                    <TestSheetButton
+                      caseId={row.id}
+                      cpaReviewTestSentAt={row.cpaReviewTestSentAt}
+                      refunds={row.refunds}
+                      crmSourceOptions={caseStatusOptionsForCrmSource(columns)}
+                      confirm={confirm}
+                      alertWarn={alertWarn}
+                      sendCaseRowToCpaReview={sendCaseRowToCpaReview}
+                      markCaseCpaReviewTestSent={markCaseCpaReviewTestSent}
+                    />
+                  </div>
+                </>
+              )}
+              {canSendClientEmailFeature && row.email.trim() && (
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs text-text-dim">{t("clientEmail.confirmSendTitle")}</span>
+                  <SendClientEmailButton
                     caseId={row.id}
-                    sheetSentAt={row.sheetSentAt}
                     refunds={row.refunds}
+                    taxIntByYear={row.taxIntByYear}
+                    clientEmailSentAt={row.clientEmailSentAt}
                     confirm={confirm}
                     alertWarn={alertWarn}
-                    sendCaseRowToSheet={sendCaseRowToSheet}
-                    markCaseSheetSent={markCaseSheetSent}
-                    connectGoogleAccount={connectGoogleAccount}
+                    previewRefundEmail={previewRefundEmail}
+                    sendClientEmail={sendClientEmail}
+                    markClientEmailSent={markClientEmailSent}
+                    connectWebmailAccount={connectWebmailAccount}
                   />
-                )}
-                {canSendCpaEmailFeature && (
-                  <SendCpaEmailDialog
-                    disabled={false}
-                    caseRecord={row}
-                    defaults={cpaEmailDefaults}
-                    statusLabel={cpaEmailStatusLabel}
-                    senderEmail={cpaSenderEmail}
-                    senderName={user.name}
-                    confirm={confirm}
-                    onSend={(payload) => sendCpaEmail(row.id, payload)}
-                    markCpaEmailSent={markCpaEmailSent}
-                  />
-                )}
-                <TestSheetButton
-                  caseId={row.id}
-                  cpaReviewTestSentAt={row.cpaReviewTestSentAt}
-                  refunds={row.refunds}
-                  crmSourceOptions={caseStatusOptionsForCrmSource(columns)}
-                  confirm={confirm}
-                  alertWarn={alertWarn}
-                  sendCaseRowToCpaReview={sendCaseRowToCpaReview}
-                  markCaseCpaReviewTestSent={markCaseCpaReviewTestSent}
-                />
-              </>
-            )}
-            {canSendClientEmailFeature && row.email.trim() && (
-              <SendClientEmailButton
-                caseId={row.id}
-                refunds={row.refunds}
-                taxIntByYear={row.taxIntByYear}
-                clientEmailSentAt={row.clientEmailSentAt}
-                confirm={confirm}
-                alertWarn={alertWarn}
-                previewRefundEmail={previewRefundEmail}
-                sendClientEmail={sendClientEmail}
-                markClientEmailSent={markClientEmailSent}
-                connectWebmailAccount={connectWebmailAccount}
-              />
-            )}
+                </div>
+              )}
+            </SendActionsMenuButton>
           </div>
         )}
       </div>

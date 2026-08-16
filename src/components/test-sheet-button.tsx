@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { FlaskConical, Search, X } from "lucide-react";
+import { Search, X } from "lucide-react";
 import { useT } from "@/lib/i18n";
 import { REFUND_YEARS } from "@/lib/refund";
 import { SelectOption } from "@/lib/types";
@@ -213,7 +213,7 @@ export function TestSheetButton({
             : "border-border bg-transparent text-text-faint hover:bg-surface-hover hover:text-text"
         }`}
       >
-        <FlaskConical size={11} />
+        <img src="/google-sheets-icon.png" alt="" width={11} height={11} className="object-contain" />
       </button>
 
       {yearPickerOpen &&

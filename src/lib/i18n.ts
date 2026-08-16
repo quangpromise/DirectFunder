@@ -169,6 +169,10 @@ const dict: Record<Language, Record<string, string>> = {
     "refundEmail.previewErrorTitle": "Dựng nội dung email thất bại",
     "refundEmail.backBtn": "Quay lại",
 
+    // Nút gộp 4 hành động gửi (Send to Sheet/CPA/Test Sheet/Client email) cạnh Status
+    "sendActions.buttonTitle": "Gửi dữ liệu",
+    "sendActions.title": "Gửi dữ liệu",
+
     "sheet.sendBtn": "Gửi dòng dữ liệu lên Google Sheet",
     "sheet.sentHint": "Đã gửi — bấm để gửi lại",
     "sheet.confirmSend": "Gửi dòng dữ liệu hồ sơ này lên Google Sheet?",
@@ -857,6 +861,10 @@ const dict: Record<Language, Record<string, string>> = {
     "refundEmail.sending": "Sending...",
     "refundEmail.previewErrorTitle": "Failed to build email content",
     "refundEmail.backBtn": "Back",
+
+    // Combined button for the 4 send actions (Send to Sheet/CPA/Test Sheet/Client email) next to Status
+    "sendActions.buttonTitle": "Send data",
+    "sendActions.title": "Send data",
 
     "sheet.sendBtn": "Send row to Google Sheet",
     "sheet.sentHint": "Sent — click to send again",
