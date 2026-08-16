@@ -210,7 +210,7 @@ export function TestSheetButton({
         className={`ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition disabled:cursor-default disabled:opacity-60 ${
           sent
             ? "border-green-600/70 bg-green-800/60 text-green-100 hover:bg-green-800/80 light:border-green-700 light:bg-green-600 light:text-white light:hover:bg-green-700"
-            : "border-border bg-transparent text-text-faint hover:bg-surface-hover hover:text-text"
+            : "border-orange-700/60 bg-orange-900/40 text-orange-200 hover:bg-orange-900/60 light:border-orange-400 light:bg-orange-100 light:text-orange-900 light:hover:bg-orange-200"
         }`}
       >
         <img src="/google-sheets-icon.png" alt="" width={11} height={11} className="object-contain" />

@@ -650,7 +650,7 @@ const dict: Record<Language, Record<string, string>> = {
 
     // Test Sheet button (gửi sang tab CPA Review)
     "testSheet.sentTitle": "Đã gửi sang tab CPA Review",
-    "testSheet.notSentTitle": "Test Sheet (gửi sang tab CPA Review)",
+    "testSheet.notSentTitle": "Gửi sang tab CPA Review",
     "testSheet.resendConfirm": "Bạn có muốn gửi lại hồ sơ này sang tab CPA Review không?",
     "testSheet.resendTitle": "Gửi lại Test Sheet",
     "testSheet.confirmSend": "Gửi thông tin hồ sơ này sang tab CPA Review (tháng hiện tại)?",
@@ -1343,7 +1343,7 @@ const dict: Record<Language, Record<string, string>> = {
 
     // Test Sheet button (send to CPA Review tab)
     "testSheet.sentTitle": "Sent to CPA Review tab",
-    "testSheet.notSentTitle": "Test Sheet (send to CPA Review tab)",
+    "testSheet.notSentTitle": "Send to CPA Review tab",
     "testSheet.resendConfirm": "Resend this case to the CPA Review tab?",
     "testSheet.resendTitle": "Resend Test Sheet",
     "testSheet.confirmSend": "Send this case's info to the CPA Review tab (current month)?",
