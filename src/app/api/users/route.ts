@@ -9,20 +9,25 @@ export async function GET() {
   const me = await requireUser();
   if (!me) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
 
-  const users = await prisma.user.findMany({ orderBy: { createdAt: "asc" } });
-  return NextResponse.json(
-    users.map((u) => ({
-      id: u.id,
-      name: u.name,
-      email: u.email,
-      username: u.username,
-      role: u.role,
-      avatarColor: u.avatarColor,
-      avatarUrl: u.avatarUrl,
-      teamMemberIds: u.teamMemberIds,
-      webmailUsername: u.webmailUsername,
-    }))
-  );
+  // `select` tường minh — chặn passwordHash/webmailPasswordEncrypted/googleRefreshToken/
+  // microsoftRefreshToken ngay ở tầng DB, không chỉ lọc tay sau khi map() xuống JSON (trước
+  // đây prisma.user.findMany() kéo hết cả các cột secret ra khỏi DB rồi mới bỏ qua ở bước
+  // map, tốn băng thông nội bộ + rủi ro rò rỉ nếu ai đó quên field khi thêm cột secret mới).
+  const users = await prisma.user.findMany({
+    orderBy: { createdAt: "asc" },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      username: true,
+      role: true,
+      avatarColor: true,
+      avatarUrl: true,
+      teamMemberIds: true,
+      webmailUsername: true,
+    },
+  });
+  return NextResponse.json(users);
 }
 
 export async function POST(request: NextRequest) {

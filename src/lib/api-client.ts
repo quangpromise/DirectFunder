@@ -100,7 +100,8 @@ export const api = {
     }),
   deleteCollecting: (rowId: string) => request<{ ok: true }>(`/api/collecting/${rowId}`, { method: "DELETE" }),
 
-  listCpaReview: () => request<CpaReviewRecord[]>("/api/cpa-review"),
+  listCpaReview: (month?: string) =>
+    request<CpaReviewRecord[]>(month ? `/api/cpa-review?month=${encodeURIComponent(month)}` : "/api/cpa-review"),
   createCpaReview: (row: CpaReviewRecord) =>
     request<CpaReviewRecord>("/api/cpa-review", { method: "POST", body: JSON.stringify(row) }),
   patchCpaReview: (rowId: string, patch: Partial<CpaReviewRecord>) =>

@@ -170,8 +170,14 @@ interface AppState {
    * hydrateFromServer, KHÔNG persist localStorage (giống cases/rules). */
   collectingRecords: CollectingRecord[];
   /** Dữ liệu tab "CPA Review" (bảng độc lập hoàn toàn, không liên kết Case — yêu cầu
-   * 2026-08-14) — nạp từ server ở hydrateFromServer, KHÔNG persist localStorage. */
+   * 2026-08-14) — nạp từ server ở hydrateFromServer, KHÔNG persist localStorage. Chỉ chứa
+   * CÁC THÁNG ĐÃ NẠP (xem cpaReviewLoadedMonths), không phải toàn bộ lịch sử mọi tháng
+   * (thêm 2026-08-16 — trước đó GET /api/cpa-review trả về không giới hạn, phình to dần
+   * theo số tháng đã dùng dù UI chỉ hiện đúng 1 tháng tại 1 thời điểm). */
   cpaReviewRecords: CpaReviewRecord[];
+  /** Danh sách tháng ("YYYY-MM") đã nạp vào cpaReviewRecords — dùng để quyết định
+   * ensureCpaReviewMonthLoaded có cần gọi API hay dữ liệu đã có sẵn trong cache. */
+  cpaReviewLoadedMonths: string[];
   /** Cấu hình cột riêng cho tab "Collecting" — mặc định DEFAULT_COLLECTING_COLUMNS (rbac.ts)
    * nếu Admin chưa từng đổi qua ColumnSettingsDialog. */
   collectingColumns: ColumnDef[];
@@ -213,6 +219,9 @@ interface AppState {
    * thay đổi đến từ webhook Google Sheet (Sheet -> App), trước đây KHÔNG có cơ chế nào báo
    * cho tab đang mở biết để tự cập nhật, chỉ thấy sau khi F5 tay. */
   refetchCpaReview: () => Promise<void>;
+  /** Nạp cpaReviewRecords của 1 tháng nếu CHƯA có trong cache (xem cpaReviewLoadedMonths) —
+   * no-op nếu đã nạp rồi. Gọi mỗi khi đổi tháng qua setCpaReviewSelectedMonth. */
+  ensureCpaReviewMonthLoaded: (month: string) => Promise<void>;
   setLanguage: (language: Language) => void;
   setTheme: (theme: Theme) => void;
   setNotificationSoundMuted: (muted: boolean) => void;
@@ -583,6 +592,7 @@ export const useAppStore = create<AppState>()(
       rules: [],
       collectingRecords: [],
       cpaReviewRecords: [],
+      cpaReviewLoadedMonths: [],
       collectingColumns: DEFAULT_COLLECTING_COLUMNS,
       cpaReviewStatusOptions: CPA_REVIEW_STATUS_OPTIONS,
       cpaReviewHiddenColumns: [],
@@ -609,6 +619,9 @@ export const useAppStore = create<AppState>()(
       // .claude/rules/deployment-database-sync.md) — bản trong localStorage chỉ còn là
       // cache hiển thị tạm trước khi hydrate xong, luôn bị ghi đè bởi dữ liệu server.
       hydrateFromServer: async () => {
+        // Chỉ nạp ĐÚNG tháng đang chọn (persist từ phiên trước hoặc mặc định tháng hiện tại)
+        // thay vì toàn bộ lịch sử mọi tháng — xem cpaReviewLoadedMonths.
+        const initialCpaReviewMonth = get().cpaReviewSelectedMonth || currentMonthKey();
         const [users, cases, config, rules, collectingRecords, cpaReviewRecords, notifications, editHistory, deletionHistory] =
           await Promise.all([
           api.listUsers(),
@@ -616,7 +629,7 @@ export const useAppStore = create<AppState>()(
           api.getConfig(),
           api.listRules(),
           api.listCollecting(),
-          api.listCpaReview(),
+          api.listCpaReview(initialCpaReviewMonth),
           // Trước đây notifications chỉ tồn tại local (tạo trong set(), không có API) —
           // giờ server là nguồn thật duy nhất (xem prisma model Notification + PATCH
           // /api/cases/[id]), luôn nạp lại mỗi lần vào dashboard giống users/cases/...
@@ -649,6 +662,7 @@ export const useAppStore = create<AppState>()(
           rules,
           collectingRecords,
           cpaReviewRecords,
+          cpaReviewLoadedMonths: [initialCpaReviewMonth],
           notifications,
           editHistory,
           deletionHistory,
@@ -671,8 +685,30 @@ export const useAppStore = create<AppState>()(
         set({ cases });
       },
       refetchCpaReview: async () => {
-        const cpaReviewRecords = await api.listCpaReview();
-        set({ cpaReviewRecords });
+        // Chỉ refetch ĐÚNG tháng đang xem (tín hiệu Pusher không kèm tháng nào đã đổi) —
+        // reset cpaReviewLoadedMonths về CHỈ tháng này, "quên" các tháng khác đã cache trước
+        // đó (không xoá dữ liệu của chúng khỏi cpaReviewRecords, chỉ đánh dấu chưa-tin-cậy)
+        // để lần sau chuyển sang tháng đó ensureCpaReviewMonthLoaded tự nạp lại — tránh hiện
+        // dữ liệu cũ nếu thay đổi thực ra đến từ 1 tháng khác (vd webhook đồng bộ Sheet của
+        // tháng trước) mà tín hiệu không phân biệt được.
+        const month = get().cpaReviewSelectedMonth;
+        const records = await api.listCpaReview(month);
+        set((s) => ({
+          cpaReviewRecords: [...s.cpaReviewRecords.filter((r) => r.month !== month), ...records],
+          cpaReviewLoadedMonths: [month],
+        }));
+      },
+      ensureCpaReviewMonthLoaded: async (month) => {
+        if (get().cpaReviewLoadedMonths.includes(month)) return;
+        const records = await api.listCpaReview(month);
+        set((s) =>
+          s.cpaReviewLoadedMonths.includes(month)
+            ? s
+            : {
+                cpaReviewRecords: [...s.cpaReviewRecords.filter((r) => r.month !== month), ...records],
+                cpaReviewLoadedMonths: [...s.cpaReviewLoadedMonths, month],
+              }
+        );
       },
       setLanguage: (language) => set({ language }),
       setTheme: (theme) => set({ theme }),
@@ -1843,7 +1879,14 @@ export const useAppStore = create<AppState>()(
         syncConfig();
       },
 
-      setCpaReviewSelectedMonth: (month) => set({ cpaReviewSelectedMonth: month }),
+      setCpaReviewSelectedMonth: (month) => {
+        set({ cpaReviewSelectedMonth: month });
+        // Fire-and-forget — trang CPA Review đọc trực tiếp từ cpaReviewRecords (đã filter theo
+        // selectedMonth), tự re-render khi ensureCpaReviewMonthLoaded set() xong, không cần
+        // await ở đây (setCpaReviewSelectedMonth vốn là hàm đồng bộ, dùng làm onChange trực
+        // tiếp cho CpaReviewMonthPicker).
+        void get().ensureCpaReviewMonthLoaded(month);
+      },
 
       connectCpaReviewSheet: async (link, month) => {
         try {

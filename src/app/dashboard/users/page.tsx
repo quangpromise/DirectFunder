@@ -6,6 +6,7 @@ import { useAppStore, useCurrentUser } from "@/store/app-store";
 import { ROLE_LABEL, Role, LEADER_MANAGES_ROLE, User } from "@/lib/types";
 import { ASSIGNABLE_ROLES } from "@/lib/rbac";
 import { AvatarUpload } from "@/components/avatar-upload";
+import { useConfirm } from "@/components/confirm-dialog";
 import { useT, useLanguage } from "@/lib/i18n";
 
 const PALETTE = ["#14b8a6", "#22c55e", "#3b82f6", "#eab308", "#06b6d4", "#ec4899"];
@@ -40,6 +41,15 @@ export default function UsersPage() {
   const [resetPwSuccess, setResetPwSuccess] = useState(false);
   const t = useT();
   const { language } = useLanguage();
+  const { confirm, ConfirmDialogUI } = useConfirm();
+
+  async function handleRemoveUser(u: User) {
+    const ok = await confirm(t("users.deleteConfirm", { name: u.name }), {
+      title: t("users.deleteConfirmTitle"),
+      tone: "danger",
+    });
+    if (ok) removeUser(u.id);
+  }
 
   // Lọc theo tên/email/username rồi nhóm theo vai trò (thứ tự cố định theo ASSIGNABLE_ROLES)
   // để danh sách tài khoản dễ nhìn hơn khi số lượng tăng lên — mỗi nhóm là 1 khối tiêu đề +
@@ -142,6 +152,7 @@ export default function UsersPage() {
 
   return (
     <div className="px-4 py-6 sm:px-6">
+      {ConfirmDialogUI}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold tracking-tight">{t("users.title")}</h1>
@@ -198,7 +209,7 @@ export default function UsersPage() {
                     isLastManager={u.role === "manager" && managerCount <= 1}
                     isSelf={u.id === user.id}
                     onRoleChange={(r) => updateUserRole(u.id, r)}
-                    onRemove={() => removeUser(u.id)}
+                    onRemove={() => handleRemoveUser(u)}
                     onAvatarChange={(url) => updateAvatar(u.id, url)}
                     onOpenResetPassword={() => openResetPassword(u.id)}
                     onOpenTeamEdit={() => setTeamEditUserId(u.id)}

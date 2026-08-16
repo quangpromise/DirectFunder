@@ -28,12 +28,22 @@ export function toCpaReviewRecord(row: {
 
 /** Không lọc theo canViewCase — bảng "CPA Review" độc lập hoàn toàn với Case, không có
  * khái niệm "hồ sơ của riêng ai" (đúng yêu cầu 2026-08-14 "không liên kết bất cứ gì"), mọi
- * user đã đăng nhập có quyền viewCpaReview xem được toàn bộ. */
-export async function GET() {
+ * user đã đăng nhập có quyền viewCpaReview xem được toàn bộ.
+ *
+ * `?month=YYYY-MM` (thêm 2026-08-16, giảm payload) — UI chỉ bao giờ hiện đúng 1 tháng tại 1
+ * thời điểm (CpaReviewMonthPicker) nhưng trước đây route này luôn trả về TOÀN BỘ mọi tháng
+ * từng tạo, phình to không giới hạn theo thời gian. Không bắt buộc — thiếu/không hợp lệ vẫn
+ * trả về tất cả (giữ tương thích ngược cho bất kỳ nơi gọi nào chưa truyền tham số này). */
+export async function GET(request: NextRequest) {
   const me = await requireUser();
   if (!me) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
 
-  const rows = await prisma.cpaReviewRecord.findMany({ orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }] });
+  const monthParam = request.nextUrl.searchParams.get("month");
+  const month = monthParam && isValidMonthKey(monthParam) ? monthParam : undefined;
+  const rows = await prisma.cpaReviewRecord.findMany({
+    where: month ? { month } : undefined,
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
+  });
   return NextResponse.json(rows.map(toCpaReviewRecord));
 }
 
