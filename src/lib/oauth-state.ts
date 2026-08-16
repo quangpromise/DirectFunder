@@ -1,14 +1,15 @@
 import { SignJWT, jwtVerify } from "jose";
 
-/** "state" param dùng chung cho MỌI OAuth2 flow trong app (Google, Microsoft...) — chống
- * CSRF, ký bằng chính AUTH_SECRET đang dùng cho session cookie (không cần secret riêng).
- * Gắn userId vào state để callback đối chiếu đúng người đã bấm "Kết nối..." ban đầu, không
- * chỉ dựa vào cookie session hiện tại (phòng trường hợp popup mất cookie/đổi tab). Gắn thêm
- * `provider` để state ký cho luồng Google không thể bị dùng lại (replay) ở callback
- * Microsoft hay ngược lại, dù dùng chung 1 secret. */
+/** "state" param dùng chung cho MỌI OAuth2 flow trong app (hiện chỉ còn Google — luồng
+ * Microsoft Graph cho "Gửi email cho khách hàng" đã gỡ bỏ, chuyển sang SMTP webmail
+ * mail.directfunder.com, xem client-mailer.ts) — chống CSRF, ký bằng chính AUTH_SECRET
+ * đang dùng cho session cookie (không cần secret riêng). Gắn userId vào state để callback
+ * đối chiếu đúng người đã bấm "Kết nối..." ban đầu, không chỉ dựa vào cookie session hiện
+ * tại (phòng trường hợp popup mất cookie/đổi tab). Vẫn giữ field `provider` (dù hiện chỉ có
+ * 1 giá trị) để state ký cho 1 provider không bị replay nếu sau này thêm provider khác. */
 const STATE_TTL_SECONDS = 10 * 60; // 10 phút — đủ cho người dùng thao tác trên màn hình consent
 
-export type OAuthProvider = "google" | "microsoft";
+export type OAuthProvider = "google";
 
 function secretKey() {
   const secret = process.env.AUTH_SECRET;

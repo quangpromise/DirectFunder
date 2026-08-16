@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Mail, X, Paperclip, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Mail, X, Paperclip, AlertCircle } from "lucide-react";
 import { CaseRecord, CpaEmailDefaults } from "@/lib/types";
 import { fileToDataUrl } from "@/lib/file-to-data-url";
 import {
@@ -185,7 +185,7 @@ export function SendCpaEmailDialog({
             : "border-orange-700/60 bg-orange-900/40 text-orange-200 hover:bg-orange-900/60 light:border-orange-400 light:bg-orange-100 light:text-orange-900 light:hover:bg-orange-200"
         }`}
       >
-        {justSent ? <CheckCircle2 size={11} /> : <Mail size={11} />}
+        <Mail size={11} />
       </button>
 
       {open &&

@@ -53,6 +53,7 @@ export async function GET() {
     cpaReviewHiddenColumns: config.cpaReviewHiddenColumns,
     // Chỉ đọc — ghi qua /api/config/cpa-review-sheet (connect/resync/disconnect riêng).
     cpaReviewSheetConfig: redactCpaReviewSheetConfig(config.cpaReviewSheetConfig),
+    processorReportTasks: config.processorReportTasks,
   });
 }
 
@@ -188,6 +189,15 @@ export async function PUT(request: NextRequest) {
   ) {
     data.cpaReviewHiddenColumns = body.cpaReviewHiddenColumns;
   }
+  // Danh sách task (hàng) của bảng Report trong popup "For Processor" — cùng cơ chế
+  // collectingColumns ở trên, cho phép mọi role được cấp manageProcessorReportTasks (không
+  // chỉ manager) tự thêm/sửa/xoá task qua UI.
+  if (
+    "processorReportTasks" in body &&
+    hasFeature(existing.featurePermissions as FeaturePermissions, "manageProcessorReportTasks", me.role)
+  ) {
+    data.processorReportTasks = body.processorReportTasks;
+  }
 
   // Không có field hợp lệ nào để ghi (vd role không phải manager, columns/featurePermissions
   // lệch bản server nên bị bỏ qua ở trên, VÀ cũng không có quyền field độc lập nào khác) — lúc
@@ -210,5 +220,6 @@ export async function PUT(request: NextRequest) {
     collectingColumns: config.collectingColumns,
     cpaReviewStatusOptions: config.cpaReviewStatusOptions,
     cpaReviewHiddenColumns: config.cpaReviewHiddenColumns,
+    processorReportTasks: config.processorReportTasks,
   });
 }

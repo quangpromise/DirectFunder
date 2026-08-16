@@ -31,11 +31,6 @@ export function ClientNameCell({
   onCommitLink,
   onSaveProfile,
   isDuplicateSsn,
-  canSendClientEmail,
-  confirm,
-  alertWarn,
-  sendClientEmail,
-  connectMicrosoftAccount,
 }: {
   caseRecord: CaseRecord;
   columns: ColumnDef[];
@@ -46,13 +41,6 @@ export function ClientNameCell({
   onCommitLink: (link: string | null) => void;
   onSaveProfile: (payload: ClientProfilePayload) => Promise<{ ok: true } | { ok: false; error: string }>;
   isDuplicateSsn: (slot: 0 | 1, candidate: string) => boolean;
-  canSendClientEmail: boolean;
-  confirm: (message: string, opts?: { title?: string; tone?: "default" | "danger" }) => Promise<boolean>;
-  alertWarn: (message: string, opts?: { title?: string }) => Promise<void>;
-  sendClientEmail: (
-    caseId: string
-  ) => Promise<{ ok: true } | { ok: false; error: string; needsMicrosoftAuth?: boolean }>;
-  connectMicrosoftAccount: () => Promise<boolean>;
 }) {
   const hasLink = Boolean(caseRecord.clientLink);
   return (
@@ -66,11 +54,6 @@ export function ClientNameCell({
           role={role}
           onSave={onSaveProfile}
           isDuplicateSsn={isDuplicateSsn}
-          canSendClientEmail={canSendClientEmail}
-          confirm={confirm}
-          alertWarn={alertWarn}
-          sendClientEmail={sendClientEmail}
-          connectMicrosoftAccount={connectMicrosoftAccount}
         />
       </div>
       <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5 py-1">

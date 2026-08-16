@@ -30,11 +30,16 @@ model User {
   /// token luôn xin mới qua refresh_token mỗi lần gọi API (xem src/lib/google-sheets.ts),
   /// không lưu/đồng bộ access_token + hạn dùng riêng cho đơn giản.
   googleRefreshToken String?
-  /// Refresh token OAuth2 Microsoft Graph (tính năng "Gửi email cho khách hàng" qua mailbox
-  /// Outlook @directfunder.com riêng của từng user) — null = chưa kết nối. Chỉ lưu
-  /// refresh_token, access token luôn xin mới qua refresh_token mỗi lần gọi API (xem
-  /// src/lib/microsoft-graph.ts), cùng cơ chế với googleRefreshToken ở trên.
-  microsoftRefreshToken String?
+  /// Email webmail (mail.directfunder.com, SMTP thường qua nodemailer) mà user tự kết nối
+  /// cho tính năng "Gửi email cho khách hàng" — null = chưa kết nối. Thay cho
+  /// microsoftRefreshToken/OAuth2 Microsoft Graph cũ (đã gỡ bỏ vì không có quyền admin
+  /// Azure AD của tenant công ty để tạo App registration, xem
+  /// .claude/rules/deployment-database-sync.md). Có thể khác email đăng nhập app.
+  webmailUsername String?
+  /// Mật khẩu webmail của webmailUsername, mã hóa 2 chiều bằng src/lib/webmail-crypto.ts
+  /// (AES-256-GCM) — KHÔNG lưu plain text vì đây là mật khẩu thật không thể thu hồi từ xa
+  /// như OAuth refresh token (khác googleRefreshToken ở trên).
+  webmailPasswordEncrypted String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -108,6 +113,27 @@ model Case {
   fcDate             String?
   processingDate     String?
   elDate             String?
+  /// 3 ô nhập tay riêng cho email "Thông báo hoàn thuế" gửi khách hàng (nút gửi mail cạnh
+  /// ô Email, xem POST /api/cases/[id]/send-client-email) — chỉ sửa qua popup "Edit Hồ sơ",
+  /// đặt ngay dưới khối 3 ô ngày FC/Processing/EL Date ở trên. Không dùng cho mục đích nào
+  /// khác trong hệ thống (không phải bank account thật của công ty).
+  bankName           String?
+  routingNumber      String?
+  accountNumber      String?
+  /// Ghi chú tự do, đặt ngay dưới 2 khối Taxpayer/Spouse trong popup "Edit Hồ sơ" (lấp
+  /// khoảng trống trước đây) — chỉ sửa qua popup này, không hiển thị cột riêng ngoài bảng
+  /// Hồ sơ chính, không liên quan cột "Description" (Mô tả) đã có sẵn ngoài bảng.
+  note               String?
+  /// 2 ô "Accountant"/"Accountant Support", chỉ sửa qua popup "Edit Hồ sơ" giống các field
+  /// trên. accountantSupport được tự động đổ vào cột "ACCT" của tab Collecting mỗi khi bấm
+  /// "Send Collecting Report" (xem POST /api/cases/[id]/send-collecting-report).
+  accountant         String?
+  accountantSupport  String?
+  /// Record<năm, string> — số tiền "Additional tax on 1099-INT" nhập tay riêng cho từng năm
+  /// mỗi khi gửi email "Thông báo hoàn thuế" (popup chọn năm cạnh nút gửi mail) — lưu lại
+  /// để lần gửi/gửi lại sau không phải gõ lại, sửa qua chính popup đó (không qua "Edit Hồ
+  /// sơ"). Estimated refund = refunds[year] - taxIntByYear[year] hiển thị trong mail.
+  taxIntByYear       Json     @default("{}")
   /// Thời điểm gần nhất đã "Send row to Google Sheet" (gửi thật hoặc bấm "Mark as sent"
   /// đánh dấu thủ công) — null = chưa gửi/đã bấm "muốn gửi lại". Lưu xuống DB (không chỉ
   /// React state) để nút Send giữ đúng trạng thái xanh (đã gửi) qua reload/deploy lại,
@@ -119,6 +145,11 @@ model Case {
   /// Tương tự sheetSentAt/cpaEmailSentAt nhưng cho nút "Test Sheet" (gửi hồ sơ sang tab
   /// "CPA Review") — xem POST /api/cases/[id]/test-cpa-review-sheet.
   cpaReviewTestSentAt DateTime?
+  /// Tương tự sheetSentAt/cpaEmailSentAt/cpaReviewTestSentAt nhưng cho nút "Send email to
+  /// client" (email "Thông báo hoàn thuế") — thêm 2026-08-16 khi đổi từ trạng thái tạm 5s
+  /// (useSuccessFlash) sang bền vững qua reload, cùng cơ chế Mark as sent/"muốn gửi lại" —
+  /// xem POST /api/cases/[id]/send-client-email.
+  clientEmailSentAt  DateTime?
   /// Thứ tự hiển thị dòng trên bảng Hồ sơ (kéo-thả) — số càng nhỏ hiển thị càng lên trên.
   /// Dùng fractional indexing (giá trị mới = trung bình 2 hàng xóm khi kéo-thả) để không
   /// phải ghi lại toàn bộ bảng mỗi lần đổi vị trí 1 dòng. Hồ sơ mới luôn nhận giá trị âm
@@ -146,9 +177,12 @@ model AppConfig {
   /// thứ tự nào được đẩy vào dòng mới khi bấm nút "Send" ở cột Status. null = Admin chưa
   /// cấu hình.
   googleSheetConfig  Json?
-  /// ClientEmailTemplate ({ subjectTemplate?: string; bodyTemplate?: string }) — mẫu email
-  /// cố định cho tính năng "Gửi email cho khách hàng" (popup Edit Hồ sơ). null/thiếu field
-  /// = dùng DEFAULT_CLIENT_EMAIL_SUBJECT/BODY trong src/lib/client-email-template.ts.
+  /// ClientEmailTemplate ({ cc?, signatureJobTitle?, signaturePhone?, signatureAddress?,
+  /// supportPhone? }) — phần Admin cấu hình được cho email "Thông báo hoàn thuế" gửi khách
+  /// hàng (nút gửi mail cạnh ô Email popup Edit Hồ sơ). Subject/Body KHÔNG còn là template
+  /// tự do (đổi 2026-08-16) — nội dung tính hoàn toàn từ dữ liệu hồ sơ + năm/Tax INT chọn
+  /// trong popup gửi, xem src/lib/refund-notification-email.ts. null/thiếu field = dùng
+  /// default tương ứng trong src/lib/client-email-template.ts.
   clientEmailTemplate Json?
   /// SelectOption[] — danh sách trạng thái tuỳ chỉnh cho popup "Refund by years" (nút mắt
   /// cạnh cột Case, CaseRefundStatusButton). Quản lý thêm/sửa/xoá qua UI, xem
@@ -177,6 +211,20 @@ model AppConfig {
   /// định (không có ColumnDef riêng như Cases/Collecting) nên dùng list key thay vì field
   /// `hiddenFromGrid` trên từng cột. null/thiếu = không ẩn cột nào.
   cpaReviewHiddenColumns Json?
+  /// ProcessorReportTaskDef[] — danh sách "task" (hàng) của bảng Report trong popup "For
+  /// Processor" (nút cạnh EC Qualification trên bảng Hồ sơ) — Processor Leader/Quản lý tự
+  /// thêm/sửa/xoá qua UI (gate bằng feature manageProcessorReportTasks). Mỗi phần tử:
+  /// { id, sectionId, sectionLabel, sectionOrder, label, order }. null/thiếu = dùng
+  /// DEFAULT_PROCESSOR_REPORT_TASKS trong rbac.ts (transcribe từ Processor.png/processor
+  /// Leader.png, 6 nhóm việc).
+  processorReportTasks Json?
+  /// Record<monthKey ("YYYY-MM"), ProcessorReportSheetConfig> — đồng bộ 2 chiều Google Sheet
+  /// cho bảng tổng hợp Processor Leader, mỗi tháng 1 kết nối riêng (cùng tinh thần
+  /// cpaReviewSheetConfig). ProcessorReportSheetConfig: { sheetId, gid, tabName,
+  /// taskRowMap: Record<taskId, số dòng>, userColumnMap: Record<userId, số cột 0-based>,
+  /// webhookSecret, connectedAt, connectedByUserId }. Khác CPA Review: hàng/cột đều biết
+  /// trước từ processorReportTasks + danh sách user role processor, không cần quét-tìm-dòng.
+  processorReportSheetConfig Json?
   updatedAt          DateTime @updatedAt
 
   @@map("app_config")
@@ -288,4 +336,47 @@ model DeletedRowEntry {
 
   @@index([deletedAt])
   @@map("deleted_row_entries")
+}
+
+/// Số liệu THẬT do từng Processor tự nhập hằng ngày trong popup "For Processor" (tab
+/// Report) — 1 dòng = 1 (user, task, ngày). taskId tham chiếu AppConfig.processorReportTasks
+/// (hoặc DEFAULT_PROCESSOR_REPORT_TASKS nếu chưa cấu hình) — KHÔNG có FK cứng vì task có thể
+/// bị xoá/đổi id, dữ liệu cũ mồ côi vẫn an toàn (giống cách CollectingRecord.custom tham
+/// chiếu ColumnDef.key). Đây là bảng nguồn cho bảng cá nhân của Processor; bảng tổng hợp của
+/// Processor Leader đọc qua cache ProcessorReportMonthlySummary bên dưới, không tính trực
+/// tiếp từ bảng này mỗi lần xem.
+model ProcessorReportEntry {
+  id        String   @id @default(cuid())
+  userId    String
+  taskId    String
+  /// "YYYY-MM-DD"
+  date      String
+  value     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, taskId, date])
+  @@index([userId, date])
+  @@map("processor_report_entries")
+}
+
+/// Cache tổng theo (tháng, task, user) — tính lại đúng 1 ô mỗi khi 1 ProcessorReportEntry
+/// thay đổi (xem after() trong POST/PATCH /api/processor-report/entries), dùng để: (1) hiển
+/// thị nhanh bảng tổng hợp Processor Leader (đọc cache, không JOIN/SUM lại mỗi request), (2)
+/// làm nguồn đồng bộ 2 chiều Google Sheet (xem processor-report-sheet-sync.ts). LƯU Ý ngữ
+/// nghĩa: đây là số liệu TÍNH RA (không phải bản ghi gốc) — sửa tay 1 ô trên Sheet có hiệu
+/// lực ngay (webhook ghi đè `value`) nhưng sẽ bị TÍNH LẠI đè lên ngay khi chính Processor đó
+/// sửa thêm 1 entry của đúng task/tháng này, khác CPA Review (nơi Sheet giữ đúng bản ghi gốc).
+model ProcessorReportMonthlySummary {
+  id        String   @id @default(cuid())
+  /// "YYYY-MM"
+  month     String
+  taskId    String
+  userId    String
+  value     Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@unique([month, taskId, userId])
+  @@index([month])
+  @@map("processor_report_monthly_summaries")
 }

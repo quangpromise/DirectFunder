@@ -1,4 +1,4 @@
-import { CaseRecord, ColumnDef, FeatureKey, FeaturePermissions, Role, SelectOption } from "./types";
+import { CaseRecord, ColumnDef, FeatureKey, FeaturePermissions, ProcessorReportTaskDef, Role, SelectOption } from "./types";
 import { CHECK_INITIAL_COLUMN_ID } from "./check-initial";
 
 /**
@@ -181,6 +181,63 @@ export const DEFAULT_COLUMNS: ColumnDef[] = [
     editableBy: ["manager", "accounting", "agent", "processor", "support", "agent_leader", "processor_leader"],
     hidden: true,
   },
+  // 3 ô ngân hàng, đặt ngay dưới khối 3 ô ngày ở trên trong popup "Edit Hồ sơ" (thêm
+  // 2026-08-16) — chỉ dùng để điền vào email "Thông báo hoàn thuế" gửi khách hàng (xem
+  // send-client-email/route.ts), cùng nhóm quyền với refunds.
+  {
+    id: "bankName",
+    key: "bankName",
+    label: "Bank Name",
+    type: "text",
+    editableBy: ["manager", "accounting", "agent", "processor", "agent_leader", "processor_leader"],
+    hidden: true,
+  },
+  {
+    id: "routingNumber",
+    key: "routingNumber",
+    label: "Routing Number",
+    type: "text",
+    editableBy: ["manager", "accounting", "agent", "processor", "agent_leader", "processor_leader"],
+    hidden: true,
+  },
+  {
+    id: "accountNumber",
+    key: "accountNumber",
+    label: "Account Number",
+    type: "text",
+    editableBy: ["manager", "accounting", "agent", "processor", "agent_leader", "processor_leader"],
+    hidden: true,
+  },
+  // Ghi chú tự do, đặt ngay dưới khối Taxpayer/Spouse trong popup "Edit Hồ sơ" (thêm
+  // 2026-08-16) — cùng nhóm quyền với refunds/bankName, không liên quan cột "description"
+  // (Mô tả, có reply threading) đã có sẵn ngoài bảng chính.
+  {
+    id: "note",
+    key: "note",
+    label: "Note",
+    type: "text",
+    editableBy: ["manager", "accounting", "agent", "processor", "agent_leader", "processor_leader"],
+    hidden: true,
+  },
+  // 2 ô "Accountant"/"Accountant Support" (thêm 2026-08-16) — cùng nhóm quyền với
+  // refunds/bankName/note. accountantSupport được tự động đổ vào cột "ACCT" của tab
+  // Collecting khi bấm "Send Collecting Report" (xem case-to-collecting.ts).
+  {
+    id: "accountant",
+    key: "accountant",
+    label: "Accountant",
+    type: "text",
+    editableBy: ["manager", "accounting", "agent", "processor", "agent_leader", "processor_leader"],
+    hidden: true,
+  },
+  {
+    id: "accountantSupport",
+    key: "accountantSupport",
+    label: "Accountant Support",
+    type: "text",
+    editableBy: ["manager", "accounting", "agent", "processor", "agent_leader", "processor_leader"],
+    hidden: true,
+  },
   // Nhiều mục con độc lập (EL/Security Check/Agent guarantees SC/Bank Information/Back Tax
   // Owed/Income Variance) — cột hệ thống cố định (type "checklist", KHÔNG có trong
   // TYPE_OPTIONS của AddColumnDialog nên Admin không tự thêm thêm cột kiểu này được), giá
@@ -284,6 +341,47 @@ export const DEFAULT_COLLECTING_COLUMNS: ColumnDef[] = [
 ];
 
 /**
+ * Danh sách "task" (hàng) mặc định cho bảng Report trong popup "For Processor" — transcribe
+ * đúng 6 nhóm việc từ 2 ảnh mẫu Processor.png (bảng cá nhân Processor, cột = ngày) và
+ * processor Leader.png (bảng tổng hợp, cột = tên Processor) — 2 ảnh dùng chung 1 danh sách
+ * task. Lưu trong AppConfig.processorReportTasks, Processor Leader/Quản lý tự thêm/sửa/xoá
+ * qua UI (feature manageProcessorReportTasks) — đây chỉ là giá trị khởi tạo khi
+ * AppConfig.processorReportTasks còn null.
+ */
+export const DEFAULT_PROCESSOR_REPORT_TASKS: ProcessorReportTaskDef[] = [
+  { id: "process1040x_full", sectionId: "process1040x", sectionLabel: "Process 1040X", sectionOrder: 1, label: "1040-X - Full process", order: 1 },
+  { id: "process1040x_resubmit", sectionId: "process1040x", sectionLabel: "Process 1040X", sectionOrder: 1, label: "Resubmit", order: 2 },
+  { id: "process1040x_reverse", sectionId: "process1040x", sectionLabel: "Process 1040X", sectionOrder: 1, label: "Reverse", order: 3 },
+
+  { id: "supportSales_checkInitials", sectionId: "supportSales", sectionLabel: "Support Sales", sectionOrder: 2, label: "Check Initials", order: 1 },
+  { id: "supportSales_collectDocs", sectionId: "supportSales", sectionLabel: "Support Sales", sectionOrder: 2, label: "Collect docs/info", order: 2 },
+  { id: "supportSales_others", sectionId: "supportSales", sectionLabel: "Support Sales", sectionOrder: 2, label: "Others", order: 3 },
+
+  { id: "csSupport_solvedIrsLetters", sectionId: "csSupport", sectionLabel: "CS Support", sectionOrder: 3, label: "Solved IRS Letters", order: 1 },
+  { id: "csSupport_solvingIrsLetters", sectionId: "csSupport", sectionLabel: "CS Support", sectionOrder: 3, label: "Solving IRS Letters", order: 2 },
+  { id: "csSupport_check1040xTts", sectionId: "csSupport", sectionLabel: "CS Support", sectionOrder: 3, label: "Check 1040X/TTS", order: 3 },
+  { id: "csSupport_fcSupport", sectionId: "csSupport", sectionLabel: "CS Support", sectionOrder: 3, label: "FC Support", order: 4 },
+  { id: "csSupport_others", sectionId: "csSupport", sectionLabel: "CS Support", sectionOrder: 3, label: "Others", order: 5 },
+
+  { id: "tts8821_eSigned", sectionId: "tts8821", sectionLabel: "8821-TTS Support", sectionOrder: 4, label: "8821 E-Signed", order: 1 },
+  { id: "tts8821_uploaded", sectionId: "tts8821", sectionLabel: "8821-TTS Support", sectionOrder: 4, label: "TTS uploaded", order: 2 },
+  { id: "tts8821_checkF8821", sectionId: "tts8821", sectionLabel: "8821-TTS Support", sectionOrder: 4, label: "Check F8821 / Setup Alert & update CRM", order: 3 },
+  { id: "tts8821_contactClient", sectionId: "tts8821", sectionLabel: "8821-TTS Support", sectionOrder: 4, label: "Contact the client for TTS (TryChart)", order: 4 },
+
+  { id: "collectionSupport_check1040xTts", sectionId: "collectionSupport", sectionLabel: "Collection Support", sectionOrder: 5, label: "Check 1040X/TTS", order: 1 },
+  { id: "collectionSupport_checkProcessIrsLetters", sectionId: "collectionSupport", sectionLabel: "Collection Support", sectionOrder: 5, label: "Check & process IRS Letters", order: 2 },
+  { id: "collectionSupport_checkUploadChecks", sectionId: "collectionSupport", sectionLabel: "Collection Support", sectionOrder: 5, label: "Check & upload checks", order: 3 },
+  { id: "collectionSupport_confirmFees", sectionId: "collectionSupport", sectionLabel: "Collection Support", sectionOrder: 5, label: "Confirm fees", order: 4 },
+  { id: "collectionSupport_others", sectionId: "collectionSupport", sectionLabel: "Collection Support", sectionOrder: 5, label: "Others", order: 5 },
+
+  { id: "otherTasks_checkFilesStatus", sectionId: "otherTasks", sectionLabel: "Other tasks", sectionOrder: 6, label: "Check files status (based on GGS - CPA/CRM)", order: 1 },
+  { id: "otherTasks_prepareF911", sectionId: "otherTasks", sectionLabel: "Other tasks", sectionOrder: 6, label: "Prepare F911 package", order: 2 },
+  { id: "otherTasks_prepareF8822", sectionId: "otherTasks", sectionLabel: "Other tasks", sectionOrder: 6, label: "Prepare F8822", order: 3 },
+  { id: "otherTasks_others1", sectionId: "otherTasks", sectionLabel: "Other tasks", sectionOrder: 6, label: "Others 1", order: 4 },
+  { id: "otherTasks_others2", sectionId: "otherTasks", sectionLabel: "Other tasks", sectionOrder: 6, label: "Others 2", order: 5 },
+];
+
+/**
  * Danh sách trạng thái mặc định cho popup "Refund by years" (nút mắt cạnh cột Case) —
  * lưu trong AppConfig.refundYearStatusOptions, Quản lý thêm/sửa/xoá tự do qua UI (xem
  * CaseRefundStatusButton) giống cơ chế options của cột kiểu select. Option id "pending"
@@ -349,6 +447,16 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermissions = {
   viewCpaReview: ["agent", "agent_leader", "processor", "processor_leader"],
   addCpaReviewRow: ["agent", "agent_leader", "processor", "processor_leader"],
   deleteCpaReviewRow: ["agent", "agent_leader", "processor", "processor_leader"],
+  // Ai thấy nút "For Processor" (cạnh EC Qualification, bảng Hồ sơ) + popup báo cáo công
+  // việc — đúng 2 nhóm dùng tính năng này theo yêu cầu, Admin có thể mở/thu hồi thêm qua
+  // trang Phân quyền.
+  viewForProcessor: ["processor", "processor_leader"],
+  // Thêm/sửa/xoá task (hàng) trong bảng Report — mặc định CHỈ Quản lý (mảng rỗng, Manager
+  // luôn được qua hasFeature() không cần liệt kê), Admin cấp thêm cho Processor Leader qua
+  // trang Phân quyền khi cần.
+  manageProcessorReportTasks: [],
+  // Kết nối/ngắt/resync Google Sheet cho bảng tổng hợp Processor Leader — cùng lý do trên.
+  manageProcessorReportSheet: [],
 };
 
 /** Quyền sửa từng cột hoàn toàn theo cấu hình editableBy — kể cả với Admin. */

@@ -20,6 +20,7 @@ export async function GET() {
       avatarColor: u.avatarColor,
       avatarUrl: u.avatarUrl,
       teamMemberIds: u.teamMemberIds,
+      webmailUsername: u.webmailUsername,
     }))
   );
 }
@@ -75,6 +76,7 @@ export async function POST(request: NextRequest) {
       avatarColor: user.avatarColor,
       avatarUrl: user.avatarUrl,
       teamMemberIds: user.teamMemberIds,
+      webmailUsername: user.webmailUsername,
     },
     { status: 201 }
   );

@@ -1,7 +1,13 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { useShallow } from "zustand/shallow";
-import { DEFAULT_COLLECTING_COLUMNS, DEFAULT_COLUMNS, DEFAULT_FEATURE_PERMISSIONS, DEFAULT_REFUND_YEAR_STATUS_OPTIONS } from "@/lib/rbac";
+import {
+  DEFAULT_COLLECTING_COLUMNS,
+  DEFAULT_COLUMNS,
+  DEFAULT_FEATURE_PERMISSIONS,
+  DEFAULT_PROCESSOR_REPORT_TASKS,
+  DEFAULT_REFUND_YEAR_STATUS_OPTIONS,
+} from "@/lib/rbac";
 import { CPA_REVIEW_STATUS_OPTIONS } from "@/lib/cpa-review-columns";
 import { currentMonthKey } from "@/lib/cpa-review-month";
 import { todayIsoDate } from "@/lib/date-format";
@@ -18,6 +24,7 @@ import {
   CheckInitialValue,
   ClientEmailTemplate,
   CollectingRecord,
+  CollectingReportManualFields,
   CpaReviewRecord,
   ColumnDef,
   ColumnType,
@@ -31,6 +38,9 @@ import {
   Language,
   OrderRecord,
   OrderType,
+  ProcessorReportEntry,
+  ProcessorReportMonthlySummaryEntry,
+  ProcessorReportTaskDef,
   RefundYearStatus,
   Role,
   RuleRecord,
@@ -173,6 +183,19 @@ interface AppState {
    * tab "CPA Review" đang bị ẩn khỏi bảng cho MỌI user — mặc định rỗng (không ẩn cột nào),
    * thêm 2026-08-15. */
   cpaReviewHiddenColumns: string[];
+  /** Danh sách task (hàng) của bảng Report trong popup "For Processor" — Processor Leader/
+   * Quản lý thêm/sửa/xoá qua UI (feature manageProcessorReportTasks). Mặc định
+   * DEFAULT_PROCESSOR_REPORT_TASKS (rbac.ts) nếu chưa từng đổi. */
+  processorReportTasks: ProcessorReportTaskDef[];
+  /** Entries cá nhân (bảng Report của Processor) cho THÁNG đang xem — lazy-fetch khi mở
+   * popup "For Processor" (KHÔNG nạp trong hydrateFromServer để không làm chậm boot cho
+   * user không dùng tính năng này), xem fetchProcessorReportEntries. */
+  processorReportEntries: ProcessorReportEntry[];
+  /** Bảng tổng hợp cho Processor Leader/Quản lý — cache đã tính sẵn (ProcessorReportMonthlySummary)
+   * + danh sách Processor hiện có, cho THÁNG đang xem. Cũng lazy-fetch. */
+  processorReportSummary: { entries: ProcessorReportMonthlySummaryEntry[]; processors: { id: string; name: string }[] };
+  /** Tháng đang chọn trên popup "For Processor" ("YYYY-MM"). */
+  processorReportSelectedMonth: string;
 
   /** true khi đã hydrate xong dữ liệu thật từ server ít nhất 1 lần trong phiên này. */
   hydrated: boolean;
@@ -280,6 +303,35 @@ interface AppState {
   removeCollectingColumnOption: (columnId: string, optionId: string) => void;
   reorderCollectingColumn: (fromId: string, toId: string) => void;
 
+  /** Popup "For Processor" (nút cạnh EC Qualification, bảng Hồ sơ) — tab Report. */
+  setProcessorReportSelectedMonth: (month: string) => void;
+  /** Nạp entries cá nhân (bảng Processor) cho 1 tháng — lazy, gọi khi mở popup/đổi tháng.
+   * `userId` chỉ có ý nghĩa khi manager/processor_leader xem hộ 1 Processor khác. */
+  fetchProcessorReportEntries: (month: string, userId?: string) => Promise<void>;
+  /** Ghi 1 ô (task, ngày) — optimistic local + PATCH nền, server tự tính lại
+   * ProcessorReportMonthlySummary + đẩy Sheet (nếu tháng đã kết nối). */
+  upsertProcessorReportEntry: (taskId: string, date: string, value: number, userId?: string) => void;
+  /** Nạp bảng tổng hợp (Processor Leader/Quản lý) cho 1 tháng — lazy. */
+  fetchProcessorReportSummary: (month: string) => Promise<void>;
+  /** Thêm/sửa/xoá/kéo-thả task (hàng) — local state + lưu qua syncConfig() (cùng cơ chế
+   * addCollectingColumn ở trên), gate bằng feature manageProcessorReportTasks ở UI. */
+  addProcessorReportTask: (sectionId: string, sectionLabel: string, label: string) => void;
+  renameProcessorReportTask: (taskId: string, label: string) => void;
+  deleteProcessorReportTask: (taskId: string) => void;
+  reorderProcessorReportTask: (fromId: string, toId: string) => void;
+  /** Kết nối/resync/ngắt kết nối Sheet cho bảng tổng hợp Processor Leader — cùng tinh thần
+   * connectCpaReviewSheet ở trên nhưng KHÔNG lưu config vào global state (dialog tự fetch
+   * trạng thái riêng qua api.getProcessorReportSyncInfo, xem for-processor-dialog.tsx). */
+  connectProcessorReportSheet: (
+    link: string,
+    month: string
+  ) => Promise<
+    | { ok: true; month: string; sheetId: string; gid: string; tabName: string; webhookSecret: string; webhookUrl: string; appsScript: string }
+    | { ok: false; error: string }
+  >;
+  resyncProcessorReportSheet: (month: string) => Promise<{ ok: true; pushed: number } | { ok: false; error: string }>;
+  disconnectProcessorReportSheet: (month: string) => Promise<void>;
+
   assignCase: (
     caseId: string,
     toUserId: string | null,
@@ -373,22 +425,59 @@ interface AppState {
    * "muốn gửi lại" (clear) — cùng ngữ nghĩa với markCaseSheetSent, xem
    * POST /api/cases/[id]/test-cpa-review-sheet. */
   markCaseCpaReviewTestSent: (caseId: string, action: "manual" | "clear") => Promise<void>;
+  /** Nút "Send Collecting Report" trước mỗi năm trong popup "Refund by years" (thêm
+   * 2026-08-16) — tạo 1 dòng MỚI trong tab "Collecting" từ hồ sơ này + đúng số refund của
+   * năm được bấm, dùng buildCollectingCustomFromCase (server) để map dữ liệu. Không có
+   * trạng thái "đã gửi" bền vững — mỗi lần bấm luôn tạo 1 dòng Collecting mới. Foreground vì
+   * có thể fail rõ ràng (lỗi mạng/server, thiếu quyền). */
+  sendCaseYearToCollecting: (
+    caseId: string,
+    year: string,
+    manual: CollectingReportManualFields
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
   /** Mở popup OAuth Google (window.open), lắng nghe postMessage "google-oauth-done" từ
    * /api/auth/google/callback, resolve true/false theo kết quả — poll popup.closed làm
    * timeout dự phòng nếu user đóng popup tay mà không hoàn tất. */
   connectGoogleAccount: () => Promise<boolean>;
 
   setClientEmailTemplate: (template: ClientEmailTemplate) => void;
+  /** Foreground action — dựng trước Subject/nội dung HTML (chưa gắn chữ ký) cho màn hình
+   * "soạn mail", gọi khi bấm "Confirm" ở popup chọn năm, TRƯỚC khi cho sửa tay + gửi thật
+   * (sendClientEmail). Không lưu/gửi gì cả. */
+  previewRefundEmail: (
+    caseId: string,
+    payload: { years: string[]; language: "vi" | "en"; taxInt: Record<string, string> }
+  ) => Promise<
+    | { ok: true; subject: string; bodyHtml: string; to: string[]; cc: string[] }
+    | { ok: false; error: string }
+  >;
   /** Foreground action, cùng lý do sendCpaEmail/sendCaseRowToSheet — gửi có thể fail rõ
-   * ràng (chưa kết nối Outlook, email khách hàng sai định dạng...). needsMicrosoftAuth:true
-   * khi user chưa/không còn kết nối Outlook — UI tự mở popup connectMicrosoftAccount() rồi
-   * gọi lại action này. KHÔNG có trạng thái "đã gửi" bền vững (khác sheetSentAt/
-   * cpaEmailSentAt) — gửi email khách hàng là hành động tự do, gửi lại thoải mái, lịch sử
-   * đủ dùng qua editHistory (logEdit) bên dưới. */
-  sendClientEmail: (caseId: string) => Promise<{ ok: true } | { ok: false; error: string; needsMicrosoftAuth?: boolean }>;
-  /** Mở popup OAuth Microsoft (window.open), lắng nghe postMessage "microsoft-oauth-done"
-   * từ /api/auth/microsoft/callback — cùng cơ chế connectGoogleAccount ở trên. */
-  connectMicrosoftAccount: () => Promise<boolean>;
+   * ràng (chưa kết nối webmail, email khách hàng sai định dạng...). needsWebmailAuth:true
+   * khi user chưa/không còn kết nối webmail — UI tự mở ConnectWebmailDialog rồi gọi lại
+   * action này. `subject`/`bodyHtml`/`to`/`cc` LÀ bản đã (có thể) sửa tay ở màn hình soạn
+   * mail (sau previewRefundEmail), route không tự build lại từ template nữa. Có trạng thái
+   * "đã gửi" bền vững qua `clientEmailSentAt` (thêm 2026-08-16, giống sheetSentAt/
+   * cpaEmailSentAt/cpaReviewTestSentAt) — cập nhật vào `cases` bên dưới. */
+  sendClientEmail: (
+    caseId: string,
+    payload: {
+      years: string[];
+      taxInt: Record<string, string>;
+      subject: string;
+      bodyHtml: string;
+      to: string[];
+      cc: string[];
+      attachments?: { filename: string; contentType: string; contentBase64: string }[];
+    }
+  ) => Promise<{ ok: true } | { ok: false; error: string; needsWebmailAuth?: boolean }>;
+  /** Đánh dấu "Đã gửi" mail khách hàng thủ công (manual) hoặc xoá đánh dấu đó khi xác nhận
+   * "muốn gửi lại" (clear) — cùng cơ chế markCpaEmailSent/markCaseSheetSent/
+   * markCaseCpaReviewTestSent. */
+  markClientEmailSent: (caseId: string, action: "manual" | "clear") => Promise<void>;
+  /** Kết nối mailbox webmail (mail.directfunder.com) riêng của user — nhận thẳng email +
+   * mật khẩu từ dialog (không phải popup OAuth như connectGoogleAccount, vì SMTP không có
+   * consent screen để redirect tới). Server tự xác minh đăng nhập SMTP trước khi lưu. */
+  connectWebmailAccount: (email: string, password: string) => Promise<{ ok: true } | { ok: false; error: string }>;
 
   reorderColumn: (fromId: string, toId: string) => void;
   reorderCase: (fromId: string, toId: string) => void;
@@ -463,7 +552,8 @@ export const useAppStore = create<AppState>()(
             state.refundYearStatusOptions,
             state.collectingColumns,
             state.cpaReviewStatusOptions,
-            state.cpaReviewHiddenColumns
+            state.cpaReviewHiddenColumns,
+            state.processorReportTasks
           );
         });
         syncInBackground("config", configSyncChain);
@@ -495,6 +585,10 @@ export const useAppStore = create<AppState>()(
       collectingColumns: DEFAULT_COLLECTING_COLUMNS,
       cpaReviewStatusOptions: CPA_REVIEW_STATUS_OPTIONS,
       cpaReviewHiddenColumns: [],
+      processorReportTasks: DEFAULT_PROCESSOR_REPORT_TASKS,
+      processorReportEntries: [],
+      processorReportSummary: { entries: [], processors: [] },
+      processorReportSelectedMonth: currentMonthKey(),
 
       login: async (email, password) => {
         try {
@@ -547,6 +641,10 @@ export const useAppStore = create<AppState>()(
           collectingColumns: config.collectingColumns ?? DEFAULT_COLLECTING_COLUMNS,
           cpaReviewStatusOptions: config.cpaReviewStatusOptions ?? CPA_REVIEW_STATUS_OPTIONS,
           cpaReviewHiddenColumns: config.cpaReviewHiddenColumns ?? [],
+          processorReportTasks:
+            config.processorReportTasks && config.processorReportTasks.length > 0
+              ? config.processorReportTasks
+              : DEFAULT_PROCESSOR_REPORT_TASKS,
           rules,
           collectingRecords,
           cpaReviewRecords,
@@ -798,6 +896,7 @@ export const useAppStore = create<AppState>()(
           sheetSentAt: null,
           cpaEmailSentAt: null,
           cpaReviewTestSentAt: null,
+          clientEmailSentAt: null,
           // Số âm theo epoch-ms hiện tại -> luôn nhỏ hơn mọi sortOrder hiện có -> tự động
           // lên đầu bảng, khớp hành vi cũ "mới nhất lên đầu" (server tạo cũng tự tính
           // đúng công thức này nếu thiếu, xem POST /api/cases).
@@ -808,6 +907,13 @@ export const useAppStore = create<AppState>()(
           fcDate: null,
           processingDate: null,
           elDate: null,
+          bankName: null,
+          routingNumber: null,
+          accountNumber: null,
+          note: null,
+          accountant: null,
+          accountantSupport: null,
+          taxIntByYear: {},
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
@@ -942,6 +1048,7 @@ export const useAppStore = create<AppState>()(
               sheetSentAt: null,
               cpaEmailSentAt: null,
               cpaReviewTestSentAt: null,
+              clientEmailSentAt: null,
               sortOrder: baseSortOrder - (importable.length - index),
               refundYearStatus: {},
               refundYearPendingReason: {},
@@ -949,6 +1056,13 @@ export const useAppStore = create<AppState>()(
               fcDate: null,
               processingDate: null,
               elDate: null,
+              bankName: null,
+              routingNumber: null,
+              accountNumber: null,
+              note: null,
+              accountant: null,
+              accountantSupport: null,
+              taxIntByYear: {},
               createdAt: new Date().toISOString(),
               updatedAt: new Date().toISOString(),
             };
@@ -1443,6 +1557,92 @@ export const useAppStore = create<AppState>()(
       },
       // ==== hết tab "Collecting" ====
 
+      // ==== popup "For Processor" ====
+      setProcessorReportSelectedMonth: (month) => set({ processorReportSelectedMonth: month }),
+
+      fetchProcessorReportEntries: async (month, userId) => {
+        const { entries } = await api.listProcessorReportEntries(month, userId);
+        set({ processorReportEntries: entries });
+      },
+
+      upsertProcessorReportEntry: (taskId, date, value, userId) => {
+        const meId = get().currentUserId ?? "";
+        const targetUserId = userId ?? meId;
+        set((state) => {
+          const idx = state.processorReportEntries.findIndex((e) => e.taskId === taskId && e.date === date && e.userId === targetUserId);
+          if (idx === -1) {
+            return {
+              processorReportEntries: [
+                ...state.processorReportEntries,
+                { id: uniqueId("pre"), userId: targetUserId, taskId, date, value },
+              ],
+            };
+          }
+          const next = [...state.processorReportEntries];
+          next[idx] = { ...next[idx], value };
+          return { processorReportEntries: next };
+        });
+        syncInBackground("upsertProcessorReportEntry", api.upsertProcessorReportEntry({ taskId, date, value, userId }));
+      },
+
+      fetchProcessorReportSummary: async (month) => {
+        const summary = await api.getProcessorReportSummary(month);
+        set({ processorReportSummary: summary });
+      },
+
+      addProcessorReportTask: (sectionId, sectionLabel, label) => {
+        set((state) => {
+          const sectionTasks = state.processorReportTasks.filter((t) => t.sectionId === sectionId);
+          const sectionOrder = sectionTasks[0]?.sectionOrder ?? state.processorReportTasks.length + 1;
+          const order = sectionTasks.length > 0 ? Math.max(...sectionTasks.map((t) => t.order)) + 1 : 1;
+          const task = { id: uniqueId("task"), sectionId, sectionLabel, sectionOrder, label, order };
+          return { processorReportTasks: [...state.processorReportTasks, task] };
+        });
+        syncConfig();
+      },
+      renameProcessorReportTask: (taskId, label) => {
+        set((state) => ({
+          processorReportTasks: state.processorReportTasks.map((t) => (t.id === taskId ? { ...t, label } : t)),
+        }));
+        syncConfig();
+      },
+      deleteProcessorReportTask: (taskId) => {
+        set((state) => ({ processorReportTasks: state.processorReportTasks.filter((t) => t.id !== taskId) }));
+        syncConfig();
+      },
+      reorderProcessorReportTask: (fromId, toId) => {
+        set((state) => {
+          if (fromId === toId) return {};
+          const tasks = [...state.processorReportTasks];
+          const fromIdx = tasks.findIndex((t) => t.id === fromId);
+          const toIdx = tasks.findIndex((t) => t.id === toId);
+          if (fromIdx === -1 || toIdx === -1) return {};
+          const [moved] = tasks.splice(fromIdx, 1);
+          tasks.splice(toIdx, 0, moved);
+          return { processorReportTasks: tasks };
+        });
+        syncConfig();
+      },
+
+      connectProcessorReportSheet: async (link, month) => {
+        try {
+          return await api.connectProcessorReportSheet(link, month);
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Kết nối thất bại" } as const;
+        }
+      },
+      resyncProcessorReportSheet: async (month) => {
+        try {
+          return await api.resyncProcessorReportSheet(month);
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Đồng bộ lại thất bại" } as const;
+        }
+      },
+      disconnectProcessorReportSheet: async (month) => {
+        await api.disconnectProcessorReportSheet(month);
+      },
+      // ==== hết popup "For Processor" ====
+
       addRefundYearStatusOption: (option) => {
         set((state) => ({
           refundYearStatusOptions: [...state.refundYearStatusOptions, { ...option, id: uniqueId("refstatus") }],
@@ -1757,6 +1957,18 @@ export const useAppStore = create<AppState>()(
         logEdit(caseId, "Test Sheet (CPA Review)", "", action === "manual" ? "Đánh dấu đã gửi (thủ công)" : "Muốn gửi lại");
       },
 
+      sendCaseYearToCollecting: async (caseId, year, manual) => {
+        try {
+          const result = await api.sendCaseYearToCollecting(caseId, year, manual);
+          set((s) => ({ collectingRecords: [result.record, ...s.collectingRecords] }));
+          logEdit(caseId, "Send Collecting Report", "", `Năm ${year}`);
+          return { ok: true } as const;
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Gửi sang tab Collecting thất bại";
+          return { ok: false, error: message } as const;
+        }
+      },
+
       connectGoogleAccount: () => {
         return new Promise<boolean>((resolve) => {
           if (typeof window === "undefined") {
@@ -1793,54 +2005,69 @@ export const useAppStore = create<AppState>()(
         syncConfig();
       },
 
-      // Foreground, cùng lý do sendCpaEmail/sendCaseRowToSheet — gửi có thể fail rõ ràng,
-      // cần await + báo lỗi ngay. needsMicrosoftAuth:true khi server trả
-      // "MICROSOFT_NOT_CONNECTED" (chưa kết nối Outlook hoặc refresh_token đã bị server tự
-      // xoá do hết hạn/thu hồi). KHÔNG cập nhật case nào trong store — không có cờ trạng
-      // thái "đã gửi" bền vững cho tính năng này (xem ghi chú ở khai báo type phía trên).
-      sendClientEmail: async (caseId) => {
+      // Foreground — chỉ dựng nội dung (gọi trước khi cho sửa tay ở màn hình soạn mail),
+      // không lưu/gửi gì cả nên không cần cập nhật state nào trong store.
+      previewRefundEmail: async (caseId, payload) => {
         try {
-          await api.sendClientEmail(caseId);
+          const result = await api.previewRefundEmail(caseId, payload);
+          return { ok: true, ...result } as const;
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Dựng nội dung email thất bại" } as const;
+        }
+      },
+
+      // Foreground, cùng lý do sendCpaEmail/sendCaseRowToSheet — gửi có thể fail rõ ràng,
+      // cần await + báo lỗi ngay. needsWebmailAuth:true khi server trả
+      // "WEBMAIL_NOT_CONNECTED" (chưa kết nối webmail hoặc credential đã bị server tự xoá
+      // do sai mật khẩu). `clientEmailSentAt` cập nhật vào case tương ứng khi gửi thành
+      // công (thêm 2026-08-16) — giữ đúng màu xanh qua reload, giống sheetSentAt/
+      // cpaEmailSentAt/cpaReviewTestSentAt.
+      sendClientEmail: async (caseId, payload) => {
+        // Route lưu taxIntByYear NGAY khi nhận request, TRƯỚC khi thử gửi SMTP — nên cập
+        // nhật lạc quan local ngay cả khi gửi thất bại ở bước sau (WEBMAIL_NOT_CONNECTED/
+        // lỗi SMTP), để lần mở popup gửi kế tiếp thấy đúng số vừa nhập, không cần đợi
+        // reload/hydrate lại.
+        set((state) => ({
+          cases: state.cases.map((c) =>
+            c.id === caseId ? { ...c, taxIntByYear: { ...c.taxIntByYear, ...payload.taxInt } } : c
+          ),
+        }));
+        try {
+          const result = await api.sendClientEmail(caseId, payload);
+          set((state) => ({
+            cases: state.cases.map((c) => (c.id === caseId ? { ...c, clientEmailSentAt: result.clientEmailSentAt } : c)),
+          }));
           logEdit(caseId, "Gửi email cho khách hàng", "", "Đã gửi");
           return { ok: true } as const;
         } catch (err) {
           const message = err instanceof Error ? err.message : "Gửi email cho khách hàng thất bại";
-          if (message === "MICROSOFT_NOT_CONNECTED") {
-            return { ok: false, error: message, needsMicrosoftAuth: true } as const;
+          if (message === "WEBMAIL_NOT_CONNECTED") {
+            return { ok: false, error: message, needsWebmailAuth: true } as const;
           }
           return { ok: false, error: message } as const;
         }
       },
 
-      connectMicrosoftAccount: () => {
-        return new Promise<boolean>((resolve) => {
-          if (typeof window === "undefined") {
-            resolve(false);
-            return;
-          }
-          const popup = window.open("/api/auth/microsoft/start", "microsoft-oauth", "width=500,height=650");
-          if (!popup) {
-            resolve(false);
-            return;
-          }
-          let settled = false;
-          function finish(ok: boolean) {
-            if (settled) return;
-            settled = true;
-            window.removeEventListener("message", onMessage);
-            clearInterval(pollClosed);
-            resolve(ok);
-          }
-          function onMessage(event: MessageEvent) {
-            if (event.origin !== window.location.origin) return;
-            if (event.data?.type === "microsoft-oauth-done") finish(Boolean(event.data.ok));
-          }
-          window.addEventListener("message", onMessage);
-          // Dự phòng nếu user tự đóng popup tay mà không hoàn tất (không có postMessage nào bắn ra).
-          const pollClosed = setInterval(() => {
-            if (popup.closed) finish(false);
-          }, 500);
-        });
+      markClientEmailSent: async (caseId, action) => {
+        const result = await api.markClientEmailSent(caseId, action);
+        set((state) => ({
+          cases: state.cases.map((c) => (c.id === caseId ? { ...c, clientEmailSentAt: result.clientEmailSentAt } : c)),
+        }));
+        logEdit(caseId, "Gửi email cho khách hàng", "", action === "manual" ? "Đánh dấu đã gửi (thủ công)" : "Muốn gửi lại");
+      },
+
+      // Kết nối mailbox webmail (mail.directfunder.com) riêng của user hiện tại — thay cho
+      // popup OAuth Microsoft cũ. Nhận thẳng email/mật khẩu từ ConnectWebmailDialog (không
+      // phải cơ chế popup+postMessage như connectGoogleAccount) vì SMTP không có màn hình
+      // consent để redirect tới.
+      connectWebmailAccount: async (email, password) => {
+        try {
+          await api.connectWebmailAccount(email, password);
+          return { ok: true } as const;
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Kết nối webmail thất bại";
+          return { ok: false, error: message } as const;
+        }
       },
 
       // Ghi chú: reorderColumn chỉ đổi thứ tự hiển thị cục bộ (lưu trong AppConfig.columns

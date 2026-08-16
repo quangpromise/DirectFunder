@@ -58,6 +58,9 @@ export const ASSIGNABLE_FEATURES = [
   "viewCpaReview",
   "addCpaReviewRow",
   "deleteCpaReviewRow",
+  "viewForProcessor",
+  "manageProcessorReportTasks",
+  "manageProcessorReportSheet",
 ] as const;
 export type FeatureKey = (typeof ASSIGNABLE_FEATURES)[number];
 
@@ -83,6 +86,9 @@ export const FEATURE_LABEL: Record<Language, Record<FeatureKey, string>> = {
     viewCpaReview: "Xem tab CPA Review",
     addCpaReviewRow: "Thêm dòng mới (tab CPA Review)",
     deleteCpaReviewRow: "Xóa dòng (tab CPA Review)",
+    viewForProcessor: "Xem nút \"For Processor\"",
+    manageProcessorReportTasks: "Thêm / sửa / xóa task (For Processor)",
+    manageProcessorReportSheet: "Cấu hình đồng bộ Google Sheet (For Processor)",
   },
   en: {
     addColumn: "Add new column",
@@ -105,6 +111,9 @@ export const FEATURE_LABEL: Record<Language, Record<FeatureKey, string>> = {
     viewCpaReview: "View CPA Review tab",
     addCpaReviewRow: "Add new row (CPA Review tab)",
     deleteCpaReviewRow: "Delete row (CPA Review tab)",
+    viewForProcessor: 'View "For Processor" button',
+    manageProcessorReportTasks: "Add / edit / delete tasks (For Processor)",
+    manageProcessorReportSheet: "Configure Google Sheet sync (For Processor)",
   },
 };
 
@@ -119,14 +128,32 @@ export interface CpaEmailDefaults {
   bodyTemplate?: string;
 }
 
-/** Mẫu Subject/Body cố định cho tính năng "Gửi email cho khách hàng" (popup Edit Hồ sơ,
- * nút cạnh ô Email) — Admin cấu hình chung toàn app qua dialog cài đặt ở trang Phân quyền.
- * Không có to/cc: người nhận LUÔN là email khách hàng của hồ sơ đang mở. Biến hỗ trợ khác
- * CpaEmailDefaults (xem client-email-template.ts) — không có {ssn}/{money}/{status}. Rỗng/
- * undefined = dùng mẫu mặc định trong code. */
+/** Phần Admin cấu hình được cho email "Thông báo hoàn thuế" gửi khách hàng (nút gửi mail
+ * cạnh ô Email trong popup Edit Hồ sơ) — Admin cấu hình chung toàn app qua dialog cài đặt
+ * ở trang Phân quyền. Subject/Body LÀ template tự do (đưa trở lại 2026-08-16, xem ở dưới),
+ * RIÊNG theo từng ngôn ngữ VI/EN (khớp toggle ngôn ngữ trong popup gửi) — hỗ trợ token dạng
+ * {key} thay bằng dữ liệu thật lúc gửi (xem REFUND_EMAIL_TEMPLATE_VAR_KEYS +
+ * src/lib/refund-notification-email.ts), trong đó {breakdown} là khối HTML liệt kê Tax
+ * credit/Additional tax on 1099-INT/Estimated refund amount từng năm đã chọn — bỏ token
+ * này khỏi template thì khối đó không hiện ra. Cc + 4 field chữ ký/liên hệ cố định dùng
+ * chung cho MỌI user (khác Tên/Email/Logo trong chữ ký — 3 cái đó tự lấy theo user đang
+ * đăng nhập, không cấu hình ở đây). Rỗng/undefined ở field nào = dùng default tương ứng
+ * trong client-email-template.ts. */
 export interface ClientEmailTemplate {
-  subjectTemplate?: string;
-  bodyTemplate?: string;
+  cc?: string[];
+  subjectTemplateVi?: string;
+  subjectTemplateEn?: string;
+  bodyTemplateVi?: string;
+  bodyTemplateEn?: string;
+  /** 3 nhãn trong khối {breakdown} (hỗ trợ token {year}, dùng chung 2 ngôn ngữ — số tiền đi
+   * kèm luôn tính động, không cấu hình được). */
+  breakdownTaxCreditLabel?: string;
+  breakdownTaxIntLabel?: string;
+  breakdownEstimatedLabel?: string;
+  signatureJobTitle?: string;
+  signaturePhone?: string;
+  signatureAddress?: string;
+  supportPhone?: string;
 }
 
 /** "iso" = giữ nguyên định dạng lưu trữ YYYY-MM-DD. "mdy2" = ghi vào Sheet dạng
@@ -200,6 +227,11 @@ export interface User {
   /** Chỉ có ý nghĩa với role agent_leader/processor_leader — danh sách id các Agent/
    * Processor mà leader này được xem hồ sơ. Do Admin gán qua trang Quản lý tài khoản. */
   teamMemberIds?: string[];
+  /** Địa chỉ mailbox webmail (mail.directfunder.com) đã kết nối để gửi "Send email to
+   * client" (xem send-client-email-button.tsx/webmail-account/route.ts) — null/undefined =
+   * chưa kết nối. Hiển thị ở dropdown tài khoản (top-nav.tsx) để biết đã kết nối chưa,
+   * KHÔNG bao giờ trả về mật khẩu (chỉ server mới đọc webmailPasswordEncrypted). */
+  webmailUsername?: string | null;
 }
 
 export type ColumnType =
@@ -379,6 +411,9 @@ export interface CaseRecord {
   /** Tương tự sheetSentAt/cpaEmailSentAt nhưng cho nút "Test Sheet" (gửi hồ sơ sang tab
    * "CPA Review") — xem TestSheetButton. */
   cpaReviewTestSentAt: string | null;
+  /** Tương tự sheetSentAt/cpaEmailSentAt/cpaReviewTestSentAt nhưng cho nút "Send email to
+   * client" — xem SendClientEmailButton. */
+  clientEmailSentAt: string | null;
   /** Thứ tự hiển thị dòng trên bảng Hồ sơ (kéo-thả) — số càng nhỏ hiển thị càng lên trên.
    * Xem ghi chú fractional indexing ở reorderCase (app-store.ts) và Case.sortOrder
    * (schema.prisma). */
@@ -401,11 +436,51 @@ export interface CaseRecord {
   fcDate: string | null;
   processingDate: string | null;
   elDate: string | null;
+  /** 3 ô ngân hàng, chỉ dùng để điền vào email "Thông báo hoàn thuế" gửi khách hàng (xem
+   * send-client-email/route.ts) — không phải bank account thật của công ty, chỉ sửa qua
+   * popup "Edit Hồ sơ" giống fcDate/processingDate/elDate. */
+  bankName: string | null;
+  routingNumber: string | null;
+  accountNumber: string | null;
+  /** Ghi chú tự do đặt ngay dưới khối Taxpayer/Spouse trong popup "Edit Hồ sơ" — chỉ sửa
+   * được ở đó, không liên quan cột "description" (Mô tả, có reply threading) đã có sẵn
+   * ngoài bảng chính. null = chưa nhập. */
+  note: string | null;
+  /** Record<năm, string> — số tiền "Additional tax on 1099-INT" nhập tay riêng cho từng
+   * năm, lưu lại từ lần gửi email "Thông báo hoàn thuế" gần nhất (popup chọn năm cạnh nút
+   * gửi mail) để không phải gõ lại. */
+  taxIntByYear: Record<string, string>;
+  /** 2 ô "Accountant"/"Accountant Support", chỉ sửa qua popup "Edit Hồ sơ" giống
+   * fcDate/processingDate/elDate/bankName. `accountantSupport` được tự động đổ vào cột
+   * "ACCT" của tab Collecting mỗi khi bấm "Send Collecting Report" (xem
+   * case-to-collecting.ts) — `accountant` hiện chỉ lưu lại, chưa dùng ở đâu khác. */
+  accountant: string | null;
+  accountantSupport: string | null;
   /** Id người tạo hồ sơ này — dùng để Agent Leader/Processor Leader tự sửa được hồ sơ
    * do chính mình thêm vào, kể cả khi chưa gán cho thành viên nào trong nhóm. */
   createdBy: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Các trường nhập tay ở popup "Send Collecting Report" (bấm nút Send trước mỗi năm trong
+ * "Refund by years") — key trùng đúng `id` cột tương ứng trong DEFAULT_COLLECTING_COLUMNS
+ * để server (case-to-collecting.ts) đổ thẳng vào `CollectingRecord.custom` không cần ánh
+ * xạ tên. Các trường suy ra được từ Case (Name/Phone/Agent 1-2/Acct/Year/Qual. Amount)
+ * KHÔNG nằm trong đây — server tự tính, xem buildCollectingCustomFromCase. */
+export interface CollectingReportManualFields {
+  program: string;
+  /** true → lưu "X" vào cột taxOffset (cột kiểu text, hiển thị dấu X trực tiếp trên bảng
+   * Collecting) — không cần đổi type cột hay logic hiển thị riêng. */
+  taxOffset: boolean;
+  approvedAmt: number | null;
+  upfrontFees: number | null;
+  totalCollected: number | null;
+  pmtMethod: string;
+  note: string;
+  tips: number | null;
+  receiptCheckNo: string;
+  receiptCheckAmt: number | null;
 }
 
 /** 1 dòng trong tab "Collecting" — bảng dữ liệu kiểu Excel độc lập với bảng Hồ sơ (không
@@ -435,6 +510,57 @@ export interface CpaReviewRecord {
 
 /** Record<monthKey ("YYYY-MM"), CpaReviewSheetConfig> — mỗi tháng 1 kết nối Sheet riêng. */
 export type CpaReviewSheetConfigMap = Record<string, CpaReviewSheetConfig>;
+
+/** 1 hàng "task" trong bảng Report của popup "For Processor" — xem
+ * AppConfig.processorReportTasks / DEFAULT_PROCESSOR_REPORT_TASKS (rbac.ts). Nhóm theo
+ * `sectionId` (hiển thị 1 hàng tiêu đề in đậm, tổng = SUM các task cùng section cùng cột). */
+export interface ProcessorReportTaskDef {
+  id: string;
+  sectionId: string;
+  sectionLabel: string;
+  sectionOrder: number;
+  label: string;
+  order: number;
+}
+
+/** Số liệu 1 ô (user, task, ngày) trong bảng cá nhân của Processor — xem Prisma model
+ * ProcessorReportEntry. */
+export interface ProcessorReportEntry {
+  id: string;
+  userId: string;
+  taskId: string;
+  /** "YYYY-MM-DD" */
+  date: string;
+  value: number;
+}
+
+/** Cache tổng theo (tháng, task, user) — bảng Leader đọc trực tiếp từ đây, xem Prisma model
+ * ProcessorReportMonthlySummary. */
+export interface ProcessorReportMonthlySummaryEntry {
+  month: string;
+  taskId: string;
+  userId: string;
+  value: number;
+}
+
+/** Cấu hình đồng bộ 2 chiều Google Sheet cho bảng tổng hợp Processor Leader — 1 config/tháng
+ * (xem AppConfig.processorReportSheetConfig). Khác CpaReviewSheetConfig: không cần `rowIndex`
+ * dò theo business key vì hàng (task) và cột (processor) đều biết trước — `taskRowMap`/
+ * `userColumnMap` ghi lại vị trí đã dùng lúc connect/resync để lần đẩy sau ghi đúng ô, không
+ * cần quét lại Sheet. */
+export interface ProcessorReportSheetConfig {
+  sheetId: string;
+  gid: string;
+  tabName: string;
+  taskRowMap: Record<string, number>;
+  userColumnMap: Record<string, number>;
+  webhookSecret: string;
+  connectedAt: string;
+  connectedByUserId: string;
+}
+
+/** Record<monthKey ("YYYY-MM"), ProcessorReportSheetConfig> — mỗi tháng 1 kết nối Sheet riêng. */
+export type ProcessorReportSheetConfigMap = Record<string, ProcessorReportSheetConfig>;
 
 /** Lịch sử xóa hồ sơ — lưu lại toàn bộ snapshot của dòng đã xóa để có thể tra cứu/kiểm tra sau này. */
 export interface DeletedRowRecord {

@@ -3,6 +3,7 @@ import type {
   CaseRecord,
   ClientEmailTemplate,
   CollectingRecord,
+  CollectingReportManualFields,
   ColumnDef,
   CpaEmailDefaults,
   CpaReviewRecord,
@@ -11,6 +12,9 @@ import type {
   EditHistoryRecord,
   FeaturePermissions,
   GoogleSheetConfig,
+  ProcessorReportEntry,
+  ProcessorReportMonthlySummaryEntry,
+  ProcessorReportTaskDef,
   Role,
   RuleRecord,
   SelectOption,
@@ -49,6 +53,7 @@ export interface ApiUser {
   avatarColor: string;
   avatarUrl: string | null;
   teamMemberIds?: string[];
+  webmailUsername?: string | null;
 }
 
 export const api = {
@@ -118,6 +123,7 @@ export const api = {
       cpaReviewStatusOptions: SelectOption[] | null;
       cpaReviewHiddenColumns: string[] | null;
       cpaReviewSheetConfig: Record<string, Omit<CpaReviewSheetConfig, "webhookSecret" | "rowIndex">> | null;
+      processorReportTasks: ProcessorReportTaskDef[] | null;
     }>("/api/config"),
   putConfig: (
     columns: ColumnDef[],
@@ -128,7 +134,8 @@ export const api = {
     refundYearStatusOptions?: SelectOption[],
     collectingColumns?: ColumnDef[],
     cpaReviewStatusOptions?: SelectOption[],
-    cpaReviewHiddenColumns?: string[]
+    cpaReviewHiddenColumns?: string[],
+    processorReportTasks?: ProcessorReportTaskDef[]
   ) =>
     request<{
       columns: ColumnDef[];
@@ -140,6 +147,7 @@ export const api = {
       collectingColumns: ColumnDef[] | null;
       cpaReviewStatusOptions: SelectOption[] | null;
       cpaReviewHiddenColumns: string[] | null;
+      processorReportTasks: ProcessorReportTaskDef[] | null;
     }>("/api/config", {
       method: "PUT",
       body: JSON.stringify({
@@ -152,6 +160,7 @@ export const api = {
         refundYearStatusOptions,
         cpaReviewStatusOptions,
         cpaReviewHiddenColumns,
+        processorReportTasks,
       }),
     }),
 
@@ -218,12 +227,66 @@ export const api = {
       body: JSON.stringify({ [action]: true }),
     }),
 
-  /** Gửi email mẫu cố định (Admin cấu hình) cho khách hàng của 1 hồ sơ — xem POST
-   * /api/cases/[id]/send-client-email. Lỗi "MICROSOFT_NOT_CONNECTED" (HTTP 428, xem
-   * request() ném ApiError với message này) báo hiệu UI cần mở popup kết nối Outlook trước
-   * khi gọi lại. Không có trạng thái "đã gửi" bền vững nên response chỉ trả { ok: true }. */
-  sendClientEmail: (caseId: string) =>
-    request<{ ok: true }>(`/api/cases/${caseId}/send-client-email`, { method: "POST" }),
+  /** Nút "Send Collecting Report" trước mỗi năm trong popup "Refund by years" — tạo 1 dòng
+   * mới trong tab Collecting từ hồ sơ này + đúng số refund của năm được bấm + các trường
+   * nhập tay ở popup xác nhận, xem POST /api/cases/[id]/send-collecting-report. */
+  sendCaseYearToCollecting: (caseId: string, year: string, manual: CollectingReportManualFields) =>
+    request<{ ok: true; record: CollectingRecord }>(`/api/cases/${caseId}/send-collecting-report`, {
+      method: "POST",
+      body: JSON.stringify({ year, ...manual }),
+    }),
+
+  /** Dựng trước Subject + nội dung HTML (chưa gắn chữ ký) cho màn hình "soạn mail" — bấm
+   * "Confirm" ở popup chọn năm gọi route này trước khi cho sửa tay. Xem POST
+   * /api/cases/[id]/refund-email-preview. */
+  previewRefundEmail: (
+    caseId: string,
+    payload: { years: string[]; language: "vi" | "en"; taxInt: Record<string, string> }
+  ) =>
+    request<{ subject: string; bodyHtml: string; to: string[]; cc: string[] }>(`/api/cases/${caseId}/refund-email-preview`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  /** Gửi email "Thông báo hoàn thuế" cho khách hàng của 1 hồ sơ — xem POST
+   * /api/cases/[id]/send-client-email. `subject`/`bodyHtml`/`to`/`cc` là bản đã (có thể)
+   * sửa tay ở màn hình soạn mail (sau khi gọi previewRefundEmail); `attachments` là tệp
+   * người dùng tự thêm ở màn hình đó (base64, cùng dạng CpaEmailAttachment). Lỗi
+   * "WEBMAIL_NOT_CONNECTED" (HTTP 428, xem request() ném ApiError với message này) báo hiệu
+   * UI cần mở ConnectWebmailDialog trước khi gọi lại. Server trả về clientEmailSentAt (ISO)
+   * đã lưu xuống DB — trạng thái "đã gửi" bền vững qua reload, giống sheetSentAt/
+   * cpaEmailSentAt/cpaReviewTestSentAt. */
+  sendClientEmail: (
+    caseId: string,
+    payload: {
+      years: string[];
+      taxInt: Record<string, string>;
+      subject: string;
+      bodyHtml: string;
+      to: string[];
+      cc: string[];
+      attachments?: { filename: string; contentType: string; contentBase64: string }[];
+    }
+  ) =>
+    request<{ ok: true; clientEmailSentAt: string }>(`/api/cases/${caseId}/send-client-email`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  /** Đánh dấu "Đã gửi" mail khách hàng thủ công (manual) hoặc xoá đánh dấu đó khi xác nhận
+   * "muốn gửi lại" (clear) — KHÔNG gọi SMTP thật, chỉ ghi/xoá clientEmailSentAt trong DB.
+   * Dùng chung route POST /api/cases/[id]/send-client-email, phân biệt qua body. */
+  markClientEmailSent: (caseId: string, action: "manual" | "clear") =>
+    request<{ ok: true; clientEmailSentAt: string | null }>(`/api/cases/${caseId}/send-client-email`, {
+      method: "POST",
+      body: JSON.stringify({ [action]: true }),
+    }),
+
+  /** Kết nối mailbox webmail (mail.directfunder.com) riêng của user hiện tại — xem POST
+   * /api/me/webmail-account. Server tự xác minh đăng nhập SMTP trước khi lưu, ném ApiError
+   * với message tiếng Việt rõ ràng nếu sai email/mật khẩu. */
+  connectWebmailAccount: (email: string, password: string) =>
+    request<{ ok: true }>("/api/me/webmail-account", { method: "POST", body: JSON.stringify({ email, password }) }),
 
   /** Lưu toàn bộ nội dung popup "Edit Hồ sơ" (ClientProfileDialog) trong 1 lần gọi —
    * server tự tính lại `money`/`custom.caseLabel` từ `refunds`, trả về giá trị đã tính
@@ -288,6 +351,51 @@ export const api = {
   listDeletionHistory: () => request<DeletedRowRecord[]>("/api/history/deletions"),
   createDeletionHistoryEntry: (caseSnapshot: CaseRecord) =>
     request<DeletedRowRecord>("/api/history/deletions", { method: "POST", body: JSON.stringify({ caseSnapshot }) }),
+
+  /** Popup "For Processor" — bảng cá nhân Processor (tab Report). `userId` chỉ có ý nghĩa
+   * khi người gọi là manager/processor_leader xem hộ 1 Processor khác. */
+  listProcessorReportEntries: (month: string, userId?: string) =>
+    request<{ entries: ProcessorReportEntry[] }>(
+      `/api/processor-report/entries?month=${encodeURIComponent(month)}${userId ? `&userId=${encodeURIComponent(userId)}` : ""}`
+    ),
+  upsertProcessorReportEntry: (payload: { taskId: string; date: string; value: number; userId?: string }) =>
+    request<{ entry: ProcessorReportEntry }>("/api/processor-report/entries", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  /** Bảng tổng hợp cho Processor Leader/Quản lý (đọc cache đã tính sẵn, không tính lại). */
+  getProcessorReportSummary: (month: string) =>
+    request<{ entries: ProcessorReportMonthlySummaryEntry[]; processors: { id: string; name: string }[] }>(
+      `/api/processor-report/summary?month=${encodeURIComponent(month)}`
+    ),
+
+  /** Kết nối Sheet cho bảng tổng hợp Processor Leader (dán link) — ghi toàn bộ layout hiện
+   * có, trả webhookSecret + Apps Script mẫu ĐÚNG 1 LẦN duy nhất lúc này (giống CPA Review). */
+  connectProcessorReportSheet: (link: string, month: string) =>
+    request<{
+      ok: true;
+      month: string;
+      sheetId: string;
+      gid: string;
+      tabName: string;
+      webhookSecret: string;
+      webhookUrl: string;
+      appsScript: string;
+    }>("/api/config/processor-report-sheet", { method: "POST", body: JSON.stringify({ action: "connect", link, month }) }),
+  resyncProcessorReportSheet: (month: string) =>
+    request<{ ok: true; pushed: number }>("/api/config/processor-report-sheet", {
+      method: "POST",
+      body: JSON.stringify({ action: "resync", month }),
+    }),
+  disconnectProcessorReportSheet: (month: string) =>
+    request<{ ok: true }>(`/api/config/processor-report-sheet?month=${encodeURIComponent(month)}`, { method: "DELETE" }),
+  getProcessorReportSyncInfo: (month: string) =>
+    request<{
+      serviceAccountConfigured: boolean;
+      serviceAccountEmail: string | null;
+      appsScript: string | null;
+      connected: { sheetId: string; gid: string; tabName: string; connectedAt: string } | null;
+    }>(`/api/config/processor-report-sheet?month=${encodeURIComponent(month)}`),
 };
 
 export interface ClientProfilePayload {
@@ -303,6 +411,12 @@ export interface ClientProfilePayload {
   fcDate?: string | null;
   processingDate?: string | null;
   elDate?: string | null;
+  bankName?: string | null;
+  routingNumber?: string | null;
+  accountNumber?: string | null;
+  note?: string | null;
+  accountant?: string | null;
+  accountantSupport?: string | null;
 }
 
 /** Gọi API nền, không chặn UI (các action Zustand vẫn cập nhật local state ngay lập

@@ -5,7 +5,7 @@ import { hasFeature } from "@/lib/rbac";
 import type { CollectingRecord, FeaturePermissions } from "@/lib/types";
 import type { Prisma } from "@prisma/client";
 
-function toCollectingRecord(row: {
+export function toCollectingRecord(row: {
   id: string;
   custom: Prisma.JsonValue;
   sortOrder: number;

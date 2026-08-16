@@ -1,19 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Pencil, X, AlertCircle } from "lucide-react";
-import { CaseRecord, ClientNameEntry, ColumnDef, Role } from "@/lib/types";
+import { Pencil, X, AlertCircle, Search } from "lucide-react";
+import { CaseRecord, ClientNameEntry, ColumnDef, Role, User } from "@/lib/types";
 import { canEditColumn } from "@/lib/rbac";
 import { computeRefundSummary, REFUND_YEARS } from "@/lib/refund";
 import { formatSsn } from "@/lib/ssn";
 import { parseDobPaste } from "@/lib/date-format";
 import type { ClientProfilePayload } from "@/lib/api-client";
 import { useT } from "@/lib/i18n";
-import { SendClientEmailButton } from "./send-client-email-button";
+import { useAppStore } from "@/store/app-store";
 
 type SaveResult = { ok: true } | { ok: false; error: string };
-type SendClientEmailResult = { ok: true } | { ok: false; error: string; needsMicrosoftAuth?: boolean };
 
 function refundsToDraft(refunds: Record<string, number> | undefined): Record<string, string> {
   const draft: Record<string, string> = {};
@@ -50,6 +49,109 @@ function formatMoneyDraft(raw: string): string {
   return decPart !== undefined ? `${withCommas}.${decPart}` : withCommas;
 }
 
+/** Dropdown chọn 1 user trong hệ thống (trừ role "manager"/Admin) kèm ô tìm kiếm — dùng cho
+ * 2 ô "Accountant"/"Accountant Support" (thêm 2026-08-16). Lưu THẲNG tên hiển thị (name) của
+ * user đã chọn vào `Case.accountant`/`accountantSupport` (vẫn là field text tự do trên
+ * schema, không đổi sang lưu userId) — giữ đơn giản vì 2 field này chỉ dùng để hiển thị/đổ
+ * vào cột ACCT của Collecting, không cần tra cứu ngược lại user thật ở đâu khác. */
+function UserPickerField({
+  label,
+  value,
+  users,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  users: User[];
+  disabled: boolean;
+  onChange: (name: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const t = useT();
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [open]);
+
+  const filtered = search.trim()
+    ? users.filter((u) => u.name.toLowerCase().includes(search.trim().toLowerCase()))
+    : users;
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <label className="mb-0.5 block text-[11px] text-text-dim">{label}</label>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => {
+          setSearch("");
+          setOpen((o) => !o);
+          setTimeout(() => searchRef.current?.focus(), 0);
+        }}
+        className="flex w-full items-center justify-between rounded-lg border border-border bg-bg-elevated px-2.5 py-1.5 text-left text-sm outline-none transition focus:border-accent disabled:cursor-default disabled:opacity-50"
+      >
+        <span className={`truncate ${value ? "" : "text-text-faint"}`}>{value || t("clientProfile.selectUser")}</span>
+      </button>
+
+      {open && !disabled && (
+        <div className="popover absolute left-0 top-full z-20 mt-1 w-full rounded-lg p-1.5 shadow-2xl shadow-black/60">
+          <div className="relative mb-1 shrink-0">
+            <Search size={12} className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-text-faint" />
+            <input
+              ref={searchRef}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              placeholder={t("assign.searchPlaceholder")}
+              className="w-full rounded-md border border-border bg-bg-elevated py-1 pl-6 pr-2 text-xs outline-none focus:border-accent"
+            />
+          </div>
+          <div className="max-h-48 overflow-y-auto">
+            {value && (
+              <button
+                type="button"
+                onClick={() => {
+                  onChange("");
+                  setOpen(false);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs text-text-faint transition hover:bg-surface-hover"
+              >
+                <span className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border border-dashed border-border">
+                  <X size={10} />
+                </span>
+                {t("clientProfile.clearUser")}
+              </button>
+            )}
+            {filtered.map((u) => (
+              <button
+                key={u.id}
+                type="button"
+                onClick={() => {
+                  onChange(u.name);
+                  setOpen(false);
+                }}
+                className="w-full truncate rounded-lg px-2 py-1.5 text-left text-xs transition hover:bg-surface-hover"
+              >
+                {u.name}
+              </button>
+            ))}
+            {filtered.length === 0 && <div className="px-2 py-2 text-xs text-text-faint">{t("assign.noMatching")}</div>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
  * Nút bút chì "Edit Hồ sơ" đặt trước tên khách hàng trong cột Client Name — mở popup
  * sửa TOÀN BỘ thông tin khách hàng (First/Last Name x2, SSN x2, Date of Birth x2, Phone
@@ -64,11 +166,6 @@ export function ClientProfileDialog({
   role,
   isDuplicateSsn,
   onSave,
-  canSendClientEmail,
-  confirm,
-  alertWarn,
-  sendClientEmail,
-  connectMicrosoftAccount,
 }: {
   caseRecord: CaseRecord;
   columns: ColumnDef[];
@@ -77,15 +174,10 @@ export function ClientProfileDialog({
    * slot đang sửa của chính hồ sơ này) — dùng chung logic với SsnCell ở bảng chính. */
   isDuplicateSsn: (slot: 0 | 1, candidate: string) => boolean;
   onSave: (payload: ClientProfilePayload) => Promise<SaveResult>;
-  /** hasFeature(permissions, "sendClientEmail", role) — quyết định có hiện nút gửi email
-   * khách hàng cạnh ô Email hay không (Manager luôn true qua hasFeature()). */
-  canSendClientEmail: boolean;
-  confirm: (message: string, opts?: { title?: string; tone?: "default" | "danger" }) => Promise<boolean>;
-  alertWarn: (message: string, opts?: { title?: string }) => Promise<void>;
-  sendClientEmail: (caseId: string) => Promise<SendClientEmailResult>;
-  connectMicrosoftAccount: () => Promise<boolean>;
 }) {
   const [open, setOpen] = useState(false);
+  const allUsers = useAppStore((s) => s.users);
+  const pickableUsers = allUsers.filter((u) => u.role !== "manager");
   const [clients, setClients] = useState<[ClientNameEntry, ClientNameEntry]>(caseRecord.clients);
   const [ssn, setSsn] = useState<[string | null, string | null]>(caseRecord.ssn);
   const [dateOfBirth, setDateOfBirth] = useState<[string | null, string | null]>(caseRecord.dateOfBirth);
@@ -98,6 +190,12 @@ export function ClientProfileDialog({
   const [fcDate, setFcDate] = useState(caseRecord.fcDate);
   const [processingDate, setProcessingDate] = useState(caseRecord.processingDate);
   const [elDate, setElDate] = useState(caseRecord.elDate);
+  const [bankName, setBankName] = useState(caseRecord.bankName ?? "");
+  const [routingNumber, setRoutingNumber] = useState(caseRecord.routingNumber ?? "");
+  const [accountNumber, setAccountNumber] = useState(caseRecord.accountNumber ?? "");
+  const [note, setNote] = useState(caseRecord.note ?? "");
+  const [accountant, setAccountant] = useState(caseRecord.accountant ?? "");
+  const [accountantSupport, setAccountantSupport] = useState(caseRecord.accountantSupport ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const t = useT();
@@ -123,6 +221,12 @@ export function ClientProfileDialog({
     setFcDate(caseRecord.fcDate);
     setProcessingDate(caseRecord.processingDate);
     setElDate(caseRecord.elDate);
+    setBankName(caseRecord.bankName ?? "");
+    setRoutingNumber(caseRecord.routingNumber ?? "");
+    setAccountNumber(caseRecord.accountNumber ?? "");
+    setNote(caseRecord.note ?? "");
+    setAccountant(caseRecord.accountant ?? "");
+    setAccountantSupport(caseRecord.accountantSupport ?? "");
     setError("");
     setOpen(true);
   }
@@ -174,6 +278,12 @@ export function ClientProfileDialog({
     if (canEdit("fcDate")) payload.fcDate = fcDate;
     if (canEdit("processingDate")) payload.processingDate = processingDate;
     if (canEdit("elDate")) payload.elDate = elDate;
+    if (canEdit("bankName")) payload.bankName = bankName;
+    if (canEdit("routingNumber")) payload.routingNumber = routingNumber;
+    if (canEdit("accountNumber")) payload.accountNumber = accountNumber;
+    if (canEdit("note")) payload.note = note;
+    if (canEdit("accountant")) payload.accountant = accountant;
+    if (canEdit("accountantSupport")) payload.accountantSupport = accountantSupport;
 
     setSaving(true);
     setError("");
@@ -315,6 +425,16 @@ export function ClientProfileDialog({
                       </div>
                     </div>
                   ))}
+                  <div className="sm:col-span-2">
+                    <label className="mb-0.5 block text-[11px] text-text-dim">{t("clientProfile.note")}</label>
+                    <textarea
+                      value={note}
+                      disabled={!canEdit("note")}
+                      onChange={(e) => setNote(e.target.value)}
+                      rows={3}
+                      className={`${inputCls} resize-none`}
+                    />
+                  </div>
                 </div>
 
                 <div className="flex flex-[3] flex-col gap-3">
@@ -340,34 +460,13 @@ export function ClientProfileDialog({
                       />
                     </div>
                     <div>
-                      <label className="mb-0.5 block text-[11px] text-text-dim">{t("clientProfile.zipcode")}</label>
+                      <label className="mb-0.5 block text-[11px] text-text-dim">{t("clientProfile.email")}</label>
                       <input
-                        value={zipcode}
-                        disabled={!canEdit("zipcode")}
-                        maxLength={5}
-                        onChange={(e) => setZipcode(e.target.value.replace(/\D/g, "").slice(0, 5))}
+                        value={email}
+                        disabled={!canEdit("email")}
+                        onChange={(e) => setEmail(e.target.value)}
                         className={inputCls}
                       />
-                    </div>
-                    <div>
-                      <label className="mb-0.5 block text-[11px] text-text-dim">{t("clientProfile.email")}</label>
-                      <div className="flex items-center gap-1">
-                        <input
-                          value={email}
-                          disabled={!canEdit("email")}
-                          onChange={(e) => setEmail(e.target.value)}
-                          className={inputCls}
-                        />
-                        {canSendClientEmail && email.trim() && (
-                          <SendClientEmailButton
-                            caseId={caseRecord.id}
-                            confirm={confirm}
-                            alertWarn={alertWarn}
-                            sendClientEmail={sendClientEmail}
-                            connectMicrosoftAccount={connectMicrosoftAccount}
-                          />
-                        )}
-                      </div>
                     </div>
                     <div className="col-span-2">
                       <label className="mb-0.5 block text-[11px] text-text-dim">{t("clientProfile.address")}</label>
@@ -375,6 +474,16 @@ export function ClientProfileDialog({
                         value={address}
                         disabled={!canEdit("address")}
                         onChange={(e) => setAddress(e.target.value)}
+                        className={inputCls}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-0.5 block text-[11px] text-text-dim">{t("clientProfile.zipcode")}</label>
+                      <input
+                        value={zipcode}
+                        disabled={!canEdit("zipcode")}
+                        maxLength={5}
+                        onChange={(e) => setZipcode(e.target.value.replace(/\D/g, "").slice(0, 5))}
                         className={inputCls}
                       />
                     </div>
@@ -456,6 +565,59 @@ export function ClientProfileDialog({
                         className={inputCls}
                       />
                     </div>
+                  </div>
+
+                  {/* 3 ô ngân hàng, đặt ngay dưới khối FC/Processing/EL Date (thêm
+                      2026-08-16) — chỉ dùng để điền vào email "Thông báo hoàn thuế" gửi
+                      khách hàng, không phải bank account thật của công ty. */}
+                  <div className="grid grid-cols-3 gap-2.5">
+                    <div>
+                      <label className="mb-0.5 block text-[11px] text-text-dim">{t("clientProfile.bankName")}</label>
+                      <input
+                        value={bankName}
+                        disabled={!canEdit("bankName")}
+                        onChange={(e) => setBankName(e.target.value)}
+                        className={inputCls}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-0.5 block text-[11px] text-text-dim">{t("clientProfile.routingNumber")}</label>
+                      <input
+                        value={routingNumber}
+                        disabled={!canEdit("routingNumber")}
+                        onChange={(e) => setRoutingNumber(e.target.value.replace(/\D/g, ""))}
+                        className={inputCls}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-0.5 block text-[11px] text-text-dim">{t("clientProfile.accountNumber")}</label>
+                      <input
+                        value={accountNumber}
+                        disabled={!canEdit("accountNumber")}
+                        onChange={(e) => setAccountNumber(e.target.value.replace(/\D/g, ""))}
+                        className={inputCls}
+                      />
+                    </div>
+                  </div>
+
+                  {/* 2 ô "Accountant"/"Accountant Support" (thêm 2026-08-16) —
+                      accountantSupport tự động đổ vào cột "ACCT" của tab Collecting khi
+                      bấm "Send Collecting Report" cạnh mỗi năm ở popup Refund by years. */}
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <UserPickerField
+                      label={t("clientProfile.accountant")}
+                      value={accountant}
+                      users={pickableUsers}
+                      disabled={!canEdit("accountant")}
+                      onChange={setAccountant}
+                    />
+                    <UserPickerField
+                      label={t("clientProfile.accountantSupport")}
+                      value={accountantSupport}
+                      users={pickableUsers}
+                      disabled={!canEdit("accountantSupport")}
+                      onChange={setAccountantSupport}
+                    />
                   </div>
                 </div>
               </div>

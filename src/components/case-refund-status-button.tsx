@@ -2,8 +2,8 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Eye, ChevronDown, Settings, X, Trash2, Plus } from "lucide-react";
-import { RefundYearStatus, SelectOption } from "@/lib/types";
+import { Eye, ChevronDown, Settings, X, Trash2, Plus, Send } from "lucide-react";
+import { CollectingReportManualFields, RefundYearStatus, SelectOption } from "@/lib/types";
 import { findRefundStatusOption, hasPendingRefundYear, refundYearRows } from "@/lib/refund-status";
 import { useConfirm } from "@/components/confirm-dialog";
 import { useAppStore } from "@/store/app-store";
@@ -12,7 +12,7 @@ import { darkenHex, withAlpha, hexToRgba15, rgbaToHex } from "@/lib/color";
 import { ColorSwatchPicker } from "@/components/color-swatch-picker";
 
 const MENU_MARGIN = 8;
-const MENU_WIDTH = 268;
+const MENU_WIDTH = 306;
 const MANAGE_WIDTH = 300;
 const YEAR_DROPDOWN_WIDTH = 144;
 
@@ -314,6 +314,194 @@ function RefundStatusOptionsManager({
   );
 }
 
+const PROGRAM_OPTIONS = ["EC", "1099"];
+const PAYMENT_METHOD_OPTIONS = ["Zelle", "Check", "Venmo", "Cash", "Credit"];
+
+function toNumberOrNull(v: string): number | null {
+  if (!v.trim()) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function MoneyField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  return (
+    <div>
+      <label className="mb-1 block text-[11px] text-text-dim">{label}</label>
+      <input
+        type="number"
+        inputMode="decimal"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onClick={(e) => e.stopPropagation()}
+        className="w-full rounded-lg border border-border bg-bg-elevated px-2.5 py-1.5 text-xs text-text outline-none focus:border-accent"
+      />
+    </div>
+  );
+}
+
+/** Popup nhập tay các trường Collecting mở khi bấm nút "Send" trước mỗi năm trong popup
+ * "Refund by years" (thêm 2026-08-16) — Name/Phone/Agent 1-2/ACCT/Year/Qual. Amount đã tự
+ * tính ở server (buildCollectingCustomFromCase) nên KHÔNG có ở đây, chỉ những trường không
+ * suy ra được từ Case mới cần người dùng tự nhập. */
+function SendCollectingReportDialog({
+  year,
+  onClose,
+  onSubmit,
+}: {
+  year: string;
+  onClose: () => void;
+  onSubmit: (manual: CollectingReportManualFields) => Promise<void>;
+}) {
+  const [program, setProgram] = useState("");
+  const [taxOffset, setTaxOffset] = useState(false);
+  const [approvedAmt, setApprovedAmt] = useState("");
+  const [upfrontFees, setUpfrontFees] = useState("");
+  const [totalCollected, setTotalCollected] = useState("");
+  const [pmtMethod, setPmtMethod] = useState("");
+  const [note, setNote] = useState("");
+  const [tips, setTips] = useState("");
+  const [receiptCheckNo, setReceiptCheckNo] = useState("");
+  const [receiptCheckAmt, setReceiptCheckAmt] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const t = useT();
+
+  async function handleSubmit() {
+    setSubmitting(true);
+    try {
+      await onSubmit({
+        program,
+        taxOffset,
+        approvedAmt: toNumberOrNull(approvedAmt),
+        upfrontFees: toNumberOrNull(upfrontFees),
+        totalCollected: toNumberOrNull(totalCollected),
+        pmtMethod,
+        note,
+        tips: toNumberOrNull(tips),
+        receiptCheckNo,
+        receiptCheckAmt: toNumberOrNull(receiptCheckAmt),
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/80 px-4 py-8" onClick={onClose}>
+      <div
+        className="popover max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl p-5 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-sm font-semibold">{t("collectingReport.dialogTitle", { year })}</h3>
+          <button onClick={onClose} className="text-text-faint hover:text-text" aria-label={t("common.close")}>
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <div>
+            <label className="mb-1 block text-[11px] text-text-dim">{t("collectingReport.program")}</label>
+            <div className="flex gap-2">
+              {PROGRAM_OPTIONS.map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setProgram(p)}
+                  className={`flex-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
+                    program === p ? "border-accent bg-accent-soft" : "border-border bg-bg-elevated hover:border-accent"
+                  }`}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-[11px] text-text-dim">{t("collectingReport.taxOffset")}</label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setTaxOffset(true)}
+                className={`flex-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
+                  taxOffset ? "border-accent bg-accent-soft" : "border-border bg-bg-elevated hover:border-accent"
+                }`}
+              >
+                {t("common.yes")}
+              </button>
+              <button
+                type="button"
+                onClick={() => setTaxOffset(false)}
+                className={`flex-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
+                  !taxOffset ? "border-accent bg-accent-soft" : "border-border bg-bg-elevated hover:border-accent"
+                }`}
+              >
+                {t("common.no")}
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2.5">
+            <MoneyField label={t("collectingReport.approvedAmt")} value={approvedAmt} onChange={setApprovedAmt} />
+            <MoneyField label={t("collectingReport.upfrontFees")} value={upfrontFees} onChange={setUpfrontFees} />
+          </div>
+          <MoneyField label={t("collectingReport.totalCollected")} value={totalCollected} onChange={setTotalCollected} />
+
+          <div>
+            <label className="mb-1 block text-[11px] text-text-dim">{t("collectingReport.pmtMethod")}</label>
+            <select
+              value={pmtMethod}
+              onChange={(e) => setPmtMethod(e.target.value)}
+              className="w-full rounded-lg border border-border bg-bg-elevated px-2.5 py-1.5 text-xs text-text outline-none focus:border-accent"
+            >
+              <option value="">—</option>
+              {PAYMENT_METHOD_OPTIONS.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2.5">
+            <MoneyField label={t("collectingReport.tips")} value={tips} onChange={setTips} />
+            <MoneyField label={t("collectingReport.receiptCheckAmt")} value={receiptCheckAmt} onChange={setReceiptCheckAmt} />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-[11px] text-text-dim">{t("collectingReport.receiptCheckNo")}</label>
+            <input
+              value={receiptCheckNo}
+              onChange={(e) => setReceiptCheckNo(e.target.value)}
+              className="w-full rounded-lg border border-border bg-bg-elevated px-2.5 py-1.5 text-xs text-text outline-none focus:border-accent"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-[11px] text-text-dim">{t("collectingReport.note")}</label>
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              rows={2}
+              className="w-full resize-none rounded-lg border border-border bg-bg-elevated px-2.5 py-1.5 text-xs text-text outline-none focus:border-accent"
+            />
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleSubmit}
+          disabled={submitting}
+          className="gradient-btn mt-4 w-full rounded-lg py-1.5 text-xs font-medium text-white disabled:cursor-default disabled:opacity-50"
+        >
+          {t("common.confirm")}
+        </button>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 /** Nút mắt cạnh số trong cột "Case" — bấm mở popup xem/sửa trạng thái từng năm refund,
  * hover mở cùng popup nhưng chỉ xem (không sửa được). Xanh lá đứng yên nếu không có năm
  * nào Pending, đỏ nhấp nháy (xem .refund-eye-pending trong globals.css) nếu có ít nhất 1
@@ -330,6 +518,8 @@ export function CaseRefundStatusButton({
   onAddOption,
   onUpdateOption,
   onRemoveOption,
+  canSendCollectingReport,
+  onSendCollectingReport,
 }: {
   refunds: Record<string, number>;
   refundYearStatus: Record<string, RefundYearStatus>;
@@ -343,10 +533,16 @@ export function CaseRefundStatusButton({
   onAddOption: (option: Omit<SelectOption, "id">) => void;
   onUpdateOption: (optionId: string, patch: Partial<Omit<SelectOption, "id">>) => void;
   onRemoveOption: (optionId: string) => void;
+  /** Quyền dùng nút "Send Collecting Report" trước mỗi năm (thêm 2026-08-16) — dùng lại
+   * feature `addCollectingRow` đã có sẵn (tạo dòng mới ở tab Collecting), không phải quyền
+   * sửa cột refunds nên tách riêng khỏi `editable`. */
+  canSendCollectingReport: boolean;
+  onSendCollectingReport: (year: string, manual: CollectingReportManualFields) => Promise<void>;
 }) {
   const [clickOpen, setClickOpen] = useState(false);
   const [hoverOpen, setHoverOpen] = useState(false);
   const [managing, setManaging] = useState(false);
+  const [sendYear, setSendYear] = useState<string | null>(null);
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -467,15 +663,30 @@ export function CaseRefundStatusButton({
                     <div className="flex flex-col gap-1.5">
                       {rows.map((r) => (
                         <div key={r.year} className="flex flex-col gap-1 rounded-lg px-1.5 py-1">
-                          <div className="grid grid-cols-[36px_1fr_auto] items-center gap-2">
+                          <div className="grid grid-cols-[20px_36px_1fr_100px] items-center gap-2">
+                            {clickOpen && canSendCollectingReport ? (
+                              <button
+                                type="button"
+                                onClick={() => setSendYear(r.year)}
+                                title={t("collectingReport.sendButtonTitle")}
+                                aria-label={t("collectingReport.sendButtonTitle")}
+                                className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-text-faint transition hover:bg-surface-hover hover:text-accent"
+                              >
+                                <Send size={11} />
+                              </button>
+                            ) : (
+                              <span className="h-5 w-5" aria-hidden="true" />
+                            )}
                             <span className="text-xs font-medium text-text-dim">{r.year}</span>
                             <span className="truncate text-xs font-semibold text-text">{formatMoney(r.amount)}</span>
-                            <YearStatusDropdown
-                              status={r.status}
-                              statusOptions={statusOptions}
-                              editable={canEditNow}
-                              onChange={(s) => onChangeStatus(r.year, s)}
-                            />
+                            <div className="flex justify-center">
+                              <YearStatusDropdown
+                                status={r.status}
+                                statusOptions={statusOptions}
+                                editable={canEditNow}
+                                onChange={(s) => onChangeStatus(r.year, s)}
+                              />
+                            </div>
                           </div>
                           {r.status === "pending" && (
                             <PendingReasonInput
@@ -495,6 +706,17 @@ export function CaseRefundStatusButton({
           </>,
           document.body
         )}
+
+      {sendYear && typeof document !== "undefined" && (
+        <SendCollectingReportDialog
+          year={sendYear}
+          onClose={() => setSendYear(null)}
+          onSubmit={async (manual) => {
+            await onSendCollectingReport(sendYear, manual);
+            setSendYear(null);
+          }}
+        />
+      )}
     </span>
   );
 }

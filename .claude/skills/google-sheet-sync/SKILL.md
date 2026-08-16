@@ -79,6 +79,22 @@ Google Sheet, regardless of who edits which side. This is what "CPA Review" (add
    surfacing) up front — they were each found the hard way on CPA Review's first real
    production connection and will bite any new synced tab identically if skipped.
 
+## Variant: fixed row/column layout instead of a business-key scan (Processor Leader report)
+
+"For Processor" (added 2026-08-16, `src/lib/processor-report-sheet-sync.ts`) syncs a
+COMPUTED aggregate table (sums, not raw records) — rows are a fixed task list
+(`AppConfig.processorReportTasks`), columns are the current list of `role: "processor"`
+users. Since both dimensions are already known from app config (unlike CPA Review's SSN scan
+against an arbitrary existing spreadsheet), connect/resync just WRITES the full layout —
+section-header and TOTAL cells are native Sheets `=SUM(...)` formulas (not app-computed
+values re-written every push), and only leaf (task × processor) cells get raw number writes.
+`taskRowMap`/`userColumnMap` cache the row/column assigned per task/user so a single-cell
+push (`pushProcessorReportCell`) never needs to re-scan the sheet. The webhook is simpler too
+— no "unmatched key → auto-create" branch, since an edit at a row/column not present in the
+cached maps is just skipped (`row_or_col_not_mapped`). Use this simpler variant instead of
+the SSN-scan pattern whenever a new synced tab's rows AND columns are both derived from
+existing app state rather than needing to mirror an arbitrary pre-existing spreadsheet.
+
 ## Apps Script gotchas — copy these into any new `buildAppsScript()` generator
 
 These 2 bugs are near-guaranteed to recur on a NEW synced tab if the generator is written

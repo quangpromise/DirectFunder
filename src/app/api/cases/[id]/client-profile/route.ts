@@ -24,6 +24,12 @@ const FIELD_TO_COLUMN_KEY: Record<string, string> = {
   fcDate: "fcDate",
   processingDate: "processingDate",
   elDate: "elDate",
+  bankName: "bankName",
+  routingNumber: "routingNumber",
+  accountNumber: "accountNumber",
+  note: "note",
+  accountant: "accountant",
+  accountantSupport: "accountantSupport",
 };
 
 interface ClientProfilePayload {
@@ -39,6 +45,12 @@ interface ClientProfilePayload {
   fcDate?: string | null;
   processingDate?: string | null;
   elDate?: string | null;
+  bankName?: string | null;
+  routingNumber?: string | null;
+  accountNumber?: string | null;
+  note?: string | null;
+  accountant?: string | null;
+  accountantSupport?: string | null;
 }
 
 /**

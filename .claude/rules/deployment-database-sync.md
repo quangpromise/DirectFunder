@@ -60,16 +60,21 @@ Thêm `Case.phone2`/`Case.email`/`Case.dateOfBirth`/`Case.refunds` (additive) + 
 3. Đăng nhập bằng tài khoản **không phải Manager** (vd Processor) thật trên production, bấm nút bút chì "Edit Hồ sơ" ở 1 hồ sơ bất kỳ → xác nhận 4 field mới (Date of Birth, Phone 2, Email, Refund) hiện **enable được** (không bị khoá xám) đúng theo `editableBy` đã cấu hình — nếu vẫn khoá dù đã chạy bước 2, kiểm tra lại script merge có đúng target `AppConfig.id: "singleton"` production không.
 4. Thử sửa + Lưu 1 hồ sơ test → xác nhận cột "Case"/"Money" trên bảng chính production cập nhật đúng và **không còn bấm sửa tay trực tiếp được** (click vào ô không hiện input).
 
-### 4.12 [CHỜ XỬ LÝ] Đồng bộ production cho tính năng "Gửi email cho khách hàng" (Microsoft 365/Outlook) (thêm 2026-08-11)
+### 4.12 [CHỜ XỬ LÝ] Đồng bộ production cho tính năng "Gửi email cho khách hàng" — SMTP webmail công ty, per-user (viết lại 2026-08-15, thay hẳn thiết kế Microsoft 365/Outlook OAuth2 ban đầu)
 
-Tính năng mới thêm `User.microsoftRefreshToken` + `AppConfig.clientEmailTemplate` (2 field additive) + feature key `sendClientEmail` vào `DEFAULT_FEATURE_PERMISSIONS` — đúng loại thay đổi mô tả ở mục 4.8, nên **sau khi deploy code này lên production PHẢI làm đủ các bước sau** (xoá mục này khỏi file khi đã làm xong):
-1. `prisma migrate deploy` nhắm production (2 cột trên, an toàn/additive).
-2. Chạy script merge cộng dồn thêm `sendClientEmail: ["processor"]` vào `AppConfig.featurePermissions` production nếu key đó chưa có (nếu bỏ qua, processor trên production sẽ không thấy nút dù code đúng — xem cơ chế lỗi ở mục 4.8).
-3. Tạo App registration trên Azure Portal (tenant công ty `@directfunder.com`, Single tenant) nếu chưa có từ bước dev, đăng ký thêm redirect URI production `https://<production-domain>/api/auth/microsoft/callback`, xác nhận API permission `Mail.Send` (Delegated) đã cấp, Admin bấm "Grant admin consent" nếu tenant policy yêu cầu.
-4. Thêm `MICROSOFT_OAUTH_CLIENT_ID`/`MICROSOFT_OAUTH_CLIENT_SECRET`/`MICROSOFT_TENANT_ID` vào Vercel Environment Variables (Production).
-5. Đăng nhập bằng tài khoản **processor** thật trên production, mở popup "Edit Hồ sơ" 1 hồ sơ đã có email khách hàng → bấm nút gửi mail cạnh field Email → xác nhận popup OAuth Microsoft mở đúng, đăng nhập bằng mailbox `@directfunder.com` thật, kết nối xong tự gửi tiếp.
-6. Vào trang Phân quyền (Admin), mở dialog cấu hình mẫu email khách hàng, nhập Subject/Body thật lần đầu (mặc định rỗng sau migration → dùng DEFAULT_CLIENT_EMAIL_SUBJECT/BODY trong code cho tới khi Admin lưu).
-7. Gửi thử 1 email thật tới hộp thư test, xác nhận nội dung/placeholder render đúng và mail đến từ đúng địa chỉ `@directfunder.com` của người bấm gửi (không phải mailbox chung).
+**Lịch sử quyết định (đọc trước khi làm gì với mục này)**: bản đầu tiên (2026-08-11) dùng Microsoft Graph OAuth2 (`User.microsoftRefreshToken`, App registration Azure AD) — không triển khai được vì không ai trong team có quyền admin Azure AD của tenant `directfunder.com` để tạo App registration, và tự đăng ký app dưới tài khoản Microsoft cá nhân (multitenant) cũng thất bại với lỗi `InteractionRequired` do máy đang SSO sẵn tài khoản công ty ở tầng Windows (Primary Refresh Token) — không có đường nào tiếp tục được với OAuth. Xác nhận công ty thực ra dùng webmail thường (cPanel-style) tại `mail.directfunder.com` (SMTP port 465, SSL), không phải Microsoft 365 — toàn bộ tính năng được viết lại dùng SMTP thuần qua `nodemailer`, mỗi user tự kết nối **mailbox webmail riêng của họ** (giữ đúng ý định ban đầu "gửi bằng đúng email của từng nhân viên") bằng cách nhập email + mật khẩu webmail 1 lần qua dialog trong app, thay cho popup OAuth. Xem chi tiết kiến trúc ở `.claude/skills/send-client-email/SKILL.md` (Pattern B).
+
+Migration `20260815193221_webmail_smtp_client_email` (local) xoá `User.microsoftRefreshToken`, thêm `User.webmailUsername` + `User.webmailPasswordEncrypted` (mật khẩu mã hóa AES-256-GCM, xem `src/lib/webmail-crypto.ts` — **KHÔNG** lưu plain text như 2 refresh token OAuth khác vì đây là secret thật không thu hồi được từ xa). `AppConfig.clientEmailTemplate` + feature key `sendClientEmail` giữ nguyên không đổi từ bản trước.
+
+**Sau khi deploy code này lên production PHẢI làm đủ các bước sau** (xoá mục này khỏi file khi đã làm xong):
+1. `prisma migrate deploy` nhắm production (xoá cột `microsoftRefreshToken`, thêm `webmailUsername`/`webmailPasswordEncrypted` — kiểm tra backup Neon trước khi chạy vì có bước DROP COLUMN, dù cột đó đang rỗng trên production).
+2. Nếu `sendClientEmail` chưa từng được merge vào `AppConfig.featurePermissions` production ở đợt deploy trước: chạy script merge cộng dồn thêm `sendClientEmail: ["processor"]` (xem cơ chế lỗi ở mục 4.8) — nếu đã merge từ trước thì bỏ qua bước này.
+3. Sinh `WEBMAIL_CREDENTIAL_ENCRYPTION_KEY` mới bằng `openssl rand -base64 32`, thêm vào Vercel Environment Variables (Production) cùng `WEBMAIL_SMTP_HOST=mail.directfunder.com`/`WEBMAIL_SMTP_PORT=465` (2 biến sau có default trong code nên thực ra không bắt buộc, chỉ cần nếu muốn tường minh). **Không được đổi key này sau khi đã có user kết nối** — đổi key khiến mọi mật khẩu đã lưu không giải mã được nữa, phải yêu cầu toàn bộ user kết nối lại. Xoá 3 biến `MICROSOFT_*` cũ khỏi Vercel (không còn dùng).
+4. Đăng nhập bằng tài khoản **processor** thật trên production, mở popup "Edit Hồ sơ" 1 hồ sơ đã có email khách hàng → bấm nút gửi mail cạnh field Email → xác nhận hiện dialog "Kết nối hộp mail công ty" → nhập đúng email + mật khẩu webmail thật của họ → xác nhận kết nối thành công và tự gửi tiếp.
+5. Thử nhập sai mật khẩu ở bước kết nối → xác nhận báo lỗi rõ ràng, không lưu credential sai.
+6. Vào trang Phân quyền (Admin), mở dialog cấu hình mẫu email khách hàng, nhập Subject/Body thật lần đầu nếu chưa từng lưu (mặc định rỗng → dùng DEFAULT_CLIENT_EMAIL_SUBJECT/BODY trong code cho tới khi Admin lưu).
+7. Gửi thử 1 email thật tới hộp thư test, xác nhận nội dung/placeholder render đúng và mail đến từ đúng địa chỉ webmail của người bấm gửi (không phải mailbox chung).
+8. Đổi mật khẩu webmail thật của 1 tài khoản (ngoài app) → thử gửi mail bằng tài khoản đó trong app → xác nhận báo lỗi xác thực + tự yêu cầu kết nối lại (không lặp lỗi âm thầm mãi).
 
 ### 4.13 [CHỜ XỬ LÝ] Đồng bộ production cho "Case.sortOrder" (lưu thứ tự kéo-thả dòng) (thêm 2026-08-11)
 
@@ -271,6 +276,94 @@ Nút mới (icon bình thí nghiệm) đặt ngay dưới "Send mail to CPA" c�
 3. Vào tab "CPA Review" tháng hiện tại → xác nhận dòng mới xuất hiện, đúng dữ liệu (Name ghép Taxpayer & Spouse, Phone/SSN/DOB xuống dòng nếu có 2 số, Processor/Agent đúng, chỉ đúng (các) năm đã chọn có số tiền, FC/Processing/EL Date lấy từ Edit Hồ sơ hoặc "NA" nếu trống, CRM Source để trống).
 4. Bấm icon xanh (đã gửi) lần nữa → xác nhận hiện popup "muốn gửi lại?" riêng biệt, bấm "Có" → icon quay về trạng thái mặc định (chưa gửi), bấm lại mở đúng popup chọn năm từ đầu.
 5. Trong popup chọn năm, bấm "Đánh dấu đã gửi" (không chọn năm nào trước) → xác nhận icon chuyển xanh ngay, KHÔNG có dòng mới nào được tạo trong tab CPA Review (chỉ đánh dấu UI).
+
+### 4.25 [CHỜ XỬ LÝ] Email "Thông báo hoàn thuế" gửi khách hàng — thay hẳn mẫu Subject/Body tự do, thêm 3 ô ngân hàng + Tax INT theo năm (thêm 2026-08-16)
+
+Viết lại hoàn toàn nút gửi mail cạnh ô Email (popup Edit Hồ sơ) — trước đây bấm là gửi ngay 1 mẫu Subject/Body Admin tự soạn tự do (xem mục 4.12); giờ bấm mở popup chọn năm (giống hệt "Test Sheet"/"Send row to Google Sheet") + chọn ngôn ngữ VI/EN + ô nhập "Additional tax on 1099-INT" riêng cho mỗi năm đã chọn, rồi gửi 1 lá thư CỐ ĐỊNH (không phải template Admin sửa câu chữ nữa) tính từ dữ liệu hồ sơ — subject dạng `[25 TAX REFUND] Taxpayer & Spouse - Phone` (nhiều năm: `[23-24-25 TAX REFUND]...`), body liệt kê Tax credit/Additional tax on 1099-INT/Estimated refund amount từng năm, kèm chữ ký cố định (banner `public/logo-chuky.png` + avatar user qua cid attachment, xem `src/lib/refund-notification-email.ts`).
+
+Gồm ĐỦ 3 loại thay đổi:
+1. **4 cột mới trên `Case`** (`bankName`/`routingNumber`/`accountNumber` String?, `taxIntByYear` Json? default `{}`) — additive, migration `20260815202859_refund_notification_email`. 3 ô ngân hàng chỉ sửa qua popup Edit Hồ sơ (giống fcDate/processingDate/elDate ở mục 4.23) — **KHÔNG** phải bank account thật của công ty, chỉ dùng để điền vào nội dung mail.
+2. **3 cột ẩn mới trong `DEFAULT_COLUMNS`** (`bankName`/`routingNumber`/`accountNumber`, cùng nhóm quyền `refunds`) — đúng loại thay đổi mô tả ở mục 4.8, **BẮT BUỘC** script merge `AppConfig.columns` production như mục 4.23 đã làm, nếu không 3 ô này sẽ hiện khoá xám ở mọi role kể cả Manager.
+3. **`AppConfig.clientEmailTemplate` đổi hình dạng** (không đổi schema, cùng cột Json cũ) — bỏ hẳn `subjectTemplate`/`bodyTemplate`/`signatureTemplate` tự do, thay bằng `signatureJobTitle`/`signaturePhone`/`signatureAddress`/`supportPhone` (4 field text cấu hình 1 lần, dùng chung mọi user) + giữ nguyên `cc`. Config cũ (nếu Admin đã từng lưu subjectTemplate/bodyTemplate) sẽ bị bỏ qua hoàn toàn (route mới không đọc 2 field đó nữa) — không cần dọn dữ liệu cũ, chỉ là dead data trong JSON.
+
+**Sau khi deploy code này lên production PHẢI làm đủ các bước sau** (xoá mục này khỏi file khi đã làm xong):
+1. `prisma migrate deploy` nhắm production (4 cột mới trên `cases`, an toàn/additive).
+2. Chạy script merge cộng dồn nhắm `AppConfig.columns` production: thêm 3 cột `bankName`/`routingNumber`/`accountNumber` (copy nguyên định nghĩa trong `rbac.ts`) NẾU production chưa có id đó — **bắt buộc**, xem lỗi đã gặp ở mục 4.23.
+3. Đảm bảo `public/logo-chuky.png` đã commit vào git và có mặt trong build production (kiểm tra `https://<production-domain>/logo-chuky.png` load được) — route đọc file này từ `process.cwd()/public` lúc gửi mail, thiếu file thì mail vẫn gửi được nhưng mất ảnh banner cuối chữ ký (không crash, có try/catch).
+4. Đăng nhập production bằng tài khoản **không phải Manager** (vd Processor), mở popup Edit Hồ sơ 1 hồ sơ có email khách → xác nhận 3 ô Bank Name/Routing Number/Account Number hiện **enable được** (không khoá xám) → điền thử + Lưu → reload xác nhận còn nguyên.
+5. Bấm nút gửi mail cạnh ô Email → xác nhận popup chọn năm hiện đúng số refund từng năm, chọn 2-3 năm → xác nhận hiện ô nhập Tax INT cho đúng từng năm đã chọn → gõ thử số → bấm gửi (nếu chưa kết nối webmail sẽ hiện dialog kết nối trước, xem mục 4.12) → xác nhận gửi thành công.
+6. Mở lại popup gửi mail cho ĐÚNG hồ sơ đó lần 2 → chọn lại đúng những năm vừa gửi → xác nhận ô Tax INT tự điền lại đúng số đã nhập lần trước (đã lưu vào `Case.taxIntByYear`), không phải gõ lại.
+7. Kiểm tra email nhận được: subject đúng định dạng `[XX-YY TAX REFUND] Tên - Phone`, nội dung đúng ngôn ngữ đã chọn, số tiền từng năm = refund năm đó trừ Tax INT đã nhập, có ảnh đại diện người gửi (nếu tài khoản đó có avatar) và banner Tax Credit Funder ở cuối chữ ký, tên/email/chức danh/phone/địa chỉ đúng.
+8. Vào trang Phân quyền → "Cấu hình email khách hàng" → xác nhận dialog giờ chỉ còn Cc + 4 ô (Chức danh/Phone/Địa chỉ chữ ký/Số Customer Service), không còn ô Subject/Body/Signature tự do → sửa thử Chức danh → gửi lại thư ở bước 5 → xác nhận chữ ký cập nhật đúng chức danh mới.
+
+### 4.26 [CHỜ XỬ LÝ] Ô "Note" trong popup "Edit Hồ sơ" — ghi chú tự do đặt dưới khối Taxpayer/Spouse (thêm 2026-08-16)
+
+Bố cục popup "Edit Hồ sơ" (`ClientProfileDialog`) từng để trống 1 khoảng dưới 2 khối Taxpayer/Spouse (chỉ có 4 field mỗi khối, ngắn hơn cột bên phải) — thêm `Case.note` (cột mới, `String?`, additive) + 1 cột ẩn mới `note` vào `DEFAULT_COLUMNS` (cùng nhóm quyền với `bankName`/`refunds`: `manager`, `accounting`, `agent`, `processor`, `agent_leader`, `processor_leader`) để lấp đúng khoảng trống đó bằng 1 `<textarea>` span 2 cột. **Không liên quan cột "description" (Mô tả, có reply threading) đã có sẵn ngoài bảng chính** — đây là ghi chú tự do riêng, chỉ sửa qua popup này. Đúng loại thay đổi mô tả ở mục 4.8 (thêm cột ẩn mới cho popup "Edit Hồ sơ", giống mục 4.11/4.23/4.25).
+
+**Đã tự gặp đúng lỗi mô tả ở mục 4.8 khi test ở local**: sau khi thêm cột vào `DEFAULT_COLUMNS`, `AppConfig.columns` trên DB dev (đã seed từ trước) KHÔNG tự có cột `note` mới này → ô Note hiện disabled/khoá xám dù đăng nhập bằng manager. Đã vá bằng script merge cộng dồn (thêm đúng 1 object cột `note` vào mảng `columns` hiện có, không đụng cột nào khác) — **PHẢI làm lại y hệt trên production**. Cũng đã tự gặp lại đúng gotcha "Prisma Client staleness" mô tả ở đầu file (`npx prisma migrate dev` không tự in log "Generated Prisma Client" lần này) — phải chạy thêm `npx prisma generate` + restart hẳn dev server (kill process cũ đang giữ Prisma Client cũ trong bộ nhớ, `rm -rf .next`) thì API mới hết lỗi 500 khi lưu field `note`.
+
+**Sau khi deploy code này lên production PHẢI làm đủ các bước sau** (xoá mục này khỏi file khi đã làm xong):
+1. `prisma migrate deploy` nhắm production (1 cột mới `note` trên `cases`, an toàn/additive).
+2. Chạy script merge cộng dồn nhắm `AppConfig.columns` production: thêm cột `note` (copy nguyên định nghĩa trong `rbac.ts`) NẾU production chưa có id đó — **bắt buộc**, xem lỗi đã gặp ở local phía trên.
+3. Đăng nhập production bằng tài khoản **không phải Manager** (vd Processor/Agent), mở popup "Edit Hồ sơ" 1 hồ sơ bất kỳ → xác nhận ô "Note" hiện ngay dưới khối Taxpayer/Spouse, **enable được** (không khoá xám) đúng theo quyền đã cấu hình.
+4. Gõ thử nội dung ghi chú, bấm Lưu → reload trang, mở lại popup → xác nhận nội dung còn nguyên.
+
+### 4.27 [CHỜ XỬ LÝ] Nút "Send email to client" — dựng lại thành preview→soạn mail→gửi + trạng thái "đã gửi" bền vững (thêm 2026-08-16)
+
+Viết lại luồng gửi email "Thông báo hoàn thuế": trước đây bấm "Send" ở popup chọn năm là gửi ngay, không có trạng thái "đã gửi" bền vững (chỉ tick xanh tạm 5s). Giờ:
+1. Popup chọn năm: ô Tax INT hiện NGAY DƯỚI năm vừa chọn (bôi vàng nổi bật), thêm nút phụ "Đánh dấu đã gửi" (giống TestSheetButton).
+2. Nút "Send" đổi thành "Xác nhận"/"Confirm" — gọi `POST /api/cases/[id]/refund-email-preview` (route MỚI, không lưu/gửi gì) dựng sẵn Subject + nội dung, mở màn hình "soạn mail" (Subject input + `MailBodyEditor` rich text) cho sửa tự do trước khi gửi thật (quyết định sản phẩm rõ ràng — không phải preview chỉ xem).
+3. Nút "Send" ở màn hình soạn mail mới thật sự gọi `POST /api/cases/[id]/send-client-email` (route đổi payload — nhận thẳng `subject`/`bodyHtml` đã sửa thay vì tự build lại từ template).
+4. Gửi thật/"Đánh dấu đã gửi" đều lưu `Case.clientEmailSentAt` (cột mới, additive, cùng cơ chế `sheetSentAt`/`cpaEmailSentAt`/`cpaReviewTestSentAt`) — icon chuyển xanh bền vững qua reload, bấm lại lúc xanh hỏi "muốn gửi lại?" giống 3 nút kia.
+
+**Đây CHỈ là 1 cột `DateTime?` mới trên `Case`** (giống mục 4.13/4.14/4.19/4.24) — **KHÔNG đụng `DEFAULT_COLUMNS`/`DEFAULT_FEATURE_PERMISSIONS`/`AppConfig`** nên **không cần** script merge `AppConfig`, chỉ cần migration. Route mới `refund-email-preview` dùng lại đúng feature `sendClientEmail` đã có (không thêm feature key nào).
+
+**Sau khi deploy code này lên production PHẢI làm đủ các bước sau** (xoá mục này khỏi file khi đã làm xong):
+1. `prisma migrate deploy` nhắm production (1 cột mới `clientEmailSentAt` trên `cases`, an toàn/additive).
+2. Đăng nhập production bằng tài khoản có quyền `sendClientEmail` (mặc định Processor), mở 1 hồ sơ có email khách → bấm icon mail (đã chuyển ra bảng Hồ sơ chính, dưới icon Test Sheet — xem mục trước đó về việc dời nút này) → chọn 1-2 năm, gõ thử Tax INT → xác nhận ô Tax INT hiện đúng ngay dưới năm vừa chọn, bôi vàng.
+3. Bấm "Xác nhận" → xác nhận mở màn hình soạn mail với Subject/Nội dung điền sẵn đúng dữ liệu hồ sơ → sửa thử 1 chỗ trong nội dung → bấm "Gửi" (nếu chưa kết nối webmail sẽ hiện dialog kết nối trước) → xác nhận gửi thành công, icon chuyển xanh.
+4. Reload trang → xác nhận icon vẫn xanh (không mất trạng thái). Bấm lại icon xanh → xác nhận hiện popup "muốn gửi lại?" riêng, bấm "Có" → icon quay về mặc định.
+5. Mở lại popup chọn năm, bấm "Đánh dấu đã gửi" (không qua màn hình soạn mail) → xác nhận icon chuyển xanh ngay, không có email nào thật sự được gửi.
+
+### 4.28 [CHỜ XỬ LÝ] Tab "For Processor" — báo cáo công việc hằng ngày (Processor) + tổng hợp theo tháng (Processor Leader) + sync 2 chiều Google Sheet (thêm 2026-08-16)
+
+Nút mới "For Processor" (icon `ClipboardList`) đặt cạnh EC Qualification trên bảng Hồ sơ, gate bằng feature `viewForProcessor` (mặc định `["processor","processor_leader"]`, KHÔNG rỗng). Bấm vào mở popup 2 tab: **Report** (đã triển khai) và **Document** (placeholder "sắp ra mắt", chưa có logic gì — quyết định của user 2026-08-16, sẽ làm sau khi có yêu cầu cụ thể).
+
+Tab Report hiển thị khác nhau theo role: **Processor** thấy bảng nhập liệu CÁ NHÂN (hàng = task cố định theo mẫu Excel gốc, 6 nhóm ~25 task; cột = từng ngày trong tháng + cột tổng tuần W1/W2...), nhập số lượng trực tiếp. **Processor Leader/Quản lý** thấy bảng TỔNG HỢP (cùng hàng task, cột = từng Processor + cột TOTAL) — đây là số liệu TÍNH RA (sum), không gõ tay.
+
+**Kiến trúc dữ liệu** — 2 tầng, giống cách CPA Review tách "record thật" khỏi "cache đẩy Sheet":
+1. `ProcessorReportEntry` (Prisma mới) — số liệu thật Processor tự gõ: `(userId, taskId, date, value)`.
+2. `ProcessorReportMonthlySummary` (Prisma mới) — cache tổng theo `(month, taskId, userId)`, tính lại đúng 1 ô mỗi khi 1 entry đổi (`recomputeAndPushProcessorReportSummary`, `src/lib/processor-report-sheet-sync.ts`), đồng thời đẩy đúng ô đó lên Sheet nếu tháng đã kết nối. Đây là thứ Leader nhìn thấy VÀ đồng bộ 2 chiều — **lưu ý ngữ nghĩa**: sửa tay 1 ô trên Sheet có hiệu lực ngay nhưng sẽ bị TÍNH LẠI đè lên ngay khi chính Processor đó sửa thêm entry của đúng task/tháng đó (khác CPA Review, nơi Sheet giữ đúng bản ghi gốc) — đã xác nhận đây là đánh đổi hợp lý cho dữ liệu tổng hợp.
+3. `AppConfig.processorReportTasks` (Json?, additive) — danh sách task (hàng), Leader/Quản lý tự thêm/sửa/xoá qua UI (feature `manageProcessorReportTasks`, mặc định `[]`). null → fallback `DEFAULT_PROCESSOR_REPORT_TASKS` (rbac.ts).
+4. `AppConfig.processorReportSheetConfig` (Json?, additive) — `Record<"YYYY-MM", ProcessorReportSheetConfig>`, mỗi tháng 1 Sheet riêng (cùng tinh thần `cpaReviewSheetConfig`). Khác CPA Review: hàng (task)/cột (processor) đều biết trước từ config app — connect/resync GHI layout (section header dùng công thức `=SUM(...)` Sheets tự tính, không phải app tự tính rồi ghi đè) rồi lưu `taskRowMap`/`userColumnMap`, không cần quét-tìm-dòng theo business key như SSN.
+
+Sync 2 chiều dùng lại đúng Service Account đã cấu hình cho CPA Review (`GOOGLE_SERVICE_ACCOUNT_EMAIL`/`_PRIVATE_KEY`, KHÔNG cần env var mới) — xem `.claude/skills/google-sheet-sync/SKILL.md` cho kiến trúc chung, `src/lib/processor-report-sheet-sync.ts` cho phần riêng tính năng này.
+
+**3 feature key mới**: `viewForProcessor` (`["processor","processor_leader"]`, KHÔNG rỗng — **bắt buộc** script merge production, xem mục 4.8), `manageProcessorReportTasks` + `manageProcessorReportSheet` (đều `[]`, **không bắt buộc** merge — Manager luôn bypass qua `hasFeature()`).
+
+**Sau khi deploy code này lên production PHẢI làm đủ các bước sau** (xoá mục này khỏi file khi đã làm xong):
+1. `prisma migrate deploy` nhắm production (2 bảng mới `processor_report_entries`/`processor_report_monthly_summaries` + 2 cột `AppConfig.processorReportTasks`/`processorReportSheetConfig`, tất cả additive).
+2. Chạy script merge cộng dồn thêm `viewForProcessor: ["processor","processor_leader"]` vào `AppConfig.featurePermissions` production — **bắt buộc**.
+3. Đăng nhập production bằng tài khoản **Processor** thật → xác nhận thấy nút "For Processor" cạnh EC Qualification, mở popup thấy đúng danh sách task 6 nhóm, nhập vài ô → reload xác nhận còn nguyên.
+4. Đăng nhập bằng tài khoản **Processor Leader hoặc Manager** → xác nhận thấy bảng tổng hợp đúng cột theo từng Processor + TOTAL, số liệu khớp với bước 3. Thử thêm/sửa/xoá 1 task qua "Quản lý task" → xác nhận cả 2 bảng (Processor/Leader) cùng cập nhật.
+5. Kết nối 1 Google Sheet test cho tháng hiện tại (nút "Kết nối Sheet" trong bảng Leader), dán Apps Script vào Extensions → Apps Script, chọn hàm `installProcessorReportTriggers` rồi Run → xác nhận cấp quyền + cài trigger thành công.
+6. Sửa 1 ô trong app (từ phía Processor) → xác nhận Sheet cập nhật trong vài giây. Sửa trực tiếp 1 ô số trên Sheet (đúng dòng task/cột processor) → mở lại (hoặc đóng/mở lại) popup "For Processor" phía Leader → xác nhận số đã cập nhật (KHÁC CPA Review — popup này CHƯA wire Pusher realtime, phải tự mở lại/F5 mới thấy thay đổi từ Sheet, không tự động như tab CPA Review).
+7. Đăng nhập bằng tài khoản KHÔNG có `viewForProcessor` (vd Support/Agent mặc định) → xác nhận KHÔNG thấy nút "For Processor".
+
+### 4.29 [CHỜ XỬ LÝ] Nút "Send Collecting Report" trước mỗi năm trong popup "Refund by years" (thêm 2026-08-16, mở rộng cùng ngày)
+
+Nút mới (icon `Send`) đặt ngay trước nhãn năm trong popup "Refund by years" (nút mắt cạnh cột Case, `CaseRefundStatusButton`) — bấm vào mở 1 popup nhập tay (`SendCollectingReportDialog`) gồm Program (EC/1099), Tax Offset (Yes/No — Yes lưu thẳng chuỗi "X" vào cột `taxOffset`, cột kiểu text nên hiển thị đúng dấu X trên bảng Collecting không cần đổi type/logic render), Approved amt, Upfront fee, Total Collected, Payment method (Zelle/Check/Venmo/Cash/Credit), Note, Tip, Receipt/Check #, Receipt/Check Amt. — bấm "Xác nhận" tạo 1 dòng MỚI trong tab "Collecting" từ dữ liệu hồ sơ hiện có + các trường vừa nhập (`buildCollectingCustomFromCase`, `src/lib/case-to-collecting.ts`, chạy ở SERVER trong route `POST /api/cases/[id]/send-collecting-report`). Các trường suy ra được trực tiếp từ Case (không có trong popup): Date, Name, Phone, Agent 1/2 (tên hiển thị resolve từ `assignedTo`/`assignedTo2`), ACCT (lấy từ `Case.accountantSupport`), Year, Qual. Amount (= refund đúng năm đó).
+
+**2 ô mới "Accountant"/"Accountant Support"** thêm vào popup "Edit Hồ sơ" (`ClientProfileDialog`, cạnh khối 3 ô ngân hàng) — `Case.accountant`/`Case.accountantSupport` (2 cột mới, additive, migration `20260816065929_add_case_accountant_fields`) + 2 cột ẩn mới cùng nhóm quyền với `bankName`/`note` trong `DEFAULT_COLUMNS` — đúng loại thay đổi mô tả ở mục 4.8/4.23/4.25/4.26, **BẮT BUỘC** script merge `AppConfig.columns` production (đã tự gặp lại đúng lỗi "khoá xám dù đăng nhập Manager" ở local khi test, vá bằng script merge cộng dồn 2 cột này). `accountantSupport` là cột DUY NHẤT trong 2 cột này được dùng ở nơi khác (tự đổ vào ACCT khi gửi Collecting Report) — `accountant` hiện chỉ lưu lại.
+
+Dùng lại đúng feature `addCollectingRow` đã có sẵn cho quyền bấm nút Send — không thêm feature key mới, không đổi `DEFAULT_FEATURE_PERMISSIONS`. Không có trạng thái "đã gửi" bền vững — mỗi lần bấm luôn tạo 1 dòng Collecting mới (khác Test Sheet/Send to Sheet), có thể bấm cho nhiều năm khác nhau của cùng 1 hồ sơ, mỗi lần được nhập tay riêng.
+
+**Sau khi deploy code này lên production PHẢI làm đủ các bước sau** (xoá mục này khỏi file khi đã làm xong):
+1. `prisma migrate deploy` nhắm production (2 cột mới `accountant`/`accountantSupport` trên `cases`, an toàn/additive).
+2. Chạy script merge cộng dồn nhắm `AppConfig.columns` production: thêm 2 cột `accountant`/`accountantSupport` (copy nguyên định nghĩa trong `rbac.ts`) NẾU production chưa có id đó — **bắt buộc**, xem lỗi đã gặp ở local (mục 4.23/4.25/4.26 lặp lại).
+3. Đăng nhập production bằng tài khoản không phải Manager, mở popup "Edit Hồ sơ" 1 hồ sơ bất kỳ → xác nhận 2 ô "Accountant"/"Accountant Support" hiện enable được (không khoá xám) → điền thử + Lưu → reload xác nhận còn nguyên.
+4. Đăng nhập bằng tài khoản có quyền `addCollectingRow` (mặc định chỉ Manager) hoặc cấp thêm cho role khác qua trang Phân quyền → mở popup "Refund by years" (nút mắt) ở hồ sơ vừa điền Accountant Support → bấm icon Send ở 1 năm → điền thử vài trường (Program, Tax Offset = Yes, Approved amt...) → Xác nhận → vào tab "Collecting" → xác nhận dòng mới có ACCT đúng = Accountant Support vừa điền, cột Tax Offset hiện dấu "X", các trường khác khớp đã nhập.
+5. Đăng nhập bằng tài khoản KHÔNG có `addCollectingRow` (vd Processor mặc định) → mở popup "Refund by years" → xác nhận KHÔNG thấy icon gửi trước mỗi năm.
 
 Mục 2–5 bên dưới là kiến trúc/quy trình đề xuất (phần lớn đã áp dụng đúng như mô tả, trừ Auth đã nêu ở trên). Mục 6 là checklist hành động cụ thể để đưa app này lên cloud thật.
 

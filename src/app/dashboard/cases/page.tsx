@@ -7,7 +7,16 @@ import { Search, Plus, Trash2, FileText, DollarSign, GripVertical, ShieldAlert, 
 import { downloadCaseTemplate, parseCaseExcelFile, formatDuplicateSsnLines } from "@/lib/excel";
 import { useAppStore, useCurrentUser } from "@/store/app-store";
 import { canEditCase, canEditColumn, canViewCase, hasFeature } from "@/lib/rbac";
-import { CaseRecord, CheckInitialValue, ColumnDef, CpaEmailDefaults, RefundYearStatus, SelectOption, User } from "@/lib/types";
+import {
+  CaseRecord,
+  CheckInitialValue,
+  CollectingReportManualFields,
+  ColumnDef,
+  CpaEmailDefaults,
+  RefundYearStatus,
+  SelectOption,
+  User,
+} from "@/lib/types";
 import { CHECK_INITIAL_COLUMN_ID } from "@/lib/check-initial";
 import { CheckInitialCell } from "@/components/check-initial-cell";
 import { CaseRefundStatusButton } from "@/components/case-refund-status-button";
@@ -24,6 +33,8 @@ import { OrderCell } from "@/components/order-cell";
 import { SendToSheetButton } from "@/components/send-to-sheet-button";
 import { SendCpaEmailDialog } from "@/components/send-cpa-email-dialog";
 import { TestSheetButton } from "@/components/test-sheet-button";
+import { SendClientEmailButton } from "@/components/send-client-email-button";
+import { ForProcessorButton } from "@/components/for-processor-dialog";
 import { HistoryDialog } from "@/components/history-dialog";
 import { useConfirm } from "@/components/confirm-dialog";
 import { useAlert } from "@/components/alert-dialog";
@@ -251,9 +262,12 @@ export default function CasesPage() {
   const markCaseSheetSent = useAppStore((s) => s.markCaseSheetSent);
   const sendCaseRowToCpaReview = useAppStore((s) => s.sendCaseRowToCpaReview);
   const markCaseCpaReviewTestSent = useAppStore((s) => s.markCaseCpaReviewTestSent);
+  const sendCaseYearToCollecting = useAppStore((s) => s.sendCaseYearToCollecting);
   const connectGoogleAccount = useAppStore((s) => s.connectGoogleAccount);
+  const previewRefundEmail = useAppStore((s) => s.previewRefundEmail);
   const sendClientEmail = useAppStore((s) => s.sendClientEmail);
-  const connectMicrosoftAccount = useAppStore((s) => s.connectMicrosoftAccount);
+  const markClientEmailSent = useAppStore((s) => s.markClientEmailSent);
+  const connectWebmailAccount = useAppStore((s) => s.connectWebmailAccount);
   const addRow = useAppStore((s) => s.addRow);
   const importCases = useAppStore((s) => s.importCases);
   const deleteRow = useAppStore((s) => s.deleteRow);
@@ -636,6 +650,7 @@ export default function CasesPage() {
   const canSendCpaEmailFeature = hasFeature(permissions, "sendCpaEmail", user.role);
   const canSendToSheetFeature = hasFeature(permissions, "sendToGoogleSheet", user.role);
   const canSendClientEmailFeature = hasFeature(permissions, "sendClientEmail", user.role);
+  const canSendCollectingReportFeature = hasFeature(permissions, "addCollectingRow", user.role);
 
   const tabStatusOptions = tab === "all" ? statusOptions : statusOptions.filter((o) => getCaseTab(o.id) === tab);
 
@@ -729,7 +744,10 @@ export default function CasesPage() {
               {t("cases.summaryMode.case")}
             </button>
           </div>
-          <EcQualificationBox />
+          <div className="flex shrink-0 items-center gap-2">
+            <ForProcessorButton />
+            <EcQualificationBox />
+          </div>
         </div>
 
         <div className="hidden flex-wrap items-center gap-2 sm:flex">
@@ -1006,7 +1024,10 @@ export default function CasesPage() {
                     {t("cases.summaryMode.case")}
                   </button>
                 </div>
-                <EcQualificationBox />
+                <div className="flex shrink-0 items-center gap-2">
+                  <ForProcessorButton />
+                  <EcQualificationBox />
+                </div>
               </div>
 
               <div className="flex flex-wrap items-center gap-1.5">
@@ -1252,9 +1273,13 @@ export default function CasesPage() {
               connectGoogleAccount={connectGoogleAccount}
               sendCaseRowToCpaReview={sendCaseRowToCpaReview}
               markCaseCpaReviewTestSent={markCaseCpaReviewTestSent}
+              canSendCollectingReportFeature={canSendCollectingReportFeature}
+              sendCaseYearToCollecting={sendCaseYearToCollecting}
               canSendClientEmailFeature={canSendClientEmailFeature}
+              previewRefundEmail={previewRefundEmail}
               sendClientEmail={sendClientEmail}
-              connectMicrosoftAccount={connectMicrosoftAccount}
+              markClientEmailSent={markClientEmailSent}
+              connectWebmailAccount={connectWebmailAccount}
               confirm={confirm}
               alertWarn={alertWarn}
               dragRowId={dragRowId}
@@ -1451,9 +1476,13 @@ function RowCells({
   connectGoogleAccount,
   sendCaseRowToCpaReview,
   markCaseCpaReviewTestSent,
+  canSendCollectingReportFeature,
+  sendCaseYearToCollecting,
   canSendClientEmailFeature,
+  previewRefundEmail,
   sendClientEmail,
-  connectMicrosoftAccount,
+  markClientEmailSent,
+  connectWebmailAccount,
   confirm,
   alertWarn,
   dragRowId,
@@ -1531,11 +1560,34 @@ function RowCells({
     note?: string
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
   markCaseCpaReviewTestSent: (caseId: string, action: "manual" | "clear") => Promise<void>;
+  canSendCollectingReportFeature: boolean;
+  sendCaseYearToCollecting: (
+    caseId: string,
+    year: string,
+    manual: CollectingReportManualFields
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
   canSendClientEmailFeature: boolean;
+  previewRefundEmail: (
+    caseId: string,
+    payload: { years: string[]; language: "vi" | "en"; taxInt: Record<string, string> }
+  ) => Promise<
+    | { ok: true; subject: string; bodyHtml: string; to: string[]; cc: string[] }
+    | { ok: false; error: string }
+  >;
   sendClientEmail: (
-    caseId: string
-  ) => Promise<{ ok: true } | { ok: false; error: string; needsMicrosoftAuth?: boolean }>;
-  connectMicrosoftAccount: () => Promise<boolean>;
+    caseId: string,
+    payload: {
+      years: string[];
+      taxInt: Record<string, string>;
+      subject: string;
+      bodyHtml: string;
+      to: string[];
+      cc: string[];
+      attachments?: { filename: string; contentType: string; contentBase64: string }[];
+    }
+  ) => Promise<{ ok: true } | { ok: false; error: string; needsWebmailAuth?: boolean }>;
+  markClientEmailSent: (caseId: string, action: "manual" | "clear") => Promise<void>;
+  connectWebmailAccount: (email: string, password: string) => Promise<{ ok: true } | { ok: false; error: string }>;
   confirm: (message: string, opts?: { title?: string; tone?: "default" | "danger" }) => Promise<boolean>;
   alertWarn: (message: string, opts?: { title?: string }) => Promise<void>;
   dragRowId: string | null;
@@ -1609,44 +1661,63 @@ function RowCells({
             onCommit={(v) => updateCell(row.id, "status", v, false)}
           />
         )}
-        {sendButtonsStatusIds.has(row.status) && (canSendToSheetFeature || canSendCpaEmailFeature) && (
+        {((sendButtonsStatusIds.has(row.status) && (canSendToSheetFeature || canSendCpaEmailFeature)) ||
+          (canSendClientEmailFeature && row.email.trim())) && (
           // -translate-x-1 — dịch sang trái 1 chút, tránh nằm sát nút Edit Hồ sơ ở cột
           // Client Name ngay bên phải, dễ bấm nhầm.
           <div className="flex -translate-x-1 flex-col gap-0.5">
-            {canSendToSheetFeature && (
-              <SendToSheetButton
+            {sendButtonsStatusIds.has(row.status) && (canSendToSheetFeature || canSendCpaEmailFeature) && (
+              <>
+                {canSendToSheetFeature && (
+                  <SendToSheetButton
+                    caseId={row.id}
+                    sheetSentAt={row.sheetSentAt}
+                    refunds={row.refunds}
+                    confirm={confirm}
+                    alertWarn={alertWarn}
+                    sendCaseRowToSheet={sendCaseRowToSheet}
+                    markCaseSheetSent={markCaseSheetSent}
+                    connectGoogleAccount={connectGoogleAccount}
+                  />
+                )}
+                {canSendCpaEmailFeature && (
+                  <SendCpaEmailDialog
+                    disabled={false}
+                    caseRecord={row}
+                    defaults={cpaEmailDefaults}
+                    statusLabel={cpaEmailStatusLabel}
+                    senderEmail={cpaSenderEmail}
+                    senderName={user.name}
+                    confirm={confirm}
+                    onSend={(payload) => sendCpaEmail(row.id, payload)}
+                    markCpaEmailSent={markCpaEmailSent}
+                  />
+                )}
+                <TestSheetButton
+                  caseId={row.id}
+                  cpaReviewTestSentAt={row.cpaReviewTestSentAt}
+                  refunds={row.refunds}
+                  confirm={confirm}
+                  alertWarn={alertWarn}
+                  sendCaseRowToCpaReview={sendCaseRowToCpaReview}
+                  markCaseCpaReviewTestSent={markCaseCpaReviewTestSent}
+                />
+              </>
+            )}
+            {canSendClientEmailFeature && row.email.trim() && (
+              <SendClientEmailButton
                 caseId={row.id}
-                sheetSentAt={row.sheetSentAt}
                 refunds={row.refunds}
+                taxIntByYear={row.taxIntByYear}
+                clientEmailSentAt={row.clientEmailSentAt}
                 confirm={confirm}
                 alertWarn={alertWarn}
-                sendCaseRowToSheet={sendCaseRowToSheet}
-                markCaseSheetSent={markCaseSheetSent}
-                connectGoogleAccount={connectGoogleAccount}
+                previewRefundEmail={previewRefundEmail}
+                sendClientEmail={sendClientEmail}
+                markClientEmailSent={markClientEmailSent}
+                connectWebmailAccount={connectWebmailAccount}
               />
             )}
-            {canSendCpaEmailFeature && (
-              <SendCpaEmailDialog
-                disabled={false}
-                caseRecord={row}
-                defaults={cpaEmailDefaults}
-                statusLabel={cpaEmailStatusLabel}
-                senderEmail={cpaSenderEmail}
-                senderName={user.name}
-                confirm={confirm}
-                onSend={(payload) => sendCpaEmail(row.id, payload)}
-                markCpaEmailSent={markCpaEmailSent}
-              />
-            )}
-            <TestSheetButton
-              caseId={row.id}
-              cpaReviewTestSentAt={row.cpaReviewTestSentAt}
-              refunds={row.refunds}
-              confirm={confirm}
-              alertWarn={alertWarn}
-              sendCaseRowToCpaReview={sendCaseRowToCpaReview}
-              markCaseCpaReviewTestSent={markCaseCpaReviewTestSent}
-            />
           </div>
         )}
       </div>
@@ -1662,11 +1733,6 @@ function RowCells({
           onCommitLink={(link) => updateClientLink(row.id, link)}
           onSaveProfile={(payload) => updateClientProfile(row.id, payload)}
           isDuplicateSsn={(slot, candidate) => isDuplicateSsn(allCases, candidate, row.id, slot)}
-          canSendClientEmail={canSendClientEmailFeature}
-          confirm={confirm}
-          alertWarn={alertWarn}
-          sendClientEmail={sendClientEmail}
-          connectMicrosoftAccount={connectMicrosoftAccount}
         />
       </div>
       {otherColumns.map((col) =>
@@ -1774,6 +1840,11 @@ function RowCells({
               onAddOption={addRefundYearStatusOption}
               onUpdateOption={updateRefundYearStatusOption}
               onRemoveOption={removeRefundYearStatusOption}
+              canSendCollectingReport={canSendCollectingReportFeature}
+              onSendCollectingReport={async (year, manual) => {
+                const result = await sendCaseYearToCollecting(row.id, year, manual);
+                if (!result.ok) await alertWarn(result.error, { title: t("collectingReport.sendErrorTitle") });
+              }}
             />
           </div>
         ) : col.id === CHECK_INITIAL_COLUMN_ID ? (

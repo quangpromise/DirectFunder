@@ -74,6 +74,7 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/users/
     avatarColor: user.avatarColor,
     avatarUrl: user.avatarUrl,
     teamMemberIds: user.teamMemberIds,
+    webmailUsername: user.webmailUsername,
   });
 }
 

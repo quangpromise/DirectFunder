@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { CheckCircle2, FlaskConical, X } from "lucide-react";
+import { FlaskConical, X } from "lucide-react";
 import { useT } from "@/lib/i18n";
 import { REFUND_YEARS } from "@/lib/refund";
 
@@ -100,7 +100,7 @@ export function TestSheetButton({
             : "border-border bg-transparent text-text-faint hover:bg-surface-hover hover:text-text"
         }`}
       >
-        {sent ? <CheckCircle2 size={11} /> : <FlaskConical size={11} />}
+        <FlaskConical size={11} />
       </button>
 
       {yearPickerOpen &&

@@ -4,7 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LogOut, Menu, X, Table2, Users, ShieldCheck, ClipboardList, Coins, FileSpreadsheet, ChevronDown } from "lucide-react";
+import { LogOut, Menu, X, Table2, Users, ShieldCheck, ClipboardList, Coins, FileSpreadsheet, ChevronDown, MailCheck, MailWarning } from "lucide-react";
 import { useAppStore, useCurrentUser } from "@/store/app-store";
 import { hasFeature } from "@/lib/rbac";
 import { Avatar } from "@/components/avatar";
@@ -192,6 +192,22 @@ export function TopNav() {
                     <div className="truncate text-sm font-medium">{user.name}</div>
                     <RoleBadge role={user.role} />
                   </div>
+                </div>
+                {/* Trạng thái kết nối hộp mail webmail (mail.directfunder.com) — dùng cho
+                    tính năng "Send email to client" (xem send-client-email-button.tsx).
+                    Chỉ hiển thị thông tin, không có nút kết nối tại đây — kết nối vẫn qua
+                    ConnectWebmailDialog khi bấm gửi mail lần đầu ở bảng Hồ sơ. */}
+                <div
+                  className={`mx-2 mb-1.5 flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs ${
+                    user.webmailUsername
+                      ? "bg-green-500/10 text-green-400 light:bg-green-50 light:text-green-700"
+                      : "bg-amber-500/10 text-amber-500 light:bg-amber-50 light:text-amber-700"
+                  }`}
+                >
+                  {user.webmailUsername ? <MailCheck size={13} className="shrink-0" /> : <MailWarning size={13} className="shrink-0" />}
+                  <span className="min-w-0 truncate">
+                    {user.webmailUsername ? user.webmailUsername : t("topNav.webmailNotConnected")}
+                  </span>
                 </div>
                 <div className="my-1.5 border-t border-border" />
                 <ChangePasswordDialog userId={user.id} />

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { CheckCircle2, Send, X } from "lucide-react";
+import { Send, X } from "lucide-react";
 import { useT } from "@/lib/i18n";
 import { REFUND_YEARS } from "@/lib/refund";
 
@@ -117,7 +117,7 @@ export function SendToSheetButton({
             : "border-border bg-transparent text-text-faint hover:bg-surface-hover hover:text-text"
         }`}
       >
-        {sent ? <CheckCircle2 size={11} /> : <Send size={11} />}
+        <Send size={11} />
       </button>
 
       {yearPickerOpen &&

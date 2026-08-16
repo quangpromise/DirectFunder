@@ -34,6 +34,7 @@ export function toCaseRecord(row: {
   sheetSentAt: Date | null;
   cpaEmailSentAt: Date | null;
   cpaReviewTestSentAt: Date | null;
+  clientEmailSentAt: Date | null;
   sortOrder: number;
   refundYearStatus: Prisma.JsonValue;
   refundYearPendingReason: Prisma.JsonValue;
@@ -41,6 +42,13 @@ export function toCaseRecord(row: {
   fcDate: string | null;
   processingDate: string | null;
   elDate: string | null;
+  bankName: string | null;
+  routingNumber: string | null;
+  accountNumber: string | null;
+  note: string | null;
+  accountant: string | null;
+  accountantSupport: string | null;
+  taxIntByYear: Prisma.JsonValue;
   createdAt: Date;
   updatedAt: Date;
 }): CaseRecord {
@@ -72,6 +80,7 @@ export function toCaseRecord(row: {
     sheetSentAt: row.sheetSentAt ? row.sheetSentAt.toISOString() : null,
     cpaEmailSentAt: row.cpaEmailSentAt ? row.cpaEmailSentAt.toISOString() : null,
     cpaReviewTestSentAt: row.cpaReviewTestSentAt ? row.cpaReviewTestSentAt.toISOString() : null,
+    clientEmailSentAt: row.clientEmailSentAt ? row.clientEmailSentAt.toISOString() : null,
     sortOrder: row.sortOrder,
     refundYearStatus: (row.refundYearStatus as unknown as CaseRecord["refundYearStatus"]) ?? {},
     refundYearPendingReason: (row.refundYearPendingReason as unknown as CaseRecord["refundYearPendingReason"]) ?? {},
@@ -79,6 +88,13 @@ export function toCaseRecord(row: {
     fcDate: row.fcDate,
     processingDate: row.processingDate,
     elDate: row.elDate,
+    bankName: row.bankName,
+    routingNumber: row.routingNumber,
+    accountNumber: row.accountNumber,
+    note: row.note,
+    accountant: row.accountant,
+    accountantSupport: row.accountantSupport,
+    taxIntByYear: (row.taxIntByYear as unknown as CaseRecord["taxIntByYear"]) ?? {},
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
