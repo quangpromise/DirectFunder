@@ -11,6 +11,8 @@ import { Avatar } from "@/components/avatar";
 import { AvatarUpload } from "@/components/avatar-upload";
 import { RoleBadge } from "@/components/role-badge";
 import { ChangePasswordDialog } from "@/components/change-password-dialog";
+import { ConnectWebmailDialog } from "@/components/connect-webmail-dialog";
+import { useConfirm } from "@/components/confirm-dialog";
 import { PhoenixClock } from "@/components/phoenix-clock";
 import { NotificationBell } from "@/components/notification-bell";
 import { RulesPanel } from "@/components/rules-panel";
@@ -71,10 +73,22 @@ export function TopNav() {
   const pathname = usePathname();
   const logout = useAppStore((s) => s.logout);
   const updateAvatar = useAppStore((s) => s.updateAvatar);
+  const connectWebmailAccount = useAppStore((s) => s.connectWebmailAccount);
+  const disconnectWebmailAccount = useAppStore((s) => s.disconnectWebmailAccount);
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [connectWebmailOpen, setConnectWebmailOpen] = useState(false);
   const t = useT();
+  const { confirm, ConfirmDialogUI } = useConfirm();
+
+  async function handleDisconnectWebmail() {
+    const ok = await confirm(t("topNav.webmailDisconnectConfirm"), {
+      title: t("topNav.webmailDisconnectConfirmTitle"),
+      tone: "danger",
+    });
+    if (ok) await disconnectWebmailAccount();
+  }
 
   if (!user) return null;
 
@@ -193,10 +207,12 @@ export function TopNav() {
                     <RoleBadge role={user.role} />
                   </div>
                 </div>
-                {/* Trạng thái kết nối hộp mail webmail (mail.directfunder.com) — dùng cho
-                    tính năng "Send email to client" (xem send-client-email-button.tsx).
-                    Chỉ hiển thị thông tin, không có nút kết nối tại đây — kết nối vẫn qua
-                    ConnectWebmailDialog khi bấm gửi mail lần đầu ở bảng Hồ sơ. */}
+                {/* Trạng thái + kết nối/ngắt kết nối hộp mail webmail (mail.directfunder.com)
+                    — dùng cho tính năng "Send email to client" (send-client-email-button.tsx),
+                    nhưng kết nối được đặt ở ĐÂY cho MỌI user (không giới hạn theo quyền
+                    sendClientEmail) — thêm 2026-08-16, trước đó chỉ hiện thông tin, phải đợi
+                    tới lần đầu bấm gửi mail (chỉ Processor mới thấy nút đó) mới mở được dialog
+                    kết nối. */}
                 <div
                   className={`mx-2 mb-1.5 flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs ${
                     user.webmailUsername
@@ -205,9 +221,26 @@ export function TopNav() {
                   }`}
                 >
                   {user.webmailUsername ? <MailCheck size={13} className="shrink-0" /> : <MailWarning size={13} className="shrink-0" />}
-                  <span className="min-w-0 truncate">
+                  <span className="min-w-0 flex-1 truncate">
                     {user.webmailUsername ? user.webmailUsername : t("topNav.webmailNotConnected")}
                   </span>
+                  {user.webmailUsername ? (
+                    <button
+                      type="button"
+                      onClick={handleDisconnectWebmail}
+                      className="shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium text-green-400 underline-offset-2 hover:underline light:text-green-700"
+                    >
+                      {t("topNav.webmailDisconnectAction")}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setConnectWebmailOpen(true)}
+                      className="shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium text-amber-500 underline-offset-2 hover:underline light:text-amber-700"
+                    >
+                      {t("topNav.webmailConnectAction")}
+                    </button>
+                  )}
                 </div>
                 <div className="my-1.5 border-t border-border" />
                 <ChangePasswordDialog userId={user.id} />
@@ -227,6 +260,14 @@ export function TopNav() {
           )}
         </div>
       </div>
+
+      {ConfirmDialogUI}
+      <ConnectWebmailDialog
+        open={connectWebmailOpen}
+        onClose={() => setConnectWebmailOpen(false)}
+        connectWebmailAccount={connectWebmailAccount}
+        onConnected={() => setConnectWebmailOpen(false)}
+      />
 
       {mobileOpen && (
         <div className="absolute left-0 right-0 top-14 z-50 border-b border-border bg-bg-elevated p-3 shadow-2xl md:hidden">

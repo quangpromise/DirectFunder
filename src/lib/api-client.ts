@@ -288,6 +288,8 @@ export const api = {
    * với message tiếng Việt rõ ràng nếu sai email/mật khẩu. */
   connectWebmailAccount: (email: string, password: string) =>
     request<{ ok: true }>("/api/me/webmail-account", { method: "POST", body: JSON.stringify({ email, password }) }),
+  /** Ngắt kết nối mailbox webmail của user hiện tại — xem DELETE /api/me/webmail-account. */
+  disconnectWebmailAccount: () => request<{ ok: true }>("/api/me/webmail-account", { method: "DELETE" }),
 
   /** Lưu toàn bộ nội dung popup "Edit Hồ sơ" (ClientProfileDialog) trong 1 lần gọi —
    * server tự tính lại `money`/`custom.caseLabel` từ `refunds`, trả về giá trị đã tính

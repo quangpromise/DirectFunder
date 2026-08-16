@@ -20,6 +20,10 @@ const dict: Record<Language, Record<string, string>> = {
     "nav.changePassword": "Đổi mật khẩu",
     "nav.logout": "Đăng xuất",
     "topNav.webmailNotConnected": "Chưa kết nối hộp mail",
+    "topNav.webmailConnectAction": "Kết nối",
+    "topNav.webmailDisconnectAction": "Ngắt kết nối",
+    "topNav.webmailDisconnectConfirmTitle": "Ngắt kết nối hộp mail",
+    "topNav.webmailDisconnectConfirm": "Ngắt kết nối hộp mail webmail? Bạn sẽ cần kết nối lại để gửi email cho khách hàng.",
 
     // Rules
     "rules.title": "Rules",
@@ -56,7 +60,8 @@ const dict: Record<Language, Record<string, string>> = {
     "theme.switchToDark": "Chuyển sang giao diện tối",
 
     // Login page
-    "login.tagline": "Nền tảng quản lý hồ sơ & công việc theo thời gian thực. Đăng nhập để tiếp tục.",
+    "login.tagline": "Nền tảng quản lý hồ sơ & công việc theo thời gian thực.",
+    "login.subtitle": "Đăng nhập để tiếp tục.",
     "login.heading": "Đăng nhập",
     "login.email": "Email / Họ và Tên",
     "login.password": "Mật khẩu",
@@ -715,6 +720,10 @@ const dict: Record<Language, Record<string, string>> = {
     "nav.changePassword": "Change password",
     "nav.logout": "Log out",
     "topNav.webmailNotConnected": "Webmail not connected",
+    "topNav.webmailConnectAction": "Connect",
+    "topNav.webmailDisconnectAction": "Disconnect",
+    "topNav.webmailDisconnectConfirmTitle": "Disconnect mailbox",
+    "topNav.webmailDisconnectConfirm": "Disconnect your webmail account? You'll need to reconnect to send emails to clients.",
 
     // Rules
     "rules.title": "Rules",
@@ -751,7 +760,8 @@ const dict: Record<Language, Record<string, string>> = {
     "theme.switchToDark": "Switch to dark theme",
 
     // Login page
-    "login.tagline": "Real-time case & task management platform. Log in to continue.",
+    "login.tagline": "Real-time case & task management platform.",
+    "login.subtitle": "Log in to continue.",
     "login.heading": "Log in",
     "login.email": "Email / Full Name",
     "login.password": "Password",

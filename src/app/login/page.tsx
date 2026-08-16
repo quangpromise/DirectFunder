@@ -111,7 +111,11 @@ export default function LoginPage() {
           priority
           className="relative h-11 w-auto drop-shadow-[0_4px_26px_rgba(59,143,209,0.4)]"
         />
-        <p className="max-w-sm text-sm text-text-dim">{t("login.tagline")}</p>
+        <p className="max-w-sm text-sm text-text-dim">
+          {t("login.tagline")}
+          <br />
+          {t("login.subtitle")}
+        </p>
       </div>
 
       <form

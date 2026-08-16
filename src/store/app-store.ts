@@ -488,6 +488,8 @@ interface AppState {
    * mật khẩu từ dialog (không phải popup OAuth như connectGoogleAccount, vì SMTP không có
    * consent screen để redirect tới). Server tự xác minh đăng nhập SMTP trước khi lưu. */
   connectWebmailAccount: (email: string, password: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+  /** Ngắt kết nối mailbox webmail của user hiện tại (đổi sang mailbox/mật khẩu khác). */
+  disconnectWebmailAccount: () => Promise<void>;
 
   reorderColumn: (fromId: string, toId: string) => void;
   reorderCase: (fromId: string, toId: string) => void;
@@ -2107,11 +2109,24 @@ export const useAppStore = create<AppState>()(
       connectWebmailAccount: async (email, password) => {
         try {
           await api.connectWebmailAccount(email, password);
+          // Cập nhật ngay users[] cục bộ — trước đây chỉ đóng dialog rồi thử gửi lại
+          // (send-client-email-button.tsx), không cập nhật state nên badge ở TopNav vẫn hiện
+          // "Chưa kết nối" cho tới khi F5. Thêm 2026-08-16 khi mở tính năng này cho mọi user
+          // qua menu góc phải, cần badge tự đổi ngay không cần reload.
+          set((s) => ({
+            users: s.users.map((u) => (u.id === s.currentUserId ? { ...u, webmailUsername: email } : u)),
+          }));
           return { ok: true } as const;
         } catch (err) {
           const message = err instanceof Error ? err.message : "Kết nối webmail thất bại";
           return { ok: false, error: message } as const;
         }
+      },
+      disconnectWebmailAccount: async () => {
+        await api.disconnectWebmailAccount();
+        set((s) => ({
+          users: s.users.map((u) => (u.id === s.currentUserId ? { ...u, webmailUsername: null } : u)),
+        }));
       },
 
       // Ghi chú: reorderColumn chỉ đổi thứ tự hiển thị cục bộ (lưu trong AppConfig.columns
