@@ -29,7 +29,16 @@ export function SendActionsMenuButton({ children, allSent }: { children: ReactNo
   useEffect(() => {
     if (!open) return;
     function handleClickOutside(e: MouseEvent) {
-      if (triggerRef.current?.contains(e.target as Node) || menuRef.current?.contains(e.target as Node)) return;
+      const target = e.target as Node;
+      if (triggerRef.current?.contains(target) || menuRef.current?.contains(target)) return;
+      // Không đóng nếu click xảy ra bên trong BẤT KỲ popup con nào (Send to Sheet/CPA
+      // email/Test Sheet/Client email, kể cả confirm/alert bật lên sau đó khi bấm nút Gửi/
+      // Mark as sent) — mỗi popup con TỰ portal thẳng ra document.body, không nằm trong DOM
+      // của menuRef nên phép contains() ở trên không nhận ra, khiến trước đây bấm Gửi/Mark
+      // as sent bên trong popup con vô tình bị tính là "click ra ngoài" và đóng mất popup
+      // cha (thêm 2026-08-16). Nhận diện qua class ".popover" dùng chung cho mọi
+      // dialog/popup trong app thay vì dò từng ref riêng lẻ.
+      if (target instanceof Element && target.closest(".popover")) return;
       setOpen(false);
     }
     document.addEventListener("mousedown", handleClickOutside);
