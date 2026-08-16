@@ -213,7 +213,19 @@ export function TestSheetButton({
             : "border-orange-700/60 bg-orange-900/40 text-orange-200 hover:bg-orange-900/60 light:border-orange-400 light:bg-orange-100 light:text-orange-900 light:hover:bg-orange-200"
         }`}
       >
-        <img src="/google-sheets-icon.png" alt="" width={11} height={11} className="object-contain" />
+        {/* google-sheets-icon.png là icon nét đen trên nền trong suốt — mặc định lật trắng
+            (brightness-0 invert) để đủ tương phản trên nền tối (cam đậm/xanh lá đậm ở Dark
+            Mode), CHỈ giữ nguyên màu đen gốc khi ở Light Mode VÀ chưa gửi (nền cam nhạt
+            orange-100, icon đen đã đủ rõ) — lúc đã gửi (nền xanh lá đậm bg-green-600 kể cả
+            Light Mode) vẫn cần trắng để khớp màu chữ trắng của 3 icon lucide còn lại. Thêm
+            2026-08-16, sửa lỗi icon gần như vô hình trên nền cam đậm ở Dark Mode. */}
+        <img
+          src="/google-sheets-icon.png"
+          alt=""
+          width={11}
+          height={11}
+          className={`object-contain brightness-0 invert ${sent ? "" : "light:filter-none"}`}
+        />
       </button>
 
       {yearPickerOpen &&
