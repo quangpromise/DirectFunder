@@ -15,6 +15,7 @@ import { ConnectWebmailDialog } from "@/components/connect-webmail-dialog";
 import { useConfirm } from "@/components/confirm-dialog";
 import { PhoenixClock } from "@/components/phoenix-clock";
 import { NotificationBell } from "@/components/notification-bell";
+import { SmsInboxButton } from "@/components/sms-inbox-button";
 import { RulesPanel } from "@/components/rules-panel";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { ThemeSwitcher } from "@/components/theme-switcher";
@@ -179,6 +180,7 @@ export function TopNav() {
           <LanguageSwitcher compact />
         </div>
         <PhoenixClock />
+        {hasFeature(featurePermissions, "sendSms", user.role) && <SmsInboxButton />}
         <NotificationBell currentUserId={user.id} />
 
         <div className="relative">

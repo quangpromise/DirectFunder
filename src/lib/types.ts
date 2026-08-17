@@ -48,6 +48,7 @@ export const ASSIGNABLE_FEATURES = [
   "sendCpaEmail",
   "sendToGoogleSheet",
   "sendClientEmail",
+  "sendSms",
   "manageRules",
   "viewCollecting",
   "addCollectingColumn",
@@ -76,6 +77,7 @@ export const FEATURE_LABEL: Record<Language, Record<FeatureKey, string>> = {
     sendCpaEmail: "Gửi email cho CPA",
     sendToGoogleSheet: "Gửi dòng dữ liệu lên Google Sheet",
     sendClientEmail: "Gửi email cho khách hàng",
+    sendSms: "Nhắn tin SMS cho khách hàng (RingCentral)",
     manageRules: "Thêm / sửa / xóa Rules",
     viewCollecting: "Xem tab Collecting",
     addCollectingColumn: "Thêm cột mới (tab Collecting)",
@@ -101,6 +103,7 @@ export const FEATURE_LABEL: Record<Language, Record<FeatureKey, string>> = {
     sendCpaEmail: "Send email to CPA",
     sendToGoogleSheet: "Send row to Google Sheet",
     sendClientEmail: "Send email to client",
+    sendSms: "Send SMS to client (RingCentral)",
     manageRules: "Add / edit / delete Rules",
     viewCollecting: "View Collecting tab",
     addCollectingColumn: "Add new column (Collecting tab)",
@@ -414,6 +417,11 @@ export interface CaseRecord {
   /** Tương tự sheetSentAt/cpaEmailSentAt/cpaReviewTestSentAt nhưng cho nút "Send email to
    * client" — xem SendClientEmailButton. */
   clientEmailSentAt: string | null;
+  /** true nếu có ít nhất 1 SMS "in" (khách nhắn tới) CHƯA đọc khớp với phone/phone2 hồ sơ
+   * này — tính toán ở server (GET /api/cases), KHÔNG lưu cột riêng trên Case (nguồn thật là
+   * bảng SmsMessage, khớp theo số điện thoại — xem src/lib/phone.ts). Dùng để icon SMS nhấp
+   * nháy đỏ trên bảng Hồ sơ, xem CaseSmsButton. */
+  hasUnreadSms: boolean;
   /** Thứ tự hiển thị dòng trên bảng Hồ sơ (kéo-thả) — số càng nhỏ hiển thị càng lên trên.
    * Xem ghi chú fractional indexing ở reorderCase (app-store.ts) và Case.sortOrder
    * (schema.prisma). */
@@ -510,6 +518,32 @@ export interface CpaReviewRecord {
 
 /** Record<monthKey ("YYYY-MM"), CpaReviewSheetConfig> — mỗi tháng 1 kết nối Sheet riêng. */
 export type CpaReviewSheetConfigMap = Record<string, CpaReviewSheetConfig>;
+
+/** 1 tin nhắn SMS trong khung chat theo hồ sơ (CaseSmsButton) — xem SmsMessage trong
+ * schema.prisma cho ghi chú kiến trúc đầy đủ (không FK tới Case, khớp theo số điện thoại). */
+export interface SmsMessageRecord {
+  id: string;
+  direction: "in" | "out";
+  counterpartNumber: string;
+  text: string;
+  sentByUserId: string | null;
+  readAt: string | null;
+  createdAt: string;
+}
+
+/** 1 dòng trong hộp thư tổng hợp SMS (SmsInboxButton, cạnh chuông thông báo) — 1 số điện
+ * thoại = 1 cuộc hội thoại, gom mọi tin nhắn qua lại với số đó. `clientName`/`caseId` chỉ có
+ * giá trị nếu số này khớp phone/phone2 của 1 hồ sơ đang có trong hệ thống — null nếu không
+ * khớp hồ sơ nào (vẫn hiển thị được, chỉ hiện số điện thoại thay tên). */
+export interface SmsConversationSummary {
+  counterpartNumber: string;
+  caseId: string | null;
+  clientName: string | null;
+  lastMessageText: string;
+  lastMessageAt: string;
+  lastMessageDirection: "in" | "out";
+  unreadCount: number;
+}
 
 /** 1 hàng "task" trong bảng Report của popup "For Processor" — xem
  * AppConfig.processorReportTasks / DEFAULT_PROCESSOR_REPORT_TASKS (rbac.ts). Nhóm theo

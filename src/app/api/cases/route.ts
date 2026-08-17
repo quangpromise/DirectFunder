@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
 import { canViewCase, hasFeature } from "@/lib/rbac";
 import { broadcastCaseChanged } from "@/lib/pusher-server";
+import { toE164US } from "@/lib/phone";
 import type { CaseRecord, ColumnDef, FeaturePermissions } from "@/lib/types";
 import type { Prisma } from "@prisma/client";
 
@@ -51,7 +52,7 @@ export function toCaseRecord(row: {
   taxIntByYear: Prisma.JsonValue;
   createdAt: Date;
   updatedAt: Date;
-}): CaseRecord {
+}, hasUnreadSms = false): CaseRecord {
   return {
     id: row.id,
     status: row.status,
@@ -95,6 +96,7 @@ export function toCaseRecord(row: {
     accountant: row.accountant,
     accountantSupport: row.accountantSupport,
     taxIntByYear: (row.taxIntByYear as unknown as CaseRecord["taxIntByYear"]) ?? {},
+    hasUnreadSms,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -105,8 +107,19 @@ export async function GET() {
   if (!me) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
 
   const rows = await prisma.case.findMany({ orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }] });
+  // Tính hasUnreadSms cho mọi hồ sơ bằng 1 query nhẹ (không JOIN per-row) — lấy tập số điện
+  // thoại đang có tin nhắn "in" chưa đọc, rồi so khớp với phone/phone2 từng case khi map.
+  const unreadRows = await prisma.smsMessage.findMany({
+    where: { direction: "in", readAt: null },
+    select: { counterpartNumber: true },
+    distinct: ["counterpartNumber"],
+  });
+  const unreadNumbers = new Set(unreadRows.map((r) => r.counterpartNumber));
   const visible = rows
-    .map(toCaseRecord)
+    .map((row) => {
+      const hasUnreadSms = [toE164US(row.phone), toE164US(row.phone2)].some((n) => n !== null && unreadNumbers.has(n));
+      return toCaseRecord(row, hasUnreadSms);
+    })
     .filter((c) =>
       canViewCase(
         me.role,

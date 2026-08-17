@@ -18,6 +18,7 @@ import { DEFAULT_REFUND_YEAR_STATUS, findRefundStatusOption } from "@/lib/refund
 import { api, syncInBackground, type ClientProfilePayload } from "@/lib/api-client";
 import type { ParsedCaseRow, DuplicateSsnInfo } from "@/lib/excel";
 import { formatSsn } from "@/lib/ssn";
+import { toE164US } from "@/lib/phone";
 import {
   AppNotification,
   CaseRecord,
@@ -45,6 +46,8 @@ import {
   Role,
   RuleRecord,
   SelectOption,
+  SmsConversationSummary,
+  SmsMessageRecord,
   Theme,
   User,
 } from "@/lib/types";
@@ -127,6 +130,11 @@ interface AppState {
   /** Tắt/bật âm thanh chuông khi có notification mới — lưu persist theo trình duyệt,
    * không theo tài khoản (đơn giản, đủ dùng cho 1 người dùng 1 máy). */
   notificationSoundMuted: boolean;
+  /** Tắt/bật RIÊNG âm thanh + banner của hộp thư tổng hợp SMS (SmsInboxButton) — tách biệt
+   * khỏi notificationSoundMuted ở trên (chuông thông báo assigned/status_change/mention) vì
+   * đây là 2 luồng khác nhau, user có thể chỉ muốn tắt 1 trong 2. Cùng cơ chế persist theo
+   * trình duyệt. */
+  smsNotificationSoundMuted: boolean;
   cases: CaseRecord[];
   columns: ColumnDef[];
   notifications: AppNotification[];
@@ -178,6 +186,11 @@ interface AppState {
   /** Danh sách tháng ("YYYY-MM") đã nạp vào cpaReviewRecords — dùng để quyết định
    * ensureCpaReviewMonthLoaded có cần gọi API hay dữ liệu đã có sẵn trong cache. */
   cpaReviewLoadedMonths: string[];
+  /** Hộp thư tổng hợp SMS (SmsInboxButton, cạnh chuông thông báo) — 1 dòng/1 số điện thoại,
+   * lazy-fetch khi mở dropdown + tự refetch mỗi khi có tín hiệu case:changed (SMS gửi/nhận
+   * đều bắn lại tín hiệu này, xem use-realtime.ts) để badge số chưa đọc luôn đúng mà không
+   * cần mở dropdown. KHÔNG nạp trong hydrateFromServer (giống processorReportEntries). */
+  smsConversations: SmsConversationSummary[];
   /** Cấu hình cột riêng cho tab "Collecting" — mặc định DEFAULT_COLLECTING_COLUMNS (rbac.ts)
    * nếu Admin chưa từng đổi qua ColumnSettingsDialog. */
   collectingColumns: ColumnDef[];
@@ -225,6 +238,7 @@ interface AppState {
   setLanguage: (language: Language) => void;
   setTheme: (theme: Theme) => void;
   setNotificationSoundMuted: (muted: boolean) => void;
+  setSmsNotificationSoundMuted: (muted: boolean) => void;
 
   updateCell: (
     caseId: string,
@@ -491,6 +505,28 @@ interface AppState {
   /** Ngắt kết nối mailbox webmail của user hiện tại (đổi sang mailbox/mật khẩu khác). */
   disconnectWebmailAccount: () => Promise<void>;
 
+  /** Khung chat SMS (RingCentral, CaseSmsButton) — nạp thread khớp theo phone/phone2 của
+   * hồ sơ, KHÔNG cache toàn cục trong store (lazy-fetch mỗi lần mở popup, giống
+   * processorReportEntries). */
+  fetchSmsThread: (caseId: string) => Promise<SmsMessageRecord[]>;
+  sendSmsMessage: (caseId: string, text: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+  /** Đánh dấu đã đọc + tắt icon đỏ ngay trên bảng Hồ sơ cục bộ (server cũng tự tắt cho mọi
+   * user khác qua broadcastCaseChanged, xem POST .../sms/mark-read). */
+  markSmsThreadRead: (caseId: string) => Promise<void>;
+  /** Hộp thư tổng hợp SMS (SmsInboxButton) — theo số điện thoại trực tiếp, không cần biết
+   * hồ sơ nào (khác 4 hàm fetchSmsThread/sendSmsMessage/markSmsThreadRead ở trên, vốn theo
+   * caseId). Dùng chung 1 nguồn dữ liệu SmsMessage, chỉ khác lối vào. */
+  fetchSmsInbox: () => Promise<void>;
+  fetchSmsThreadByPhone: (phone: string) => Promise<SmsMessageRecord[]>;
+  sendSmsByPhone: (phone: string, text: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+  markSmsThreadReadByPhone: (phone: string) => Promise<void>;
+  /** Xoá 1 tin nhắn — chỉ dọn lịch sử trong app (RingCentral không hỗ trợ thu hồi). Tự nạp
+   * lại hộp thư tổng hợp sau khi xoá để tin nhắn gần nhất hiển thị đúng lại (có thể đổi
+   * sang tin trước đó, hoặc cuộc hội thoại biến mất nếu vừa xoá tin duy nhất còn lại). */
+  deleteSmsMessage: (messageId: string) => Promise<void>;
+  /** Xoá TOÀN BỘ tin nhắn của 1 số điện thoại — cuộc hội thoại đó biến mất khỏi hộp thư. */
+  deleteSmsThread: (phone: string) => Promise<void>;
+
   reorderColumn: (fromId: string, toId: string) => void;
   reorderCase: (fromId: string, toId: string) => void;
 
@@ -577,6 +613,7 @@ export const useAppStore = create<AppState>()(
       language: "vi",
       theme: "dark",
       notificationSoundMuted: false,
+      smsNotificationSoundMuted: false,
       cases: INITIAL_CASES,
       columns: DEFAULT_COLUMNS,
       notifications: INITIAL_NOTIFICATIONS,
@@ -595,6 +632,7 @@ export const useAppStore = create<AppState>()(
       collectingRecords: [],
       cpaReviewRecords: [],
       cpaReviewLoadedMonths: [],
+      smsConversations: [],
       collectingColumns: DEFAULT_COLLECTING_COLUMNS,
       cpaReviewStatusOptions: CPA_REVIEW_STATUS_OPTIONS,
       cpaReviewHiddenColumns: [],
@@ -715,6 +753,7 @@ export const useAppStore = create<AppState>()(
       setLanguage: (language) => set({ language }),
       setTheme: (theme) => set({ theme }),
       setNotificationSoundMuted: (muted) => set({ notificationSoundMuted: muted }),
+      setSmsNotificationSoundMuted: (muted) => set({ smsNotificationSoundMuted: muted }),
 
       updateCell: (caseId, columnKey, value, isCustom) => {
         const state = get();
@@ -953,6 +992,7 @@ export const useAppStore = create<AppState>()(
           accountant: null,
           accountantSupport: null,
           taxIntByYear: {},
+          hasUnreadSms: false,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
@@ -1102,6 +1142,7 @@ export const useAppStore = create<AppState>()(
               accountant: null,
               accountantSupport: null,
               taxIntByYear: {},
+              hasUnreadSms: false,
               createdAt: new Date().toISOString(),
               updatedAt: new Date().toISOString(),
             };
@@ -2127,6 +2168,54 @@ export const useAppStore = create<AppState>()(
         set((s) => ({
           users: s.users.map((u) => (u.id === s.currentUserId ? { ...u, webmailUsername: null } : u)),
         }));
+      },
+
+      fetchSmsThread: (caseId) => api.listSms(caseId),
+      sendSmsMessage: async (caseId, text) => {
+        try {
+          await api.sendSms(caseId, text);
+          return { ok: true } as const;
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Gửi SMS thất bại";
+          return { ok: false, error: message } as const;
+        }
+      },
+      markSmsThreadRead: async (caseId) => {
+        await api.markSmsRead(caseId);
+        set((s) => ({ cases: s.cases.map((c) => (c.id === caseId ? { ...c, hasUnreadSms: false } : c)) }));
+      },
+
+      fetchSmsInbox: async () => {
+        const smsConversations = await api.listSmsInbox();
+        set({ smsConversations });
+      },
+      fetchSmsThreadByPhone: (phone) => api.listSmsThreadByPhone(phone),
+      sendSmsByPhone: async (phone, text) => {
+        try {
+          await api.sendSmsByPhone(phone, text);
+          return { ok: true } as const;
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Gửi SMS thất bại";
+          return { ok: false, error: message } as const;
+        }
+      },
+      markSmsThreadReadByPhone: async (phone) => {
+        await api.markSmsThreadReadByPhone(phone);
+        set((s) => ({
+          smsConversations: s.smsConversations.map((c) => (c.counterpartNumber === phone ? { ...c, unreadCount: 0 } : c)),
+          // Cùng số điện thoại có thể khớp phone/phone2 của 1 hồ sơ đang hiện icon đỏ trên
+          // bảng Hồ sơ — tắt luôn để 2 chỗ (hộp thư tổng hợp + icon theo hồ sơ) đồng bộ nhau
+          // ngay, không cần đợi refetchCases() qua Pusher.
+          cases: s.cases.map((c) => (toE164US(c.phone) === phone || toE164US(c.phone2) === phone ? { ...c, hasUnreadSms: false } : c)),
+        }));
+      },
+      deleteSmsMessage: async (messageId) => {
+        await api.deleteSmsMessage(messageId);
+        await get().fetchSmsInbox();
+      },
+      deleteSmsThread: async (phone) => {
+        await api.deleteSmsThread(phone);
+        set((s) => ({ smsConversations: s.smsConversations.filter((c) => c.counterpartNumber !== phone) }));
       },
 
       // Ghi chú: reorderColumn chỉ đổi thứ tự hiển thị cục bộ (lưu trong AppConfig.columns

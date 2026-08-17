@@ -15,6 +15,7 @@ import {
   CpaEmailDefaults,
   RefundYearStatus,
   SelectOption,
+  SmsMessageRecord,
   User,
 } from "@/lib/types";
 import { CHECK_INITIAL_COLUMN_ID } from "@/lib/check-initial";
@@ -37,6 +38,7 @@ import { caseStatusOptionsForCrmSource } from "@/lib/cpa-review-columns";
 import { canShowSendButtonsForStatusLabel } from "@/lib/send-buttons-status";
 import { SendActionsMenuButton } from "@/components/send-actions-menu-button";
 import { SendClientEmailButton } from "@/components/send-client-email-button";
+import { CaseSmsButton } from "@/components/case-sms-button";
 import { ForProcessorButton } from "@/components/for-processor-dialog";
 import { HistoryDialog } from "@/components/history-dialog";
 import { useConfirm } from "@/components/confirm-dialog";
@@ -249,6 +251,9 @@ export default function CasesPage() {
   const sendClientEmail = useAppStore((s) => s.sendClientEmail);
   const markClientEmailSent = useAppStore((s) => s.markClientEmailSent);
   const connectWebmailAccount = useAppStore((s) => s.connectWebmailAccount);
+  const fetchSmsThread = useAppStore((s) => s.fetchSmsThread);
+  const sendSmsMessage = useAppStore((s) => s.sendSmsMessage);
+  const markSmsThreadRead = useAppStore((s) => s.markSmsThreadRead);
   const addRow = useAppStore((s) => s.addRow);
   const importCases = useAppStore((s) => s.importCases);
   const deleteRow = useAppStore((s) => s.deleteRow);
@@ -631,6 +636,7 @@ export default function CasesPage() {
   const canSendCpaEmailFeature = hasFeature(permissions, "sendCpaEmail", user.role);
   const canSendToSheetFeature = hasFeature(permissions, "sendToGoogleSheet", user.role);
   const canSendClientEmailFeature = hasFeature(permissions, "sendClientEmail", user.role);
+  const canSendSmsFeature = hasFeature(permissions, "sendSms", user.role);
   const canSendCollectingReportFeature = hasFeature(permissions, "addCollectingRow", user.role);
 
   const tabStatusOptions = tab === "all" ? statusOptions : statusOptions.filter((o) => getCaseTab(o.id) === tab);
@@ -1261,6 +1267,10 @@ export default function CasesPage() {
               sendClientEmail={sendClientEmail}
               markClientEmailSent={markClientEmailSent}
               connectWebmailAccount={connectWebmailAccount}
+              canSendSmsFeature={canSendSmsFeature}
+              fetchSmsThread={fetchSmsThread}
+              sendSmsMessage={sendSmsMessage}
+              markSmsThreadRead={markSmsThreadRead}
               confirm={confirm}
               alertWarn={alertWarn}
               dragRowId={dragRowId}
@@ -1464,6 +1474,10 @@ function RowCells({
   sendClientEmail,
   markClientEmailSent,
   connectWebmailAccount,
+  canSendSmsFeature,
+  fetchSmsThread,
+  sendSmsMessage,
+  markSmsThreadRead,
   confirm,
   alertWarn,
   dragRowId,
@@ -1569,6 +1583,10 @@ function RowCells({
   ) => Promise<{ ok: true } | { ok: false; error: string; needsWebmailAuth?: boolean }>;
   markClientEmailSent: (caseId: string, action: "manual" | "clear") => Promise<void>;
   connectWebmailAccount: (email: string, password: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+  canSendSmsFeature: boolean;
+  fetchSmsThread: (caseId: string) => Promise<SmsMessageRecord[]>;
+  sendSmsMessage: (caseId: string, text: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+  markSmsThreadRead: (caseId: string) => Promise<void>;
   confirm: (message: string, opts?: { title?: string; tone?: "default" | "danger" }) => Promise<boolean>;
   alertWarn: (message: string, opts?: { title?: string }) => Promise<void>;
   dragRowId: string | null;
@@ -1657,12 +1675,19 @@ function RowCells({
             onCommit={(v) => updateCell(row.id, "status", v, false)}
           />
         )}
-        {(showSendToSheetAction || showCpaEmailAction || showTestSheetAction || showClientEmailAction) && (
+        {(showSendToSheetAction ||
+          showCpaEmailAction ||
+          showTestSheetAction ||
+          showClientEmailAction ||
+          canSendSmsFeature) && (
           // -translate-x-1 — dịch sang trái 1 chút, tránh nằm sát nút Edit Hồ sơ ở cột
           // Client Name ngay bên phải, dễ bấm nhầm. Gộp 4 nút gửi thành 1 nút (icon
           // send-data.png, thêm 2026-08-16) mở popup liệt kê — trước đó xếp dọc thành 1 cụm
-          // icon chật hẹp ngay cạnh Status.
-          <div className="-translate-x-1">
+          // icon chật hẹp ngay cạnh Status. Icon SMS (thêm 2026-08-17) xếp NGAY DƯỚI nút Send
+          // Data trong cùng 1 cột dọc — luôn hiện nếu có quyền sendSms, KHÔNG phụ thuộc
+          // status/showXxxAction như 4 nút kia (nhắn tin không gắn với trạng thái hồ sơ).
+          <div className="-translate-x-1 flex flex-col items-center gap-1">
+            {(showSendToSheetAction || showCpaEmailAction || showTestSheetAction || showClientEmailAction) && (
             <SendActionsMenuButton allSent={allSendActionsSent}>
               {showSendToSheetAction && (
                 <div className="flex items-center justify-between gap-2">
@@ -1728,6 +1753,18 @@ function RowCells({
                 </div>
               )}
             </SendActionsMenuButton>
+            )}
+            {canSendSmsFeature && (
+              <CaseSmsButton
+                caseId={row.id}
+                phone={row.phone}
+                hasUnreadSms={row.hasUnreadSms}
+                alertWarn={alertWarn}
+                fetchSmsThread={fetchSmsThread}
+                sendSmsMessage={sendSmsMessage}
+                markSmsThreadRead={markSmsThreadRead}
+              />
+            )}
           </div>
         )}
       </div>

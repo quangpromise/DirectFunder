@@ -272,3 +272,9 @@ table {
 .refund-eye-pending {
   animation: refund-eye-pending 1.2s ease-in-out infinite;
 }
+
+/* Icon SMS chưa đọc (CaseSmsButton, dưới nút Send Data) — dùng lại animation
+   refund-eye-pending ở trên (cùng hiệu ứng nhấp nháy đỏ), chỉ đặt tên riêng cho rõ ý định. */
+.sms-unread-pulse {
+  animation: refund-eye-pending 1.2s ease-in-out infinite;
+}

@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { getPusherClient } from "@/lib/pusher-client";
 import { useAppStore } from "@/store/app-store";
+import { hasFeature } from "@/lib/rbac";
 import type { AppNotification } from "@/lib/types";
 
 const CASES_CHANNEL = "private-cases";
@@ -29,7 +30,17 @@ export function useRealtime(userId: string | undefined): void {
     function onCaseChanged() {
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
-        useAppStore.getState().refetchCases();
+        const state = useAppStore.getState();
+        state.refetchCases();
+        // Gửi/nhận SMS (RingCentral webhook lẫn route gửi) đều bắn lại ĐÚNG tín hiệu
+        // case:changed này (không tạo kênh Pusher riêng, xem pusher-server.ts) — refetch
+        // luôn hộp thư tổng hợp để badge số chưa đọc cạnh chuông thông báo tự cập nhật mà
+        // không cần mở dropdown. Gate theo quyền sendSms để tránh gọi API vô ích cho user
+        // không có quyền (server cũng tự chặn 403, đây chỉ là tối ưu, không phải bảo mật).
+        const me = state.users.find((u) => u.id === userId);
+        if (me && hasFeature(state.featurePermissions, "sendSms", me.role)) {
+          state.fetchSmsInbox();
+        }
       }, 500);
     }
     let cpaReviewDebounceTimer: ReturnType<typeof setTimeout> | null = null;

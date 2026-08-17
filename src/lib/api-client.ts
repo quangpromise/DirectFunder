@@ -18,6 +18,8 @@ import type {
   Role,
   RuleRecord,
   SelectOption,
+  SmsConversationSummary,
+  SmsMessageRecord,
   User,
 } from "./types";
 import { getSocketId } from "./pusher-client";
@@ -290,6 +292,24 @@ export const api = {
     request<{ ok: true }>("/api/me/webmail-account", { method: "POST", body: JSON.stringify({ email, password }) }),
   /** Ngắt kết nối mailbox webmail của user hiện tại — xem DELETE /api/me/webmail-account. */
   disconnectWebmailAccount: () => request<{ ok: true }>("/api/me/webmail-account", { method: "DELETE" }),
+
+  /** Khung chat SMS (RingCentral) theo hồ sơ — xem src/app/api/cases/[id]/sms/route.ts. */
+  listSms: (caseId: string) => request<SmsMessageRecord[]>(`/api/cases/${caseId}/sms`),
+  sendSms: (caseId: string, text: string) =>
+    request<SmsMessageRecord>(`/api/cases/${caseId}/sms`, { method: "POST", body: JSON.stringify({ text }) }),
+  markSmsRead: (caseId: string) => request<{ ok: true; updated: number }>(`/api/cases/${caseId}/sms/mark-read`, { method: "POST" }),
+
+  /** Hộp thư tổng hợp SMS (SmsInboxButton, cạnh chuông thông báo) — theo số điện thoại
+   * trực tiếp, không cần biết hồ sơ nào. Xem src/app/api/sms/**. */
+  listSmsInbox: () => request<SmsConversationSummary[]>("/api/sms/inbox"),
+  listSmsThreadByPhone: (phone: string) => request<SmsMessageRecord[]>(`/api/sms/thread?phone=${encodeURIComponent(phone)}`),
+  sendSmsByPhone: (phone: string, text: string) =>
+    request<SmsMessageRecord>("/api/sms/thread", { method: "POST", body: JSON.stringify({ phone, text }) }),
+  markSmsThreadReadByPhone: (phone: string) =>
+    request<{ ok: true; updated: number }>("/api/sms/thread/mark-read", { method: "POST", body: JSON.stringify({ phone }) }),
+  deleteSmsMessage: (messageId: string) => request<{ ok: true }>(`/api/sms/thread/message/${messageId}`, { method: "DELETE" }),
+  deleteSmsThread: (phone: string) =>
+    request<{ ok: true; deleted: number }>(`/api/sms/thread?phone=${encodeURIComponent(phone)}`, { method: "DELETE" }),
 
   /** Lưu toàn bộ nội dung popup "Edit Hồ sơ" (ClientProfileDialog) trong 1 lần gọi —
    * server tự tính lại `money`/`custom.caseLabel` từ `refunds`, trả về giá trị đã tính

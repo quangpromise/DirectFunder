@@ -421,6 +421,9 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermissions = {
   sendToGoogleSheet: ["processor"],
   // Tương tự sendCpaEmail — chỉ Processor cần liệt kê, Manager mặc định qua hasFeature().
   sendClientEmail: ["processor"],
+  // Icon nhắn tin SMS (RingCentral) cạnh Status/Send Data mỗi hồ sơ — cùng nhóm role hay
+  // liên hệ trực tiếp khách hàng nhất, Admin cấp thêm/thu hồi qua trang Phân quyền.
+  sendSms: ["agent", "processor", "agent_leader", "processor_leader"],
   // Thêm/sửa/xoá rule ở tab Rules — mặc định CHỈ Quản lý (mảng rỗng, Manager luôn được qua
   // hasFeature() không cần liệt kê), Admin có thể cấp thêm cho role khác qua trang Phân
   // quyền. Mọi user đã đăng nhập đều XEM được tab Rules bất kể quyền này (không giới hạn xem).

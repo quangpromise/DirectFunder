@@ -225,6 +225,13 @@ model AppConfig {
   /// webhookSecret, connectedAt, connectedByUserId }. Khác CPA Review: hàng/cột đều biết
   /// trước từ processorReportTasks + danh sách user role processor, không cần quét-tìm-dòng.
   processorReportSheetConfig Json?
+  /// ID subscription webhook RingCentral hiện tại (nhận SMS đến real-time) — null = chưa
+  /// tạo/đã hết hạn. Subscription RingCentral chỉ sống tối đa ~7 ngày, cần tự gia hạn định
+  /// kỳ (xem src/lib/ringcentral.ts renewRingCentralSubscription).
+  ringcentralSubscriptionId String?
+  /// Thời điểm subscription trên hết hạn (ISO, RingCentral trả về lúc tạo/gia hạn) — dùng
+  /// để tự biết khi nào cần gọi renew trước khi hết hạn.
+  ringcentralSubscriptionExpiresAt DateTime?
   updatedAt          DateTime @updatedAt
 
   @@map("app_config")
@@ -379,4 +386,31 @@ model ProcessorReportMonthlySummary {
   @@unique([month, taskId, userId])
   @@index([month])
   @@map("processor_report_monthly_summaries")
+}
+
+/// Tin nhắn SMS gửi/nhận qua RingCentral (1 số điện thoại công ty dùng chung cho mọi user,
+/// xem src/lib/ringcentral.ts) — KHÔNG liên kết Case bằng foreign key, mà khớp theo
+/// `counterpartNumber` (E.164, xem src/lib/phone.ts) với Case.phone/phone2 mỗi lần đọc —
+/// cùng tinh thần "bảng độc lập" như CollectingRecord/CpaReviewRecord, tránh 1 số điện thoại
+/// gắn cứng vào đúng 1 case nếu sau này SSN/case đổi nhưng số điện thoại thật của khách vẫn
+/// vậy. `direction`: "in" (khách nhắn tới) | "out" (user gửi đi). `readAt` chỉ có ý nghĩa với
+/// tin nhắn "in" — null = chưa đọc, dùng để tính icon đỏ trên bảng Hồ sơ (xem GET /api/cases,
+/// field tính toán `hasUnreadSms` trên CaseRecord — KHÔNG lưu cột riêng trên Case).
+model SmsMessage {
+  id                   String    @id @default(cuid())
+  direction            String
+  /// Số điện thoại đối phương, chuẩn hoá E.164 (vd "+14807168858").
+  counterpartNumber    String
+  text                 String
+  /// ID tin nhắn bên RingCentral — dùng để chống trùng khi webhook gửi lại (tối đa 1 lần
+  /// nhưng RingCentral khuyến cáo xử lý idempotent).
+  ringcentralMessageId String?   @unique
+  /// userId người bấm gửi — null với tin nhắn "in" (khách gửi tới, không ai trong hệ thống
+  /// là người gửi) hoặc tin nhắn "out" gửi qua kênh khác ngoài app (hiếm, dự phòng).
+  sentByUserId         String?
+  readAt               DateTime?
+  createdAt            DateTime  @default(now())
+
+  @@index([counterpartNumber, createdAt])
+  @@map("sms_messages")
 }
