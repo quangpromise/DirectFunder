@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
-import { createOrRenewRingCentralSubscription, isRingCentralConfigured, RingCentralApiError } from "@/lib/ringcentral";
+import { renewRingCentralSubscriptionAndSave, isRingCentralConfigured, RingCentralApiError } from "@/lib/ringcentral";
 
 /** Trạng thái subscription webhook nhận SMS đến — chỉ Quản lý (manager) xem/thao tác, cùng
  * mức quyền với các cấu hình đồng bộ Sheet khác (manageCpaReviewSheet...). Không thêm
@@ -32,14 +32,9 @@ export async function POST(request: NextRequest) {
   }
 
   const webhookUrl = new URL("/api/ringcentral/webhook", request.url).toString();
-  const config = await prisma.appConfig.findUnique({ where: { id: "singleton" } });
 
   try {
-    const result = await createOrRenewRingCentralSubscription(webhookUrl, config?.ringcentralSubscriptionId ?? null);
-    await prisma.appConfig.update({
-      where: { id: "singleton" },
-      data: { ringcentralSubscriptionId: result.id, ringcentralSubscriptionExpiresAt: new Date(result.expiresAt) },
-    });
+    const result = await renewRingCentralSubscriptionAndSave(webhookUrl);
     return NextResponse.json({ ok: true, subscriptionId: result.id, subscriptionExpiresAt: result.expiresAt });
   } catch (err) {
     const message = err instanceof RingCentralApiError ? err.message : "Tạo subscription thất bại, thử lại sau.";

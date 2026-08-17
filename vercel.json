@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/ringcentral-renew",
+      "schedule": "0 0 * * *"
+    }
+  ]
+}

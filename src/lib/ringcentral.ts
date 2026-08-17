@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { prisma } from "./prisma";
 
 /**
  * Tích hợp RingCentral SMS (nhắn/nhận tin nhắn theo hồ sơ, thêm 2026-08-17) — JWT auth
@@ -160,6 +161,19 @@ export async function createOrRenewRingCentralSubscription(
   }
   const data = (await res.json()) as { id: string; expirationTime: string };
   return { id: data.id, expiresAt: data.expirationTime };
+}
+
+/** Gộp "gọi RingCentral tạo/gia hạn" + "lưu kết quả vào AppConfig" — dùng CHUNG cho cả nút
+ * bấm tay (POST /api/config/ringcentral, manager) lẫn cron tự động (GET /api/cron/
+ * ringcentral-renew) để không lặp code. */
+export async function renewRingCentralSubscriptionAndSave(webhookUrl: string): Promise<{ id: string; expiresAt: string }> {
+  const config = await prisma.appConfig.findUnique({ where: { id: "singleton" } });
+  const result = await createOrRenewRingCentralSubscription(webhookUrl, config?.ringcentralSubscriptionId ?? null);
+  await prisma.appConfig.update({
+    where: { id: "singleton" },
+    data: { ringcentralSubscriptionId: result.id, ringcentralSubscriptionExpiresAt: new Date(result.expiresAt) },
+  });
+  return result;
 }
 
 /** Sinh secret ngẫu nhiên — dự phòng nếu sau này cần ký xác minh webhook (RingCentral hiện
