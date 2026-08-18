@@ -755,11 +755,11 @@ const dict: Record<Language, Record<string, string>> = {
     "irsSplitter.processingTimeout": "Xử lý quá lâu (quá 55 giây) — file có thể quá lớn/quá nhiều trang cho giới hạn xử lý của nền tảng hosting, hãy thử chia nhỏ file trước khi tải lên.",
     "irsSplitter.uploadTimeout": "Tải file lên quá lâu (quá 5 phút) — kiểm tra lại kết nối mạng hoặc thử lại với file nhỏ hơn.",
 
-    // Nén PDF (tab con trong "Notice Splitter") — nén 1 file PDF xuống dưới 1MB bất kể nặng bao nhiêu
-    "compressPdf.intro": "Chọn 1 file PDF để nén xuống dưới 1MB — mỗi trang sẽ được chuyển thành ảnh nén (không còn copy/tìm chữ được), đổi lại đảm bảo dưới 1MB dù file gốc nặng bao nhiêu.",
+    // Nén PDF (tab con trong "Notice Splitter") — nén 1 file PDF xuống dưới 3MB bất kể nặng bao nhiêu
+    "compressPdf.intro": "Chọn 1 file PDF để nén xuống dưới 3MB — mỗi trang sẽ được chuyển thành ảnh nén (không còn copy/tìm chữ được), đổi lại đảm bảo dưới 3MB dù file gốc nặng bao nhiêu.",
     "compressPdf.compressingProgress": "Đang nén (DPI {dpi})... {done}/{total} trang",
     "compressPdf.result": "Đã nén xong: {before} → {after}. File đã tự tải xuống.",
-    "compressPdf.hitFloorWarning": "File vẫn còn {after} — chưa xuống được dưới 1MB dù đã nén ở mức thấp nhất (file quá nhiều trang). Vẫn đã tải xuống, cân nhắc tách nhỏ file trước bằng tab \"Tách thư\" rồi nén từng phần.",
+    "compressPdf.hitFloorWarning": "File vẫn còn {after} — chưa xuống được dưới 3MB dù đã nén ở mức thấp nhất (file quá nhiều trang). Vẫn đã tải xuống, cân nhắc tách nhỏ file trước bằng tab \"Tách thư\" rồi nén từng phần.",
     "compressPdf.compressFailed": "Nén file thất bại.",
   },
   en: {
@@ -1509,11 +1509,11 @@ const dict: Record<Language, Record<string, string>> = {
     "irsSplitter.processingTimeout": "Processing took too long (over 55s) — the file may be too large/have too many pages for the hosting platform's processing limit, try splitting it before uploading.",
     "irsSplitter.uploadTimeout": "Upload took too long (over 5 minutes) — check your network connection or try a smaller file.",
 
-    // Compress PDF (sub-tab inside "Notice Splitter") — compress a PDF under 1MB no matter how heavy
-    "compressPdf.intro": "Pick a PDF to compress under 1MB — each page becomes a compressed image (no more copy/search text), in exchange for a guaranteed under-1MB result no matter how heavy the original file is.",
+    // Compress PDF (sub-tab inside "Notice Splitter") — compress a PDF under 3MB no matter how heavy
+    "compressPdf.intro": "Pick a PDF to compress under 3MB — each page becomes a compressed image (no more copy/search text), in exchange for a guaranteed under-3MB result no matter how heavy the original file is.",
     "compressPdf.compressingProgress": "Compressing (DPI {dpi})... {done}/{total} pages",
     "compressPdf.result": "Compressed: {before} → {after}. The file has been downloaded automatically.",
-    "compressPdf.hitFloorWarning": "The file is still {after} — could not get under 1MB even at the lowest quality (too many pages). It was still downloaded — consider splitting the file first using the \"Split\" tab, then compressing each part.",
+    "compressPdf.hitFloorWarning": "The file is still {after} — could not get under 3MB even at the lowest quality (too many pages). It was still downloaded — consider splitting the file first using the \"Split\" tab, then compressing each part.",
     "compressPdf.compressFailed": "Compression failed.",
   },
 };

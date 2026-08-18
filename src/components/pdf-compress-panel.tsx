@@ -6,12 +6,15 @@ import { CheckCircle2, FileText, Loader2, Upload, X } from "lucide-react";
 import { useT } from "@/lib/i18n";
 import { MAX_UPLOAD_BYTES, fetchWithTimeout, readErrorMessage, uploadPdfToBlob } from "@/lib/irs-splitter/client-pdf-upload";
 
-// Đảm bảo dưới 1MB cho MỌI file bất kể nặng bao nhiêu/trang -- xử lý theo TỪNG KHOẢNG TRANG
+// Đảm bảo dưới 3MB cho MỌI file bất kể nặng bao nhiêu/trang -- xử lý theo TỪNG KHOẢNG TRANG
 // nhỏ, gọi server nhiều lần (mỗi lần được cấp lại đủ 60s, không cộng dồn) thay vì 1 lần gọi
 // xử lý trọn file. Gặp thật trên production (2026-08-18): file 15 trang/48MB (~3.2MB/trang)
 // vượt quá 60s nếu xử lý trong 1 lần gọi -- riêng bước GIẢI MÃ ảnh gốc độ phân giải cao của
 // từng trang đã tốn nhiều giây, cộng dồn nhiều trang thì vượt giới hạn cứng của gói Hobby.
-const TARGET_BYTES = 1_000_000;
+// Ngưỡng 3MB (đổi từ 1MB, 2026-08-19) cho phép giữ chất lượng ảnh tốt hơn (ít lượt hạ DPI hơn
+// mới đạt ngân sách) mà vẫn đủ nhỏ để gửi email/lưu trữ -- kiến trúc chunk không đổi gì khác,
+// chỉ 1 hằng số này quyết định ngưỡng đích.
+const TARGET_BYTES = 3_000_000;
 const SAFETY_MARGIN = 0.92;
 const DPI_STEPS = [200, 150, 120, 96, 72];
 // Số request chunk chạy song song -- giảm thời gian chờ thực tế của người dùng (nhiều lần
@@ -123,7 +126,7 @@ async function runDpiAttempt(
 }
 
 /**
- * Tab con "Nén PDF" trong "Notice Splitter" -- chọn 1 file PDF, tự động nén xuống dưới 1MB
+ * Tab con "Nén PDF" trong "Notice Splitter" -- chọn 1 file PDF, tự động nén xuống dưới 3MB
  * BẤT KỂ file gốc nặng bao nhiêu. Xử lý theo TỪNG KHOẢNG TRANG qua nhiều lần gọi
  * `/api/irs-splitter/compress-chunk` (né giới hạn 60s/lần của route xử lý, xem comment
  * TARGET_BYTES phía trên), rồi tự RÁP LẠI PDF cuối cùng NGAY TRÊN TRÌNH DUYỆT bằng `pdf-lib`
@@ -196,7 +199,7 @@ export function PdfCompressPanel() {
       let hitFloor = false;
       if (!finalAttempt || finalAttempt.bailed || finalAttempt.totalBytes > TARGET_BYTES) {
         // Mọi mức DPI đều hỏng/bail sớm -- chạy lại đúng 1 lần ở DPI sàn KHÔNG cho bail sớm,
-        // để luôn có đủ toàn bộ trang trả về (dù vẫn vượt 1MB) thay vì 1 bản dở dang.
+        // để luôn có đủ toàn bộ trang trả về (dù vẫn vượt 3MB) thay vì 1 bản dở dang.
         const floorDpi = DPI_STEPS[DPI_STEPS.length - 1];
         setCompressProgress({ dpi: floorDpi, pagesDone: 0, totalPages: pageCount });
         finalAttempt = await runDpiAttempt(blob.url, pageCount, floorDpi, perPageBudgetBytes, chunkPageCount, false, t, (pagesDone) =>
