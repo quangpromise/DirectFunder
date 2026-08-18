@@ -5,9 +5,12 @@ import type { PageJpegResult } from "./types";
 
 const MIN_JPEG_QUALITY = 35;
 const MAX_JPEG_QUALITY = 92;
-// ~6 bước binary-search đưa quality về sai số ±1, đủ chính xác mà không cần thử quá nhiều
-// lần (encode JPEG tuy rẻ hơn render nhưng vẫn tốn CPU nhân với số trang).
-const QUALITY_SEARCH_STEPS = 6;
+// Bước binary-search đưa quality về gần đúng, đủ chính xác mà không cần thử quá nhiều lần
+// (encode JPEG tuy rẻ hơn render nhưng vẫn tốn CPU nhân với số trang). Giảm từ 6 xuống 4
+// (2026-08-19) sau khi phát hiện nhánh "nhiều trang nhẹ/lần gọi" (xem pickChunkPageCount ở
+// pdf-compress-panel.tsx) có thể vượt 55s với PDF nội dung thật (chữ/vector phức tạp) dù
+// không hề có ảnh nặng -- encode ít lần hơn giúp giảm tổng thời gian mỗi request.
+const QUALITY_SEARCH_STEPS = 4;
 
 /**
  * Render 1 KHOẢNG TRANG (không phải cả tài liệu) của 1 file PDF thành JPEG ở 1 mức DPI cho

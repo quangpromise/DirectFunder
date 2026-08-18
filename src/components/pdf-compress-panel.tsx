@@ -39,19 +39,23 @@ function base64ToUint8Array(base64: string): Uint8Array {
 }
 
 /** File càng nặng/trang (scan độ phân giải cao) càng cần khoảng trang nhỏ hơn mỗi lần gọi
- * server, để riêng bước giải mã ảnh gốc của khoảng đó không vượt 60s. */
+ * server, để riêng bước giải mã ảnh gốc của khoảng đó không vượt 60s. Ngưỡng đã giảm mạnh
+ * (2026-08-19, gặp thật với file 10MB/10-50 trang -- nhánh "nhẹ" cũ gộp tới 8 trang/lần gọi
+ * ở DPI 200 và bị timeout dù không có ảnh nặng): chi phí render+encode PDF nội dung thật
+ * (chữ/vector phức tạp) không tỉ lệ thuần theo dung lượng file như ảnh scan, nên kể cả file
+ * "nhẹ" cũng cần khoảng trang nhỏ để an toàn trong 60s. */
 function pickChunkPageCount(avgSourceBytesPerPage: number): number {
-  if (avgSourceBytesPerPage > 3_000_000) return 2;
-  if (avgSourceBytesPerPage > 1_000_000) return 4;
-  return 8;
+  if (avgSourceBytesPerPage > 3_000_000) return 1;
+  if (avgSourceBytesPerPage > 1_000_000) return 2;
+  return 3;
 }
 
 /** Cùng lý do -- bỏ qua thẳng các mức DPI cao gần như chắc chắn không vừa ngân sách với file
- * nặng/trang, đỡ tốn 1 lượt xử lý chắc chắn hỏng. */
+ * nặng/trang, đỡ tốn 1 lượt xử lý chắc chắn hỏng. File "nhẹ" giờ cũng bắt đầu ở DPI 150 thay
+ * vì 200 (giảm chi phí render lần đầu, xem lý do ở pickChunkPageCount). */
 function pickStartDpiIndex(avgSourceBytesPerPage: number): number {
   if (avgSourceBytesPerPage > 3_000_000) return 2;
-  if (avgSourceBytesPerPage > 1_000_000) return 1;
-  return 0;
+  return 1;
 }
 
 function buildPageRanges(pageCount: number, chunkPageCount: number): Array<[number, number]> {
