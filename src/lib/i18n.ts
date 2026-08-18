@@ -734,6 +734,7 @@ const dict: Record<Language, Record<string, string>> = {
     "irsSplitter.changeFile": "Đổi file khác",
     "irsSplitter.reset": "Làm lại",
     "irsSplitter.pageCount": "{count} trang",
+    "irsSplitter.uploading": "Đang tải file lên... {percent}%",
     "irsSplitter.analyzing": "Đang phân tích file, có thể mất chút thời gian với file nhiều trang...",
     "irsSplitter.reviewHint": "Soát lại khoảng trang / tên khách hàng / loại thư / tax year trước khi tách — OCR đôi khi đọc sai tên hoặc bỏ sót tax year, sửa trực tiếp trong bảng bên dưới. Bỏ tick \"Not Update CRM\" nếu thư đã gửi thẳng cho khách (không qua địa chỉ văn phòng).",
     "irsSplitter.col.pages": "Trang",
@@ -749,6 +750,7 @@ const dict: Record<Language, Record<string, string>> = {
     "irsSplitter.fileTooLarge": "File quá nặng (tối đa 50MB mỗi lần tải lên) — hãy chia nhỏ file trước.",
     "irsSplitter.maxSizeHint": "Tối đa 50MB mỗi lần tải lên.",
     "irsSplitter.processingTimeout": "Xử lý quá lâu (quá 55 giây) — file có thể quá lớn/quá nhiều trang cho giới hạn xử lý của nền tảng hosting, hãy thử chia nhỏ file trước khi tải lên.",
+    "irsSplitter.uploadTimeout": "Tải file lên quá lâu (quá 5 phút) — kiểm tra lại kết nối mạng hoặc thử lại với file nhỏ hơn.",
   },
   en: {
     // Top nav
@@ -1476,6 +1478,7 @@ const dict: Record<Language, Record<string, string>> = {
     "irsSplitter.changeFile": "Change file",
     "irsSplitter.reset": "Start over",
     "irsSplitter.pageCount": "{count} pages",
+    "irsSplitter.uploading": "Uploading file... {percent}%",
     "irsSplitter.analyzing": "Analyzing the file, this can take a moment for long files...",
     "irsSplitter.reviewHint": "Review the page range / client name / notice type / tax year before splitting — OCR sometimes misreads a name or misses the tax year, edit directly in the table below. Uncheck \"Not Update CRM\" if the letter was already mailed straight to the client (not via the office address).",
     "irsSplitter.col.pages": "Pages",
@@ -1491,6 +1494,7 @@ const dict: Record<Language, Record<string, string>> = {
     "irsSplitter.fileTooLarge": "File is too large (max 50MB per upload) — split the file first.",
     "irsSplitter.maxSizeHint": "Max 50MB per upload.",
     "irsSplitter.processingTimeout": "Processing took too long (over 55s) — the file may be too large/have too many pages for the hosting platform's processing limit, try splitting it before uploading.",
+    "irsSplitter.uploadTimeout": "Upload took too long (over 5 minutes) — check your network connection or try a smaller file.",
   },
 };
 

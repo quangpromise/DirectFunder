@@ -57,6 +57,11 @@ async function readErrorMessage(res: Response, fallback: string): Promise<string
 // toàn (không nhận được response nào).
 const CLIENT_FETCH_TIMEOUT_MS = 55_000;
 
+// Ngưỡng riêng cho bước UPLOAD lên Vercel Blob — không bị ràng buộc bởi `maxDuration` của
+// route xử lý (route đó chỉ chạy SAU khi upload xong), nên có thể rộng hơn nhiều. Vẫn cần 1
+// ngưỡng hữu hạn để không treo tuyệt đối vô thời hạn nếu kết nối thật sự chết giữa chừng.
+const UPLOAD_TIMEOUT_MS = 5 * 60_000;
+
 async function fetchWithTimeout(url: string, options: RequestInit): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), CLIENT_FETCH_TIMEOUT_MS);
@@ -85,6 +90,13 @@ export function NoticeSplitterPanel() {
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [pageCount, setPageCount] = useState<number | null>(null);
   const [records, setRecords] = useState<EditableRecord[] | null>(null);
+  // Tách riêng 2 pha (upload lên Blob vs server phân tích) thay vì gộp chung 1 cờ "analyzing"
+  // — trước đây gộp chung khiến người dùng KHÔNG PHÂN BIỆT được đang tải lên (có thể chính
+  // đáng mất 30-60s+ với file vài chục MB trên mạng chậm) hay thật sự bị treo, tưởng nhầm là
+  // bug (gặp thật trên production 2026-08-18 với file 48MB — hoá ra vẫn đang tải lên, không
+  // phải server bị treo). `uploadProgress` (0-100) hiện %  tiến trình thật từ
+  // `onUploadProgress` của @vercel/blob để người dùng thấy nó vẫn đang chạy.
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [splitting, setSplitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -94,24 +106,46 @@ export function NoticeSplitterPanel() {
     setBlobUrl(null);
     setPageCount(null);
     setRecords(null);
+    setUploadProgress(null);
     setError(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
   async function analyze(f: File) {
-    setAnalyzing(true);
     setError(null);
     setRecords(null);
     setPageCount(null);
     setBlobUrl(null);
+    setUploadProgress(0);
     try {
       // Upload THẲNG lên Vercel Blob từ trình duyệt (không qua route handler của app) — né
       // giới hạn ~4.5MB thân request của Vercel Serverless Function, xem comment MAX_UPLOAD_BYTES.
-      const blob = await upload(f.name, f, {
-        access: "public",
-        handleUploadUrl: "/api/irs-splitter/blob-upload",
-      });
+      // Với file vài chục MB, riêng bước NÀY có thể mất hàng chục giây trên mạng chậm — báo
+      // % tiến trình thật để phân biệt với bước phân tích ở server bên dưới. abortSignal đặt
+      // ngưỡng rộng hơn nhiều so với CLIENT_FETCH_TIMEOUT_MS (bản thân việc upload không bị
+      // ràng buộc bởi maxDuration của route xử lý) -- chỉ để tránh treo TUYỆT ĐỐI vô thời hạn
+      // nếu kết nối thật sự chết giữa chừng.
+      const uploadAbort = new AbortController();
+      const uploadTimer = setTimeout(() => uploadAbort.abort(), UPLOAD_TIMEOUT_MS);
+      let blob: { url: string };
+      try {
+        blob = await upload(f.name, f, {
+          access: "public",
+          handleUploadUrl: "/api/irs-splitter/blob-upload",
+          onUploadProgress: ({ percentage }) => setUploadProgress(percentage),
+          abortSignal: uploadAbort.signal,
+        });
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") {
+          throw new Error(t("irsSplitter.uploadTimeout"));
+        }
+        throw err;
+      } finally {
+        clearTimeout(uploadTimer);
+      }
       setBlobUrl(blob.url);
+      setUploadProgress(null);
+      setAnalyzing(true);
 
       const res = await fetchWithTimeout("/api/irs-splitter/analyze", {
         method: "POST",
@@ -137,6 +171,7 @@ export function NoticeSplitterPanel() {
     } catch (err) {
       setError(err instanceof DOMException && err.name === "AbortError" ? t("irsSplitter.processingTimeout") : err instanceof Error ? err.message : t("irsSplitter.analyzeFailed"));
     } finally {
+      setUploadProgress(null);
       setAnalyzing(false);
     }
   }
@@ -193,7 +228,7 @@ export function NoticeSplitterPanel() {
     }
   }
 
-  const busy = analyzing || splitting;
+  const busy = uploadProgress !== null || analyzing || splitting;
 
   return (
     <div className="flex h-full flex-col">
@@ -244,6 +279,18 @@ export function NoticeSplitterPanel() {
 
         {file && pageCount != null && (
           <p className="mb-3 text-xs text-text-faint">{t("irsSplitter.pageCount", { count: pageCount })}</p>
+        )}
+
+        {uploadProgress !== null && (
+          <div className="flex flex-col gap-2 py-8">
+            <div className="flex items-center gap-2 text-sm text-text-dim">
+              <Loader2 size={16} className="animate-spin" />
+              {t("irsSplitter.uploading", { percent: Math.round(uploadProgress) })}
+            </div>
+            <div className="h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-surface">
+              <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${uploadProgress}%` }} />
+            </div>
+          </div>
         )}
 
         {analyzing && (
