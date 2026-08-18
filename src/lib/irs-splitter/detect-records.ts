@@ -18,6 +18,7 @@
 // review") trước khi coi tên/tax year là chính xác tuyệt đối.
 
 import { DetectOptions, IrsNoticeRecord } from "./types";
+import { isCareOfEligibleNoticeType } from "./care-of-eligibility";
 
 export const DEFAULT_OPTIONS: Required<DetectOptions> = {
   // Địa chỉ văn phòng "in care of" in trên thư chưa được chuyển thẳng cho khách hàng. Chỉ
@@ -165,6 +166,11 @@ function extractNoticeType(content: string): string | null {
   if (m) return "LT" + m[1];
   m = content.match(/LTR\s*(\d{2,4})\s*([A-Z])?/i);
   if (m) return "LTR" + m[1] + (m[2] || "C").toUpperCase();
+  // Dòng thư "Letter ####C" -- chỉ khớp đúng 3 mã cụ thể (2273C/2840C/4458C) thay vì bắt bất
+  // kỳ số 4 chữ số + "C" nào (tránh khớp nhầm số/mã khác xuất hiện đâu đó trong thư), có
+  // hoặc không có chữ "Letter" đứng trước (đã gặp cả 2 dạng trong thư thật).
+  m = content.match(/(?:Letter\s+)?(2273|2840|4458)C\b/i);
+  if (m) return "LTR" + m[1] + "C";
   return null;
 }
 
@@ -243,6 +249,15 @@ export function detectRecords(pageTexts: string[], options: DetectOptions = {}):
     if (!rec.name) {
       const { name } = extractName(fullText, patterns);
       rec.name = name;
+    }
+  }
+
+  // Chỉ 1 nhóm loại thư cụ thể (CP89/CP289/CP521/CP523/CP01E/Letter 2273C/Letter 2840C/4458C)
+  // mới thật sự cần đánh dấu "Not Update CRM" -- áp dụng SAU pass 2 (lúc noticeType đã hoàn
+  // thiện từ cả trang đầu lẫn trang tiếp nối), không phải lúc tạo record ban đầu.
+  for (const rec of records) {
+    if (rec.hasCareOf && !isCareOfEligibleNoticeType(rec.noticeType)) {
+      rec.hasCareOf = false;
     }
   }
 

@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
 import { hasFeature } from "@/lib/rbac";
 import { splitIrsPdf } from "@/lib/irs-splitter";
+import { isCareOfEligibleNoticeType } from "@/lib/irs-splitter/care-of-eligibility";
 import { BlobFetchError, fetchBlobPdfBytes } from "@/lib/irs-splitter/fetch-blob-pdf";
 import { ProcessingTimeoutError, withTimeout } from "@/lib/irs-splitter/with-timeout";
 import type { IrsNoticeRecord } from "@/lib/irs-splitter";
@@ -49,15 +50,19 @@ export async function POST(request: NextRequest) {
     if (!Number.isInteger(startPage) || !Number.isInteger(endPage) || startPage < 1 || endPage < startPage) {
       return NextResponse.json({ error: `Khoảng trang không hợp lệ: ${JSON.stringify(r)}` }, { status: 400 });
     }
+    const noticeType = typeof r.noticeType === "string" && r.noticeType.trim() ? r.noticeType.trim() : null;
     records.push({
       id: typeof r.id === "string" ? r.id : `p${startPage}`,
       startPage,
       endPage,
       pageCount: endPage - startPage + 1,
-      noticeType: typeof r.noticeType === "string" && r.noticeType.trim() ? r.noticeType.trim() : null,
+      noticeType,
       name: typeof r.name === "string" && r.name.trim() ? r.name.trim() : null,
       taxYear: typeof r.taxYear === "string" && r.taxYear.trim() ? r.taxYear.trim() : null,
-      hasCareOf: !!r.hasCareOf,
+      // Chỉ 1 nhóm loại thư cụ thể mới được phép đánh dấu "Not Update CRM" (xem
+      // care-of-eligibility.ts) -- ép lại ở server, KHÔNG tin thẳng giá trị client gửi lên
+      // (phòng trường hợp client bị qua mặt/gọi API trực tiếp).
+      hasCareOf: !!r.hasCareOf && isCareOfEligibleNoticeType(noticeType),
     });
   }
 

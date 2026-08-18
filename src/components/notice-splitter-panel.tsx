@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { upload } from "@vercel/blob/client";
 import { Download, FileText, Loader2, Trash2, Upload, X } from "lucide-react";
 import { useT } from "@/lib/i18n";
+import { isCareOfEligibleNoticeType } from "@/lib/irs-splitter/care-of-eligibility";
 
 interface ApiRecord {
   id: string;
@@ -316,7 +317,9 @@ export function NoticeSplitterPanel() {
                   </tr>
                 </thead>
                 <tbody>
-                  {records.map((r, i) => (
+                  {records.map((r, i) => {
+                    const careOfEligible = isCareOfEligibleNoticeType(r.noticeType);
+                    return (
                     <tr key={i} className="border-b border-border last:border-b-0 hover:bg-surface-hover">
                       <td className="px-2 py-1.5">
                         <div className="flex items-center gap-1">
@@ -340,7 +343,13 @@ export function NoticeSplitterPanel() {
                       <td className="px-2 py-1.5">
                         <input
                           value={r.noticeType}
-                          onChange={(e) => updateRecord(i, { noticeType: e.target.value })}
+                          onChange={(e) => {
+                            const noticeType = e.target.value;
+                            updateRecord(
+                              i,
+                              isCareOfEligibleNoticeType(noticeType) ? { noticeType } : { noticeType, hasCareOf: false }
+                            );
+                          }}
                           placeholder="CP504..."
                           className="w-full min-w-[90px] rounded border border-border bg-surface px-1.5 py-1 text-xs outline-none focus:border-accent"
                         />
@@ -364,8 +373,10 @@ export function NoticeSplitterPanel() {
                         <input
                           type="checkbox"
                           checked={r.hasCareOf}
+                          disabled={!careOfEligible}
+                          title={careOfEligible ? undefined : t("irsSplitter.careOfNotEligible")}
                           onChange={(e) => updateRecord(i, { hasCareOf: e.target.checked })}
-                          className="h-4 w-4 accent-[var(--accent)]"
+                          className="h-4 w-4 accent-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-30"
                         />
                       </td>
                       <td className="px-2 py-1.5 text-center">
@@ -378,7 +389,8 @@ export function NoticeSplitterPanel() {
                         </button>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
