@@ -729,6 +729,8 @@ const dict: Record<Language, Record<string, string>> = {
     "cpaReviewConnect.secretOnceWarning": "Bí mật này chỉ hiện ĐÚNG 1 LẦN — nếu mất đoạn script, ngắt kết nối rồi kết nối lại để sinh secret mới.",
 
     // Notice Splitter (tab trong popup "For Processor" — tách thư IRS gộp thành file riêng theo khách hàng)
+    "irsSplitter.subTabSplit": "Tách thư",
+    "irsSplitter.subTabCompress": "Nén PDF",
     "irsSplitter.intro": "Chọn 1 file PDF gộp nhiều thư IRS (bản scan) — hệ thống tự nhận diện ranh giới từng thư, đoán tên khách hàng/loại thư/tax year, để bạn soát lại rồi tách thành 1 file PDF riêng cho mỗi khách hàng.",
     "irsSplitter.chooseFile": "Chọn file PDF",
     "irsSplitter.changeFile": "Đổi file khác",
@@ -752,6 +754,13 @@ const dict: Record<Language, Record<string, string>> = {
     "irsSplitter.maxSizeHint": "Tối đa 50MB mỗi lần tải lên.",
     "irsSplitter.processingTimeout": "Xử lý quá lâu (quá 55 giây) — file có thể quá lớn/quá nhiều trang cho giới hạn xử lý của nền tảng hosting, hãy thử chia nhỏ file trước khi tải lên.",
     "irsSplitter.uploadTimeout": "Tải file lên quá lâu (quá 5 phút) — kiểm tra lại kết nối mạng hoặc thử lại với file nhỏ hơn.",
+
+    // Nén PDF (tab con trong "Notice Splitter") — nén 1 file PDF xuống dưới 1MB bất kể nặng bao nhiêu
+    "compressPdf.intro": "Chọn 1 file PDF để nén xuống dưới 1MB — mỗi trang sẽ được chuyển thành ảnh nén (không còn copy/tìm chữ được), đổi lại đảm bảo dưới 1MB dù file gốc nặng bao nhiêu.",
+    "compressPdf.compressing": "Đang nén file, có thể mất chút thời gian với file nhiều trang...",
+    "compressPdf.result": "Đã nén xong: {before} → {after}. File đã tự tải xuống.",
+    "compressPdf.hitFloorWarning": "File vẫn còn {after} — chưa xuống được dưới 1MB dù đã nén ở mức thấp nhất (file quá nhiều trang). Vẫn đã tải xuống, cân nhắc tách nhỏ file trước bằng tab \"Tách thư\" rồi nén từng phần.",
+    "compressPdf.compressFailed": "Nén file thất bại.",
   },
   en: {
     // Top nav
@@ -1474,6 +1483,8 @@ const dict: Record<Language, Record<string, string>> = {
     "cpaReviewConnect.secretOnceWarning": "This secret is shown only ONCE — if you lose the script, disconnect and reconnect to generate a new one.",
 
     // Notice Splitter (tab inside the "For Processor" popup)
+    "irsSplitter.subTabSplit": "Split",
+    "irsSplitter.subTabCompress": "Compress PDF",
     "irsSplitter.intro": "Pick a scanned PDF that bundles several IRS notices together — the tool detects each letter's page boundaries and guesses the client name / notice type / tax year, for you to review before splitting into one PDF per client.",
     "irsSplitter.chooseFile": "Choose PDF file",
     "irsSplitter.changeFile": "Change file",
@@ -1497,6 +1508,13 @@ const dict: Record<Language, Record<string, string>> = {
     "irsSplitter.maxSizeHint": "Max 50MB per upload.",
     "irsSplitter.processingTimeout": "Processing took too long (over 55s) — the file may be too large/have too many pages for the hosting platform's processing limit, try splitting it before uploading.",
     "irsSplitter.uploadTimeout": "Upload took too long (over 5 minutes) — check your network connection or try a smaller file.",
+
+    // Compress PDF (sub-tab inside "Notice Splitter") — compress a PDF under 1MB no matter how heavy
+    "compressPdf.intro": "Pick a PDF to compress under 1MB — each page becomes a compressed image (no more copy/search text), in exchange for a guaranteed under-1MB result no matter how heavy the original file is.",
+    "compressPdf.compressing": "Compressing the file, this can take a moment for long files...",
+    "compressPdf.result": "Compressed: {before} → {after}. The file has been downloaded automatically.",
+    "compressPdf.hitFloorWarning": "The file is still {after} — could not get under 1MB even at the lowest quality (too many pages). It was still downloaded — consider splitting the file first using the \"Split\" tab, then compressing each part.",
+    "compressPdf.compressFailed": "Compression failed.",
   },
 };
 

@@ -11,6 +11,7 @@
     "db:pull-prod": "tsx prisma/pull-from-prod.ts"
   },
   "dependencies": {
+    "@napi-rs/canvas": "^1.0.7",
     "@prisma/adapter-pg": "^7.9.1",
     "@prisma/client": "^7.9.1",
     "@vercel/blob": "^2.8.0",

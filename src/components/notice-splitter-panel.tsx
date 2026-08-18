@@ -1,10 +1,16 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { upload } from "@vercel/blob/client";
-import { Download, FileText, Loader2, Trash2, Upload, X } from "lucide-react";
+import { Download, FileText, Loader2, Minimize2, Scissors, Trash2, Upload, X } from "lucide-react";
 import { useT } from "@/lib/i18n";
 import { isCareOfEligibleNoticeType } from "@/lib/irs-splitter/care-of-eligibility";
+import {
+  MAX_UPLOAD_BYTES,
+  fetchWithTimeout,
+  readErrorMessage,
+  uploadPdfToBlob,
+} from "@/lib/irs-splitter/client-pdf-upload";
+import { PdfCompressPanel } from "@/components/pdf-compress-panel";
 
 interface ApiRecord {
   id: string;
@@ -28,62 +34,55 @@ interface EditableRecord {
   hasCareOf: boolean;
 }
 
-// Vercel giới hạn CỨNG dung lượng request body của Serverless Function (~4.5MB, áp dụng ở
-// tầng edge/proxy TRƯỚC KHI request chạm tới route handler của app) — vì vậy file KHÔNG gửi
-// thẳng qua route handler của app nữa, mà upload THẲNG lên Vercel Blob từ trình duyệt (client
-// upload, xem `upload()` bên dưới + route `/api/irs-splitter/blob-upload`), né hoàn toàn giới
-// hạn đó. Ngưỡng dưới đây chỉ còn là chặn hợp lý phía UI (tránh file quá khổ khiến bước phân
-// tích/tách vượt `maxDuration=60` của route xử lý), không còn là giới hạn kỹ thuật bắt buộc.
-const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+type NoticeSplitterSubTab = "split" | "compress";
 
-/** Đọc lỗi từ 1 Response không OK — ưu tiên JSON `{error}` do route handler của app trả về,
- * nhưng fallback an toàn khi response không phải JSON (vd trang lỗi 413 thuần text do chính
- * Vercel platform trả về TRƯỚC route handler, không đi qua code app nên không có dạng JSON
- * quen thuộc — `res.json()` thẳng ở đây từng làm crash với "Unexpected token... is not valid
- * JSON" thay vì hiện thông báo rõ ràng). */
-async function readErrorMessage(res: Response, fallback: string): Promise<string> {
-  try {
-    const data = await res.json();
-    return (data?.error as string | undefined) || fallback;
-  } catch {
-    return fallback;
-  }
-}
+/**
+ * Tab "Notice Splitter" trong popup "For Processor" (`for-processor-dialog.tsx`) — 2 tab con
+ * nhỏ bên trong: "Tách thư" (`SplitTab`, logic gốc) và "Nén PDF" (`PdfCompressPanel`, thêm
+ * 2026-08-18) — dùng chung 1 lần upload/1 permission `useIrsNoticeSplitter`, không cần feature
+ * key riêng cho tab con vì đây là công cụ xử lý PDF cùng nhóm, không phải mục điều hướng
+ * độc lập.
+ */
+export function NoticeSplitterPanel() {
+  const [subTab, setSubTab] = useState<NoticeSplitterSubTab>("split");
+  const t = useT();
 
-// `fetch()` KHÔNG có timeout mặc định — nếu server bị Vercel cắt kết nối ngang xương ở mốc
-// `maxDuration` (thay vì trả về 1 response lỗi sạch), trình duyệt cứ chờ VÔ THỜI HẠN (bug
-// thật gặp trên production 2026-08-18, xem deployment-database-sync.md mục 4.31). Route xử
-// lý đã tự trả lỗi sớm hơn ở ~50s (xem PROCESSING_TIMEOUT_MS phía server) — timeout phía
-// client đặt ở 55s chỉ là lưới an toàn cuối cùng cho trường hợp kết nối bị treo/reset hoàn
-// toàn (không nhận được response nào).
-const CLIENT_FETCH_TIMEOUT_MS = 55_000;
-
-// Ngưỡng riêng cho bước UPLOAD lên Vercel Blob — không bị ràng buộc bởi `maxDuration` của
-// route xử lý (route đó chỉ chạy SAU khi upload xong), nên có thể rộng hơn nhiều. Vẫn cần 1
-// ngưỡng hữu hạn để không treo tuyệt đối vô thời hạn nếu kết nối thật sự chết giữa chừng.
-const UPLOAD_TIMEOUT_MS = 5 * 60_000;
-
-async function fetchWithTimeout(url: string, options: RequestInit): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), CLIENT_FETCH_TIMEOUT_MS);
-  try {
-    return await fetch(url, { ...options, signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex items-center gap-1 border-b border-border px-4 py-2">
+        <button
+          onClick={() => setSubTab("split")}
+          className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition ${
+            subTab === "split" ? "gradient-btn text-white" : "text-text-faint hover:text-text-dim"
+          }`}
+        >
+          <Scissors size={12} />
+          {t("irsSplitter.subTabSplit")}
+        </button>
+        <button
+          onClick={() => setSubTab("compress")}
+          className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition ${
+            subTab === "compress" ? "gradient-btn text-white" : "text-text-faint hover:text-text-dim"
+          }`}
+        >
+          <Minimize2 size={12} />
+          {t("irsSplitter.subTabCompress")}
+        </button>
+      </div>
+      <div className="min-h-0 flex-1">{subTab === "split" ? <SplitTab /> : <PdfCompressPanel />}</div>
+    </div>
+  );
 }
 
 /**
- * Nội dung tab "Notice Splitter" trong popup "For Processor" (`for-processor-dialog.tsx`) —
- * bỏ 1 file PDF gộp nhiều thư IRS (bản scan nhiều khách hàng dồn vào 1 file), tự nhận diện
+ * Bỏ 1 file PDF gộp nhiều thư IRS (bản scan nhiều khách hàng dồn vào 1 file), tự nhận diện
  * ranh giới từng thư + đoán tên/loại thư/tax year (xem src/lib/irs-splitter), cho soát/sửa
  * trước khi tách thành 1 file PDF/khách hàng đóng gói trong 1 file .zip tải về. Xử lý HOÀN
  * TOÀN trong bộ nhớ của request (2 API route) — không lưu file gốc/record nào xuống DB,
- * client tự giữ File object suốt 2 bước (phân tích -> tách) nên không cần dọn dẹp state tạm
- * ở server. Trước đây là 1 tab riêng trên top-nav (`/dashboard/notice-splitter`) — dời vào
- * đây (2026-08-18) theo yêu cầu, cùng chỗ với báo cáo công việc Processor.
+ * client tự giữ blobUrl (đã upload Vercel Blob) suốt 2 bước (phân tích -> tách) nên không
+ * cần dọn dẹp state tạm ở server.
  */
-export function NoticeSplitterPanel() {
+function SplitTab() {
   const t = useT();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -119,30 +118,18 @@ export function NoticeSplitterPanel() {
     setBlobUrl(null);
     setUploadProgress(0);
     try {
-      // Upload THẲNG lên Vercel Blob từ trình duyệt (không qua route handler của app) — né
-      // giới hạn ~4.5MB thân request của Vercel Serverless Function, xem comment MAX_UPLOAD_BYTES.
-      // Với file vài chục MB, riêng bước NÀY có thể mất hàng chục giây trên mạng chậm — báo
-      // % tiến trình thật để phân biệt với bước phân tích ở server bên dưới. abortSignal đặt
-      // ngưỡng rộng hơn nhiều so với CLIENT_FETCH_TIMEOUT_MS (bản thân việc upload không bị
-      // ràng buộc bởi maxDuration của route xử lý) -- chỉ để tránh treo TUYỆT ĐỐI vô thời hạn
-      // nếu kết nối thật sự chết giữa chừng.
-      const uploadAbort = new AbortController();
-      const uploadTimer = setTimeout(() => uploadAbort.abort(), UPLOAD_TIMEOUT_MS);
+      // Upload THẲNG lên Vercel Blob từ trình duyệt -- né giới hạn ~4.5MB thân request của
+      // Vercel Serverless Function, xem client-pdf-upload.ts. Với file vài chục MB, riêng
+      // bước NÀY có thể mất hàng chục giây trên mạng chậm -- báo % tiến trình thật để phân
+      // biệt với bước phân tích ở server bên dưới.
       let blob: { url: string };
       try {
-        blob = await upload(f.name, f, {
-          access: "public",
-          handleUploadUrl: "/api/irs-splitter/blob-upload",
-          onUploadProgress: ({ percentage }) => setUploadProgress(percentage),
-          abortSignal: uploadAbort.signal,
-        });
+        blob = await uploadPdfToBlob(f, setUploadProgress);
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") {
           throw new Error(t("irsSplitter.uploadTimeout"));
         }
         throw err;
-      } finally {
-        clearTimeout(uploadTimer);
       }
       setBlobUrl(blob.url);
       setUploadProgress(null);
