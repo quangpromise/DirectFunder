@@ -19,6 +19,14 @@ const MAX_JPEG_QUALITY = 92;
 // lần (encode JPEG tuy rẻ hơn render nhưng vẫn tốn CPU nhân với số trang).
 const QUALITY_SEARCH_STEPS = 6;
 
+interface RenderPassResult {
+  bytes: Uint8Array;
+  /** true nếu dừng render giữa chừng vì đã chắc chắn vượt TARGET_BYTES (còn trang chưa xử lý
+   * -- `bytes` khi đó KHÔNG đầy đủ toàn bộ tài liệu, chỉ dùng để biết mức DPI này hỏng, không
+   * phải kết quả cuối cùng). */
+  bailedEarly: boolean;
+}
+
 /**
  * Nén 1 file PDF xuống dưới 1MB BẤT KỂ file gốc nặng bao nhiêu -- CHỈ CÓ CÁCH DUY NHẤT đảm
  * bảo được ngưỡng cứng này: rasterize từng trang thành ảnh JPEG rồi ráp lại thành 1 PDF toàn
@@ -33,7 +41,15 @@ const QUALITY_SEARCH_STEPS = 6;
  * ngân sách ở quality sàn, trang đơn giản/trắng nhiều sẽ tự nhiên nhẹ hơn ngân sách). Đo lại
  * TỔNG dung lượng PDF thật sau khi ráp xong ở mỗi mức DPI mới là điều kiện dừng thật sự.
  *
- * Nếu hết cả 5 mức DPI mà vẫn > 1MB (file quá nhiều trang) -- KHÔNG lỗi cứng, trả về kết quả
+ * 2 tối ưu tốc độ (thêm 2026-08-18 sau khi gặp timeout thật trên production với file 10-50
+ * trang trên gói Vercel Hobby, giới hạn cứng 60s/lần xử lý):
+ * 1. Chọn mức DPI BẮT ĐẦU dựa trên dung lượng trung bình/trang của file GỐC -- file scan độ
+ *    phân giải cao/ảnh nặng gần như chắc chắn không vừa ngân sách ở DPI cao, bỏ qua thẳng các
+ *    mức đó thay vì tốn 1 lượt render đầy đủ (chậm nhất) rồi mới biết hỏng.
+ * 2. DỪNG SỚM giữa chừng 1 lượt DPI ngay khi tổng byte JPEG đã vượt ngân sách (còn trang chưa
+ *    xử lý) -- không lãng phí thời gian hoàn thành 1 lượt chắc chắn thất bại.
+ *
+ * Nếu hết mọi mức DPI mà vẫn > 1MB (file quá nhiều trang) -- KHÔNG lỗi cứng, trả về kết quả
  * tốt nhất đã có kèm cờ `hitFloor: true` để caller tự quyết định cách báo cho người dùng.
  */
 export async function compressPdfUnder1MB(pdfData: Uint8Array | Buffer): Promise<CompressResult> {
@@ -46,51 +62,86 @@ export async function compressPdfUnder1MB(pdfData: Uint8Array | Buffer): Promise
 
   const perPageBudgetBytes = Math.max(1, Math.floor((TARGET_BYTES * SAFETY_MARGIN) / pageCount));
 
-  let lastAttemptBytes: Uint8Array | null = null;
-  let lastAttemptDpi = DPI_STEPS[0];
+  const avgSourceBytesPerPage = data.length / pageCount;
+  const startIndex = avgSourceBytesPerPage > 3_000_000 ? 2 : avgSourceBytesPerPage > 1_000_000 ? 1 : 0;
+  const dpiSteps = DPI_STEPS.slice(startIndex);
 
-  for (const dpi of DPI_STEPS) {
-    const outDoc = await PDFDocument.create();
+  let lastAttempt: RenderPassResult | null = null;
+  let lastAttemptDpi = dpiSteps[0];
 
-    for (let i = 1; i <= pageCount; i++) {
-      const page = await doc.getPage(i);
-      // Kích thước THẬT của trang PDF gốc (đơn vị point, 1/72 inch) -- dùng để tạo trang
-      // output đúng tỷ lệ, KHÔNG phải kích thước pixel đã render ở DPI cao hơn.
-      const pointsViewport = page.getViewport({ scale: 1 });
-      const renderViewport = page.getViewport({ scale: dpi / 72 });
-      const width = Math.max(1, Math.ceil(renderViewport.width));
-      const height = Math.max(1, Math.ceil(renderViewport.height));
-      const canvasAndContext = canvasFactory.create(width, height);
-
-      // `canvasFactory` KHÔNG cần truyền lại ở đây -- `canvasContext` đã là context THẬT tự
-      // tạo qua factory ở dòng trên, render() dùng thẳng context đó (không cần tự tạo canvas
-      // nội bộ qua factory nữa, khác `getDocument({canvasFactory})` ở trên). pdfjs type hoá
-      // `canvasContext` là `CanvasRenderingContext2D` (DOM chuẩn) -- `SKRSContext2D` của
-      // `@napi-rs/canvas` đủ tương thích API-shape để pdfjs vẽ được, chỉ thiếu vài method chỉ
-      // dành cho DOM (vd `drawFocusIfNeeded`, không liên quan tới vẽ headless) nên cần ép
-      // kiểu qua `unknown` (không dùng `any`).
-      await page.render({
-        canvasContext: canvasAndContext.context as unknown as CanvasRenderingContext2D,
-        viewport: renderViewport,
-      }).promise;
-
-      const jpegBuffer = encodeJpegToBudget(canvasAndContext.canvas, perPageBudgetBytes);
-      canvasFactory.destroy(canvasAndContext);
-
-      const embedded = await outDoc.embedJpg(jpegBuffer);
-      const pdfPage = outDoc.addPage([pointsViewport.width, pointsViewport.height]);
-      pdfPage.drawImage(embedded, { x: 0, y: 0, width: pointsViewport.width, height: pointsViewport.height });
-    }
-
-    const bytes = await outDoc.save();
-    lastAttemptBytes = bytes;
+  for (const dpi of dpiSteps) {
+    const attempt = await renderPass(doc, canvasFactory, dpi, pageCount, perPageBudgetBytes);
+    lastAttempt = attempt;
     lastAttemptDpi = dpi;
-    if (bytes.length <= TARGET_BYTES) {
-      return { bytes, pageCount, hitFloor: false, finalDpi: dpi };
+    if (!attempt.bailedEarly && attempt.bytes.length <= TARGET_BYTES) {
+      return { bytes: attempt.bytes, pageCount, hitFloor: false, finalDpi: dpi };
     }
   }
 
-  return { bytes: lastAttemptBytes as Uint8Array, pageCount, hitFloor: true, finalDpi: lastAttemptDpi };
+  // Mọi mức DPI đã thử đều bail sớm (kể cả mức thấp nhất `dpiSteps` luôn bao gồm 72, sàn cuối
+  // của DPI_STEPS) -- render lại đúng 1 lần ở DPI sàn KHÔNG cho bail sớm, để luôn có 1 kết quả
+  // đầy đủ trả về (dù vẫn vượt 1MB) thay vì 1 bản dở dang.
+  if (!lastAttempt || lastAttempt.bailedEarly) {
+    const floorDpi = DPI_STEPS[DPI_STEPS.length - 1];
+    const attempt = await renderPass(doc, canvasFactory, floorDpi, pageCount, perPageBudgetBytes, { allowBail: false });
+    lastAttempt = attempt;
+    lastAttemptDpi = floorDpi;
+  }
+
+  return { bytes: lastAttempt.bytes, pageCount, hitFloor: true, finalDpi: lastAttemptDpi };
+}
+
+/** Render TOÀN BỘ trang ở 1 mức DPI, đóng gói thành 1 PDF -- dừng sớm (`bailedEarly: true`,
+ * xem RenderPassResult) nếu `allowBail` (mặc định true) và tổng byte JPEG đã vượt
+ * `TARGET_BYTES` trong khi còn trang chưa xử lý. */
+async function renderPass(
+  doc: pdfjsLib.PDFDocumentProxy,
+  canvasFactory: NapiCanvasFactory,
+  dpi: number,
+  pageCount: number,
+  perPageBudgetBytes: number,
+  options: { allowBail?: boolean } = {}
+): Promise<RenderPassResult> {
+  const allowBail = options.allowBail ?? true;
+  const outDoc = await PDFDocument.create();
+  let runningBytes = 0;
+
+  for (let i = 1; i <= pageCount; i++) {
+    const page = await doc.getPage(i);
+    // Kích thước THẬT của trang PDF gốc (đơn vị point, 1/72 inch) -- dùng để tạo trang output
+    // đúng tỷ lệ, KHÔNG phải kích thước pixel đã render ở DPI cao hơn.
+    const pointsViewport = page.getViewport({ scale: 1 });
+    const renderViewport = page.getViewport({ scale: dpi / 72 });
+    const width = Math.max(1, Math.ceil(renderViewport.width));
+    const height = Math.max(1, Math.ceil(renderViewport.height));
+    const canvasAndContext = canvasFactory.create(width, height);
+
+    // `canvasFactory` KHÔNG cần truyền lại ở đây -- `canvasContext` đã là context THẬT tự tạo
+    // qua factory ở dòng trên, render() dùng thẳng context đó (không cần tự tạo canvas nội bộ
+    // qua factory nữa, khác `getDocument({canvasFactory})` ở caller). pdfjs type hoá
+    // `canvasContext` là `CanvasRenderingContext2D` (DOM chuẩn) -- `SKRSContext2D` của
+    // `@napi-rs/canvas` đủ tương thích API-shape để pdfjs vẽ được, chỉ thiếu vài method chỉ
+    // dành cho DOM (vd `drawFocusIfNeeded`, không liên quan tới vẽ headless) nên cần ép kiểu
+    // qua `unknown` (không dùng `any`).
+    await page.render({
+      canvasContext: canvasAndContext.context as unknown as CanvasRenderingContext2D,
+      viewport: renderViewport,
+    }).promise;
+
+    const jpegBuffer = encodeJpegToBudget(canvasAndContext.canvas, perPageBudgetBytes);
+    canvasFactory.destroy(canvasAndContext);
+
+    const embedded = await outDoc.embedJpg(jpegBuffer);
+    const pdfPage = outDoc.addPage([pointsViewport.width, pointsViewport.height]);
+    pdfPage.drawImage(embedded, { x: 0, y: 0, width: pointsViewport.width, height: pointsViewport.height });
+
+    runningBytes += jpegBuffer.length;
+    if (allowBail && runningBytes > TARGET_BYTES && i < pageCount) {
+      return { bytes: await outDoc.save(), bailedEarly: true };
+    }
+  }
+
+  return { bytes: await outDoc.save(), bailedEarly: false };
 }
 
 /** Binary-search JPEG quality (không render lại -- chỉ encode lại canvas đã có sẵn, rẻ) để
