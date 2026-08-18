@@ -38,16 +38,17 @@ function base64ToUint8Array(base64: string): Uint8Array {
   return bytes;
 }
 
-/** File càng nặng/trang (scan độ phân giải cao) càng cần khoảng trang nhỏ hơn mỗi lần gọi
- * server, để riêng bước giải mã ảnh gốc của khoảng đó không vượt 60s. Ngưỡng đã giảm mạnh
- * (2026-08-19, gặp thật với file 10MB/10-50 trang -- nhánh "nhẹ" cũ gộp tới 8 trang/lần gọi
- * ở DPI 200 và bị timeout dù không có ảnh nặng): chi phí render+encode PDF nội dung thật
- * (chữ/vector phức tạp) không tỉ lệ thuần theo dung lượng file như ảnh scan, nên kể cả file
- * "nhẹ" cũng cần khoảng trang nhỏ để an toàn trong 60s. */
-function pickChunkPageCount(avgSourceBytesPerPage: number): number {
-  if (avgSourceBytesPerPage > 3_000_000) return 1;
-  if (avgSourceBytesPerPage > 1_000_000) return 2;
-  return 3;
+/** LUÔN đúng 1 trang/lần gọi (2026-08-19, đổi từ 1-3 trang tuỳ dung lượng trung bình) -- gặp
+ * thật production: file 10MB/10-50 trang, vài request đầu (khoảng 3 trang) chạy nhanh nhưng
+ * 1 request sau đó 504 (Vercel tự giết ở đúng 60s) -- nhiều khả năng 1 TRANG CỤ THỂ trong file
+ * (nội dung/ảnh cục bộ phức tạp hơn hẳn mặt bằng chung) rơi chung khoảng với 2 trang khác, kéo
+ * cả khoảng vượt ngưỡng. Gộp nhiều trang/lần gọi vốn chỉ để giảm số lượt gọi (tối ưu tốc độ),
+ * không phải yêu cầu bắt buộc -- đổi về 1 trang/lần gọi cô lập hoàn toàn rủi ro "trang nặng
+ * kéo theo trang khác", đổi lại nhiều request hơn (bù bằng CHUNK_CONCURRENCY chạy song song).
+ * Giữ lại tham số `avgSourceBytesPerPage` (không dùng nữa ở đây) cho `pickStartDpiIndex` bên
+ * dưới, cùng logic tính theo dung lượng trung bình. */
+function pickChunkPageCount(): number {
+  return 1;
 }
 
 /** Cùng lý do -- bỏ qua thẳng các mức DPI cao gần như chắc chắn không vừa ngân sách với file
@@ -173,7 +174,7 @@ export function PdfCompressPanel() {
 
       const perPageBudgetBytes = Math.max(1, Math.floor((TARGET_BYTES * SAFETY_MARGIN) / pageCount));
       const avgSourceBytesPerPage = f.size / pageCount;
-      const chunkPageCount = pickChunkPageCount(avgSourceBytesPerPage);
+      const chunkPageCount = pickChunkPageCount();
       const startDpiIndex = pickStartDpiIndex(avgSourceBytesPerPage);
       const dpiSteps = DPI_STEPS.slice(startDpiIndex);
 
