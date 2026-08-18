@@ -11,11 +11,19 @@ export const maxDuration = 60;
 const MAX_AGE_MS = 2 * 60 * 60 * 1000;
 
 /**
- * Vercel Cron (xem vercel.json, chạy mỗi giờ) — dọn các file mồ côi trên Vercel Blob (upload
- * dở dang do lỗi/đóng tab giữa chừng ở tab "Notice Splitter"/"Nén PDF", KHÔNG bao giờ được
- * xoá vì thao tác chưa bao giờ hoàn tất để chạm tới bước `del()` best-effort trong code chính
- * -- xem `.claude/rules/deployment-database-sync.md` mục 4.31). Vercel Blob KHÔNG có TTL/tự
- * xoá -- phải tự dọn bằng code.
+ * Vercel Cron (xem vercel.json, chạy 1 LẦN/NGÀY lúc 12:00 UTC) — dọn các file mồ côi trên
+ * Vercel Blob (upload dở dang do lỗi/đóng tab giữa chừng ở tab "Notice Splitter"/"Nén PDF",
+ * KHÔNG bao giờ được xoá vì thao tác chưa bao giờ hoàn tất để chạm tới bước `del()` best-effort
+ * trong code chính -- xem `.claude/rules/deployment-database-sync.md` mục 4.31). Vercel Blob
+ * KHÔNG có TTL/tự xoá -- phải tự dọn bằng code.
+ *
+ * Lịch ban đầu (2026-08-18) đặt mỗi GIỜ (`0 * * * *`) nhưng gói Hobby CHỈ cho phép cron chạy
+ * tối đa 1 lần/ngày -- mọi deployment kể từ lúc thêm cron giờ đó đều bị Vercel CHẶN NGAY Ở
+ * BƯỚC VALIDATE (không phải build lỗi, không hiện trong danh sách Deployments như thường lệ,
+ * chỉ báo qua email "Deployment failed... Hobby accounts are limited to daily cron jobs") --
+ * đổi về 1 lần/ngày (2026-08-19) để deploy lại được bình thường. File mồ côi giờ có thể tồn
+ * tại tới ~24h+2h trước khi bị dọn thay vì tối đa ~3h trước đây -- chấp nhận được vì đây chỉ
+ * là dọn rác, không ảnh hưởng chức năng chính.
  *
  * Xác thực bằng CRON_SECRET (cùng cơ chế `cron/ringcentral-renew`) — KHÔNG dùng
  * session/requireUser() vì Vercel Cron không đăng nhập.
