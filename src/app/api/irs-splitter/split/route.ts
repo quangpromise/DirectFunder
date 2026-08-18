@@ -6,11 +6,15 @@ import { requireUser } from "@/lib/api-auth";
 import { hasFeature } from "@/lib/rbac";
 import { splitIrsPdf } from "@/lib/irs-splitter";
 import { BlobFetchError, fetchBlobPdfBytes } from "@/lib/irs-splitter/fetch-blob-pdf";
+import { ProcessingTimeoutError, withTimeout } from "@/lib/irs-splitter/with-timeout";
 import type { IrsNoticeRecord } from "@/lib/irs-splitter";
 import type { FeaturePermissions } from "@/lib/types";
 
 export const runtime = "nodejs";
+// 60s là mốc CỨNG của gói Vercel Hobby -- xem PROCESSING_TIMEOUT_MS + comment ở
+// analyze/route.ts cho lý do chủ động trả lỗi sớm hơn mốc này.
 export const maxDuration = 60;
+const PROCESSING_TIMEOUT_MS = 50_000;
 
 /**
  * Bước 2: nhận `{blobUrl, fileName, records}` (JSON) -- `blobUrl` trỏ tới ĐÚNG file đã dùng
@@ -69,21 +73,30 @@ export async function POST(request: NextRequest) {
 
   let response: NextResponse;
   try {
-    const files = await splitIrsPdf(bytes, records);
+    response = await withTimeout(
+      (async () => {
+        const files = await splitIrsPdf(bytes, records);
 
-    const zip = new JSZip();
-    for (const f of files) zip.file(`${f.filename}.pdf`, f.bytes);
-    const zipBytes = await zip.generateAsync({ type: "uint8array" });
+        const zip = new JSZip();
+        for (const f of files) zip.file(`${f.filename}.pdf`, f.bytes);
+        const zipBytes = await zip.generateAsync({ type: "uint8array" });
 
-    const zipName = (typeof fileName === "string" && fileName.replace(/\.pdf$/i, "")) || "notices";
-    response = new NextResponse(new Uint8Array(zipBytes), {
-      status: 200,
-      headers: {
-        "Content-Type": "application/zip",
-        "Content-Disposition": `attachment; filename="${zipName} - split.zip"`,
-      },
-    });
+        const zipName = (typeof fileName === "string" && fileName.replace(/\.pdf$/i, "")) || "notices";
+        return new NextResponse(new Uint8Array(zipBytes), {
+          status: 200,
+          headers: {
+            "Content-Type": "application/zip",
+            "Content-Disposition": `attachment; filename="${zipName} - split.zip"`,
+          },
+        });
+      })(),
+      PROCESSING_TIMEOUT_MS,
+      "Tách file quá lâu (file có thể quá lớn/quá nhiều trang cho giới hạn xử lý 60 giây) -- hãy thử chia nhỏ file trước khi tải lên."
+    );
   } catch (err) {
+    if (err instanceof ProcessingTimeoutError) {
+      return NextResponse.json({ error: err.message }, { status: 408 });
+    }
     console.error("[irs-splitter/split]", err);
     return NextResponse.json({ error: "Tách file thất bại (khoảng trang có thể vượt quá số trang file gốc)." }, { status: 400 });
   }

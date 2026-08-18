@@ -748,6 +748,7 @@ const dict: Record<Language, Record<string, string>> = {
     "irsSplitter.splitFailed": "Tách file thất bại",
     "irsSplitter.fileTooLarge": "File quá nặng (tối đa 50MB mỗi lần tải lên) — hãy chia nhỏ file trước.",
     "irsSplitter.maxSizeHint": "Tối đa 50MB mỗi lần tải lên.",
+    "irsSplitter.processingTimeout": "Xử lý quá lâu (quá 55 giây) — file có thể quá lớn/quá nhiều trang cho giới hạn xử lý của nền tảng hosting, hãy thử chia nhỏ file trước khi tải lên.",
   },
   en: {
     // Top nav
@@ -1489,6 +1490,7 @@ const dict: Record<Language, Record<string, string>> = {
     "irsSplitter.splitFailed": "Split failed",
     "irsSplitter.fileTooLarge": "File is too large (max 50MB per upload) — split the file first.",
     "irsSplitter.maxSizeHint": "Max 50MB per upload.",
+    "irsSplitter.processingTimeout": "Processing took too long (over 55s) — the file may be too large/have too many pages for the hosting platform's processing limit, try splitting it before uploading.",
   },
 };
 

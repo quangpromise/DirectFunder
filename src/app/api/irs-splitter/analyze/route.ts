@@ -4,13 +4,22 @@ import { requireUser } from "@/lib/api-auth";
 import { hasFeature } from "@/lib/rbac";
 import { analyzeIrsPdf } from "@/lib/irs-splitter";
 import { BlobFetchError, fetchBlobPdfBytes } from "@/lib/irs-splitter/fetch-blob-pdf";
+import { ProcessingTimeoutError, withTimeout } from "@/lib/irs-splitter/with-timeout";
 import type { FeaturePermissions } from "@/lib/types";
 
 // Chạy trên Node runtime (không phải Edge) -- pdfjs-dist/pdf-lib cần Buffer/API Node đầy đủ.
 export const runtime = "nodejs";
 // File PDF gộp nhiều thư có thể khá lớn (scan nhiều trang) -- nới thời gian xử lý so với
-// mặc định 10s (Vercel Hobby)/không giới hạn (route handler local).
+// mặc định 10s. 60s là mốc CỨNG của gói Vercel Hobby (không nâng được bằng code, xem
+// PROCESSING_TIMEOUT_MS bên dưới cho lý do chủ động trả lỗi SỚM HƠN mốc này).
 export const maxDuration = 60;
+
+// Chủ động timeout sớm hơn `maxDuration` (60s) để trả về 1 response JSON sạch trước khi
+// Vercel cắt kết nối ngang xương -- nếu không, trình duyệt nhận được kết nối bị treo/reset
+// thay vì 1 response lỗi, và fetch() phía client không có timeout mặc định nên đứng chờ VÔ
+// THỜI HẠN (bug thật gặp trên production 2026-08-18 với file 48MB, xem
+// deployment-database-sync.md mục 4.31).
+const PROCESSING_TIMEOUT_MS = 50_000;
 
 /**
  * Bước 1 của công cụ "Notice Splitter": đọc 1 file PDF gộp nhiều thư IRS, trả về danh sách
@@ -37,11 +46,18 @@ export async function POST(request: NextRequest) {
 
   try {
     const bytes = await fetchBlobPdfBytes(blobUrl);
-    const { pageCount, records } = await analyzeIrsPdf(bytes);
+    const { pageCount, records } = await withTimeout(
+      analyzeIrsPdf(bytes),
+      PROCESSING_TIMEOUT_MS,
+      "Phân tích quá lâu (file có thể quá lớn/quá nhiều trang cho giới hạn xử lý 60 giây) -- hãy thử chia nhỏ file trước khi tải lên."
+    );
     return NextResponse.json({ pageCount, records });
   } catch (err) {
     if (err instanceof BlobFetchError) {
       return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+    if (err instanceof ProcessingTimeoutError) {
+      return NextResponse.json({ error: err.message }, { status: 408 });
     }
     console.error("[irs-splitter/analyze]", err);
     return NextResponse.json({ error: "Không đọc được file PDF (file có thể bị hỏng hoặc không đúng định dạng)." }, { status: 400 });

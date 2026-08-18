@@ -49,6 +49,24 @@ async function readErrorMessage(res: Response, fallback: string): Promise<string
   }
 }
 
+// `fetch()` KHÔNG có timeout mặc định — nếu server bị Vercel cắt kết nối ngang xương ở mốc
+// `maxDuration` (thay vì trả về 1 response lỗi sạch), trình duyệt cứ chờ VÔ THỜI HẠN (bug
+// thật gặp trên production 2026-08-18, xem deployment-database-sync.md mục 4.31). Route xử
+// lý đã tự trả lỗi sớm hơn ở ~50s (xem PROCESSING_TIMEOUT_MS phía server) — timeout phía
+// client đặt ở 55s chỉ là lưới an toàn cuối cùng cho trường hợp kết nối bị treo/reset hoàn
+// toàn (không nhận được response nào).
+const CLIENT_FETCH_TIMEOUT_MS = 55_000;
+
+async function fetchWithTimeout(url: string, options: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CLIENT_FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * Nội dung tab "Notice Splitter" trong popup "For Processor" (`for-processor-dialog.tsx`) —
  * bỏ 1 file PDF gộp nhiều thư IRS (bản scan nhiều khách hàng dồn vào 1 file), tự nhận diện
@@ -95,7 +113,7 @@ export function NoticeSplitterPanel() {
       });
       setBlobUrl(blob.url);
 
-      const res = await fetch("/api/irs-splitter/analyze", {
+      const res = await fetchWithTimeout("/api/irs-splitter/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ blobUrl: blob.url }),
@@ -117,7 +135,7 @@ export function NoticeSplitterPanel() {
         }))
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("irsSplitter.analyzeFailed"));
+      setError(err instanceof DOMException && err.name === "AbortError" ? t("irsSplitter.processingTimeout") : err instanceof Error ? err.message : t("irsSplitter.analyzeFailed"));
     } finally {
       setAnalyzing(false);
     }
@@ -149,7 +167,7 @@ export function NoticeSplitterPanel() {
     setSplitting(true);
     setError(null);
     try {
-      const res = await fetch("/api/irs-splitter/split", {
+      const res = await fetchWithTimeout("/api/irs-splitter/split", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ blobUrl, fileName: file.name, records }),
@@ -169,7 +187,7 @@ export function NoticeSplitterPanel() {
       a.remove();
       URL.revokeObjectURL(url);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("irsSplitter.splitFailed"));
+      setError(err instanceof DOMException && err.name === "AbortError" ? t("irsSplitter.processingTimeout") : err instanceof Error ? err.message : t("irsSplitter.splitFailed"));
     } finally {
       setSplitting(false);
     }
