@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import JSZip from "jszip";
+import { del } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
 import { hasFeature } from "@/lib/rbac";
 import { splitIrsPdf } from "@/lib/irs-splitter";
+import { BlobFetchError, fetchBlobPdfBytes } from "@/lib/irs-splitter/fetch-blob-pdf";
 import type { IrsNoticeRecord } from "@/lib/irs-splitter";
 import type { FeaturePermissions } from "@/lib/types";
 
@@ -11,10 +13,11 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 /**
- * Bước 2: nhận LẠI đúng file PDF gốc (client tự giữ File object từ lúc chọn, gửi lại chứ
- * không lưu tạm ở server giữa 2 bước -- không cần dọn dẹp state) + danh sách record đã soát/
- * sửa ở bước phân tích, tách thành 1 file PDF/record rồi đóng gói vào 1 file .zip trả về
- * thẳng cho trình duyệt tải xuống.
+ * Bước 2: nhận `{blobUrl, fileName, records}` (JSON) -- `blobUrl` trỏ tới ĐÚNG file đã dùng
+ * ở bước phân tích (client tự giữ lại từ lúc upload, không upload lại lần 2), `records` là
+ * danh sách đã soát/sửa. Tách thành 1 file PDF/record, đóng gói vào 1 file .zip trả về
+ * thẳng cho trình duyệt tải xuống, rồi XOÁ blob khỏi Vercel Blob (không cần giữ lại nữa --
+ * xem `/api/irs-splitter/blob-upload` cho lý do dùng Blob thay vì FormData trực tiếp).
  */
 export async function POST(request: NextRequest) {
   const me = await requireUser();
@@ -26,22 +29,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Không có quyền dùng công cụ này" }, { status: 403 });
   }
 
-  const formData = await request.formData();
-  const file = formData.get("file");
-  const recordsRaw = formData.get("records");
-  if (!(file instanceof File)) {
-    return NextResponse.json({ error: "Thiếu file PDF" }, { status: 400 });
-  }
-  if (typeof recordsRaw !== "string") {
-    return NextResponse.json({ error: "Thiếu danh sách record" }, { status: 400 });
-  }
+  const { blobUrl, fileName, records: recordsRaw } = await request.json();
 
-  let parsedRecords: unknown;
-  try {
-    parsedRecords = JSON.parse(recordsRaw);
-  } catch {
-    return NextResponse.json({ error: "Danh sách record không hợp lệ (JSON lỗi)" }, { status: 400 });
-  }
+  const parsedRecords: unknown = recordsRaw;
   if (!Array.isArray(parsedRecords) || parsedRecords.length === 0) {
     return NextResponse.json({ error: "Danh sách record rỗng" }, { status: 400 });
   }
@@ -67,16 +57,26 @@ export async function POST(request: NextRequest) {
     });
   }
 
+  let bytes: Uint8Array;
   try {
-    const bytes = new Uint8Array(await file.arrayBuffer());
+    bytes = await fetchBlobPdfBytes(blobUrl);
+  } catch (err) {
+    if (err instanceof BlobFetchError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+    throw err;
+  }
+
+  let response: NextResponse;
+  try {
     const files = await splitIrsPdf(bytes, records);
 
     const zip = new JSZip();
     for (const f of files) zip.file(`${f.filename}.pdf`, f.bytes);
     const zipBytes = await zip.generateAsync({ type: "uint8array" });
 
-    const zipName = file.name.replace(/\.pdf$/i, "") || "notices";
-    return new NextResponse(new Uint8Array(zipBytes), {
+    const zipName = (typeof fileName === "string" && fileName.replace(/\.pdf$/i, "")) || "notices";
+    response = new NextResponse(new Uint8Array(zipBytes), {
       status: 200,
       headers: {
         "Content-Type": "application/zip",
@@ -87,4 +87,17 @@ export async function POST(request: NextRequest) {
     console.error("[irs-splitter/split]", err);
     return NextResponse.json({ error: "Tách file thất bại (khoảng trang có thể vượt quá số trang file gốc)." }, { status: 400 });
   }
+
+  // Xoá blob ngay sau khi đã tách xong -- không cần giữ lại nữa. Best-effort: lỗi xoá không
+  // chặn trả kết quả về cho người dùng (chỉ log lại, tối đa để mồ côi 1 file trên Blob thay
+  // vì làm hỏng cả thao tác đã thành công).
+  if (typeof blobUrl === "string") {
+    try {
+      await del(blobUrl);
+    } catch (err) {
+      console.error("[irs-splitter/split] xoá blob thất bại (không chặn response)", err);
+    }
+  }
+
+  return response;
 }

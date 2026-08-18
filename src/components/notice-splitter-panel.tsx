@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { upload } from "@vercel/blob/client";
 import { Download, FileText, Loader2, Trash2, Upload, X } from "lucide-react";
 import { useT } from "@/lib/i18n";
 
@@ -26,6 +27,28 @@ interface EditableRecord {
   hasCareOf: boolean;
 }
 
+// Vercel giới hạn CỨNG dung lượng request body của Serverless Function (~4.5MB, áp dụng ở
+// tầng edge/proxy TRƯỚC KHI request chạm tới route handler của app) — vì vậy file KHÔNG gửi
+// thẳng qua route handler của app nữa, mà upload THẲNG lên Vercel Blob từ trình duyệt (client
+// upload, xem `upload()` bên dưới + route `/api/irs-splitter/blob-upload`), né hoàn toàn giới
+// hạn đó. Ngưỡng dưới đây chỉ còn là chặn hợp lý phía UI (tránh file quá khổ khiến bước phân
+// tích/tách vượt `maxDuration=60` của route xử lý), không còn là giới hạn kỹ thuật bắt buộc.
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+
+/** Đọc lỗi từ 1 Response không OK — ưu tiên JSON `{error}` do route handler của app trả về,
+ * nhưng fallback an toàn khi response không phải JSON (vd trang lỗi 413 thuần text do chính
+ * Vercel platform trả về TRƯỚC route handler, không đi qua code app nên không có dạng JSON
+ * quen thuộc — `res.json()` thẳng ở đây từng làm crash với "Unexpected token... is not valid
+ * JSON" thay vì hiện thông báo rõ ràng). */
+async function readErrorMessage(res: Response, fallback: string): Promise<string> {
+  try {
+    const data = await res.json();
+    return (data?.error as string | undefined) || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 /**
  * Nội dung tab "Notice Splitter" trong popup "For Processor" (`for-processor-dialog.tsx`) —
  * bỏ 1 file PDF gộp nhiều thư IRS (bản scan nhiều khách hàng dồn vào 1 file), tự nhận diện
@@ -41,6 +64,7 @@ export function NoticeSplitterPanel() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [pageCount, setPageCount] = useState<number | null>(null);
   const [records, setRecords] = useState<EditableRecord[] | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
@@ -49,6 +73,7 @@ export function NoticeSplitterPanel() {
 
   function resetAll() {
     setFile(null);
+    setBlobUrl(null);
     setPageCount(null);
     setRecords(null);
     setError(null);
@@ -60,12 +85,25 @@ export function NoticeSplitterPanel() {
     setError(null);
     setRecords(null);
     setPageCount(null);
+    setBlobUrl(null);
     try {
-      const fd = new FormData();
-      fd.append("file", f);
-      const res = await fetch("/api/irs-splitter/analyze", { method: "POST", body: fd });
+      // Upload THẲNG lên Vercel Blob từ trình duyệt (không qua route handler của app) — né
+      // giới hạn ~4.5MB thân request của Vercel Serverless Function, xem comment MAX_UPLOAD_BYTES.
+      const blob = await upload(f.name, f, {
+        access: "public",
+        handleUploadUrl: "/api/irs-splitter/blob-upload",
+      });
+      setBlobUrl(blob.url);
+
+      const res = await fetch("/api/irs-splitter/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ blobUrl: blob.url }),
+      });
+      if (!res.ok) {
+        throw new Error(await readErrorMessage(res, t("irsSplitter.analyzeFailed")));
+      }
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || t("irsSplitter.analyzeFailed"));
       setPageCount(data.pageCount as number);
       setRecords(
         (data.records as ApiRecord[]).map((r) => ({
@@ -88,6 +126,12 @@ export function NoticeSplitterPanel() {
   async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     if (!f) return;
+    if (f.size > MAX_UPLOAD_BYTES) {
+      setFile(f);
+      setError(t("irsSplitter.fileTooLarge"));
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
     setFile(f);
     await analyze(f);
   }
@@ -101,17 +145,17 @@ export function NoticeSplitterPanel() {
   }
 
   async function handleSplit() {
-    if (!file || !records || records.length === 0) return;
+    if (!file || !blobUrl || !records || records.length === 0) return;
     setSplitting(true);
     setError(null);
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      fd.append("records", JSON.stringify(records));
-      const res = await fetch("/api/irs-splitter/split", { method: "POST", body: fd });
+      const res = await fetch("/api/irs-splitter/split", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ blobUrl, fileName: file.name, records }),
+      });
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data?.error || t("irsSplitter.splitFailed"));
+        throw new Error(await readErrorMessage(res, t("irsSplitter.splitFailed")));
       }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -172,6 +216,7 @@ export function NoticeSplitterPanel() {
               <Upload size={14} />
               {t("irsSplitter.chooseFile")}
             </button>
+            <p className="text-xs text-text-faint">{t("irsSplitter.maxSizeHint")}</p>
           </div>
         )}
 

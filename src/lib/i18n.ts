@@ -746,6 +746,8 @@ const dict: Record<Language, Record<string, string>> = {
     "irsSplitter.noRecords": "Không nhận diện được thư nào trong file này — kiểm tra lại file PDF gốc.",
     "irsSplitter.analyzeFailed": "Phân tích thất bại",
     "irsSplitter.splitFailed": "Tách file thất bại",
+    "irsSplitter.fileTooLarge": "File quá nặng (tối đa 50MB mỗi lần tải lên) — hãy chia nhỏ file trước.",
+    "irsSplitter.maxSizeHint": "Tối đa 50MB mỗi lần tải lên.",
   },
   en: {
     // Top nav
@@ -1485,6 +1487,8 @@ const dict: Record<Language, Record<string, string>> = {
     "irsSplitter.noRecords": "No letters detected in this file — check the source PDF.",
     "irsSplitter.analyzeFailed": "Analysis failed",
     "irsSplitter.splitFailed": "Split failed",
+    "irsSplitter.fileTooLarge": "File is too large (max 50MB per upload) — split the file first.",
+    "irsSplitter.maxSizeHint": "Max 50MB per upload.",
   },
 };
 
