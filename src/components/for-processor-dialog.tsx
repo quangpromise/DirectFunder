@@ -24,6 +24,7 @@ import { api } from "@/lib/api-client";
 import { CpaReviewMonthPicker } from "@/components/cpa-review-month-picker";
 import { monthKeyLabel } from "@/lib/cpa-review-month";
 import { useConfirm } from "@/components/confirm-dialog";
+import { NoticeSplitterPanel } from "@/components/notice-splitter-panel";
 import type { ProcessorReportTaskDef } from "@/lib/types";
 
 /** Danh sách ngày "YYYY-MM-DD" của 1 tháng, kèm chỉ số tuần (W1, W2...) tính theo tuần lịch
@@ -61,7 +62,15 @@ export function ForProcessorButton() {
   const [open, setOpen] = useState(false);
   const t = useT();
 
-  if (!user || !hasFeature(permissions, "viewForProcessor", user.role)) return null;
+  // Nút mở popup này giờ gate bằng CẢ 2 quyền (không chỉ viewForProcessor) vì tab "Notice
+  // Splitter" (2026-08-18) có nhóm role mặc định khác (Kế toán không có viewForProcessor
+  // nhưng có useIrsNoticeSplitter) — thiếu điều kiện OR ở đây sẽ khiến Kế toán không bao
+  // giờ mở được popup dù có quyền dùng tab Notice Splitter bên trong.
+  if (
+    !user ||
+    (!hasFeature(permissions, "viewForProcessor", user.role) && !hasFeature(permissions, "useIrsNoticeSplitter", user.role))
+  )
+    return null;
 
   return (
     <>
@@ -77,10 +86,18 @@ export function ForProcessorButton() {
   );
 }
 
+type ForProcessorTab = "report" | "document" | "noticeSplitter";
+
 function ForProcessorDialog({ onClose }: { onClose: () => void }) {
-  const [tab, setTab] = useState<"report" | "document">("report");
   const user = useCurrentUser();
+  const permissions = useAppStore((s) => s.featurePermissions);
   const t = useT();
+
+  const canViewReport = user ? hasFeature(permissions, "viewForProcessor", user.role) : false;
+  const canViewNoticeSplitter = user ? hasFeature(permissions, "useIrsNoticeSplitter", user.role) : false;
+  // Report/Document mặc định nếu có quyền (giữ hành vi cũ) — nếu không (vd Kế toán chỉ có
+  // useIrsNoticeSplitter), mở thẳng tab Notice Splitter thay vì 1 tab họ không thấy được.
+  const [tab, setTab] = useState<ForProcessorTab>(canViewReport ? "report" : "noticeSplitter");
 
   if (!user || typeof document === "undefined") return null;
   const isLeaderView = user.role === "processor_leader" || user.role === "manager";
@@ -95,22 +112,36 @@ function ForProcessorDialog({ onClose }: { onClose: () => void }) {
               {t("forProcessor.title")}
             </h3>
             <div className="flex gap-1 rounded-lg border border-border bg-surface p-1">
-              <button
-                onClick={() => setTab("report")}
-                className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
-                  tab === "report" ? "gradient-btn text-white" : "text-text-faint hover:text-text-dim"
-                }`}
-              >
-                {t("forProcessor.tabReport")}
-              </button>
-              <button
-                onClick={() => setTab("document")}
-                className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
-                  tab === "document" ? "gradient-btn text-white" : "text-text-faint hover:text-text-dim"
-                }`}
-              >
-                {t("forProcessor.tabDocument")}
-              </button>
+              {canViewReport && (
+                <>
+                  <button
+                    onClick={() => setTab("report")}
+                    className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
+                      tab === "report" ? "gradient-btn text-white" : "text-text-faint hover:text-text-dim"
+                    }`}
+                  >
+                    {t("forProcessor.tabReport")}
+                  </button>
+                  <button
+                    onClick={() => setTab("document")}
+                    className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
+                      tab === "document" ? "gradient-btn text-white" : "text-text-faint hover:text-text-dim"
+                    }`}
+                  >
+                    {t("forProcessor.tabDocument")}
+                  </button>
+                </>
+              )}
+              {canViewNoticeSplitter && (
+                <button
+                  onClick={() => setTab("noticeSplitter")}
+                  className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
+                    tab === "noticeSplitter" ? "gradient-btn text-white" : "text-text-faint hover:text-text-dim"
+                  }`}
+                >
+                  {t("forProcessor.tabNoticeSplitter")}
+                </button>
+              )}
             </div>
           </div>
           <button onClick={onClose} className="text-text-faint hover:text-text" aria-label={t("common.close")}>
@@ -119,18 +150,14 @@ function ForProcessorDialog({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="min-h-0 flex-1 overflow-hidden">
-          {tab === "report" ? (
-            isLeaderView ? (
-              <ProcessorLeaderReportGrid />
-            ) : (
-              <ProcessorSelfReportGrid userId={user.id} />
-            )
-          ) : (
+          {tab === "report" && canViewReport && (isLeaderView ? <ProcessorLeaderReportGrid /> : <ProcessorSelfReportGrid userId={user.id} />)}
+          {tab === "document" && canViewReport && (
             <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
               <FileText size={28} className="text-text-faint" />
               <p className="text-sm text-text-dim">{t("forProcessor.documentComingSoon")}</p>
             </div>
           )}
+          {tab === "noticeSplitter" && canViewNoticeSplitter && <NoticeSplitterPanel />}
         </div>
       </div>
     </div>,

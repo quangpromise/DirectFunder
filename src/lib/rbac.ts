@@ -460,6 +460,10 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermissions = {
   manageProcessorReportTasks: [],
   // Kết nối/ngắt/resync Google Sheet cho bảng tổng hợp Processor Leader — cùng lý do trên.
   manageProcessorReportSheet: [],
+  // Công cụ tách 1 file PDF gộp nhiều thư IRS thành 1 file/khách hàng (tab "Notice
+  // Splitter" trong popup "For Processor") — nhóm hay xử lý thư IRS thật (Processor) + Kế
+  // toán/Manager, Admin cấp thêm qua trang Phân quyền.
+  useIrsNoticeSplitter: ["manager", "accounting", "processor"],
 };
 
 /** Quyền sửa từng cột hoàn toàn theo cấu hình editableBy — kể cả với Admin. */

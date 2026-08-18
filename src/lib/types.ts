@@ -62,6 +62,7 @@ export const ASSIGNABLE_FEATURES = [
   "viewForProcessor",
   "manageProcessorReportTasks",
   "manageProcessorReportSheet",
+  "useIrsNoticeSplitter",
 ] as const;
 export type FeatureKey = (typeof ASSIGNABLE_FEATURES)[number];
 
@@ -91,6 +92,7 @@ export const FEATURE_LABEL: Record<Language, Record<FeatureKey, string>> = {
     viewForProcessor: "Xem nút \"For Processor\"",
     manageProcessorReportTasks: "Thêm / sửa / xóa task (For Processor)",
     manageProcessorReportSheet: "Cấu hình đồng bộ Google Sheet (For Processor)",
+    useIrsNoticeSplitter: "Dùng công cụ tách thư IRS (tab Notice Splitter trong popup For Processor)",
   },
   en: {
     addColumn: "Add new column",
@@ -117,6 +119,7 @@ export const FEATURE_LABEL: Record<Language, Record<FeatureKey, string>> = {
     viewForProcessor: 'View "For Processor" button',
     manageProcessorReportTasks: "Add / edit / delete tasks (For Processor)",
     manageProcessorReportSheet: "Configure Google Sheet sync (For Processor)",
+    useIrsNoticeSplitter: "Use IRS notice splitter tool (Notice Splitter tab in the For Processor popup)",
   },
 };
 

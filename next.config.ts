@@ -1,7 +1,13 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // pdfjs-dist (dùng trong lib/irs-splitter để đọc text PDF, xem tab "Notice Splitter")
+  // có 1 nhánh code `require("canvas")` dùng cho vẽ bitmap (KHÔNG dùng tới khi chỉ trích
+  // text bằng getTextContent()) -- nếu để Turbopack/webpack bundle package này, nó cố
+  // resolve tĩnh "canvas" (dependency native/optional, không cài) và build lỗi cứng dù
+  // nhánh đó không bao giờ thật sự chạy. Đánh dấu external để Node tự require() thẳng lúc
+  // chạy (bỏ qua bundling) -- cách khắc phục chuẩn theo tài liệu pdfjs-dist cho bundler.
+  serverExternalPackages: ["pdfjs-dist"],
 };
 
 export default nextConfig;
