@@ -1,2 +1,2 @@
-export { compressPdfUnder1MB } from "./compress-pdf";
-export type { CompressResult } from "./types";
+export { renderPageRangeToJpegs } from "./compress-pdf";
+export type { PageJpegResult } from "./types";

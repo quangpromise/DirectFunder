@@ -757,7 +757,7 @@ const dict: Record<Language, Record<string, string>> = {
 
     // Nén PDF (tab con trong "Notice Splitter") — nén 1 file PDF xuống dưới 1MB bất kể nặng bao nhiêu
     "compressPdf.intro": "Chọn 1 file PDF để nén xuống dưới 1MB — mỗi trang sẽ được chuyển thành ảnh nén (không còn copy/tìm chữ được), đổi lại đảm bảo dưới 1MB dù file gốc nặng bao nhiêu.",
-    "compressPdf.compressing": "Đang nén file, có thể mất chút thời gian với file nhiều trang...",
+    "compressPdf.compressingProgress": "Đang nén (DPI {dpi})... {done}/{total} trang",
     "compressPdf.result": "Đã nén xong: {before} → {after}. File đã tự tải xuống.",
     "compressPdf.hitFloorWarning": "File vẫn còn {after} — chưa xuống được dưới 1MB dù đã nén ở mức thấp nhất (file quá nhiều trang). Vẫn đã tải xuống, cân nhắc tách nhỏ file trước bằng tab \"Tách thư\" rồi nén từng phần.",
     "compressPdf.compressFailed": "Nén file thất bại.",
@@ -1511,7 +1511,7 @@ const dict: Record<Language, Record<string, string>> = {
 
     // Compress PDF (sub-tab inside "Notice Splitter") — compress a PDF under 1MB no matter how heavy
     "compressPdf.intro": "Pick a PDF to compress under 1MB — each page becomes a compressed image (no more copy/search text), in exchange for a guaranteed under-1MB result no matter how heavy the original file is.",
-    "compressPdf.compressing": "Compressing the file, this can take a moment for long files...",
+    "compressPdf.compressingProgress": "Compressing (DPI {dpi})... {done}/{total} pages",
     "compressPdf.result": "Compressed: {before} → {after}. The file has been downloaded automatically.",
     "compressPdf.hitFloorWarning": "The file is still {after} — could not get under 1MB even at the lowest quality (too many pages). It was still downloaded — consider splitting the file first using the \"Split\" tab, then compressing each part.",
     "compressPdf.compressFailed": "Compression failed.",
