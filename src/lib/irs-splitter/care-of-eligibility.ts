@@ -10,7 +10,7 @@
  * care-of -- xem `detectRecords()` (áp dụng lúc quét tự động) và `notice-splitter-panel.tsx`
  * (khoá checkbox trong bảng soát/sửa nếu người dùng gõ tay 1 loại thư ngoài danh sách này).
  */
-const CARE_OF_ELIGIBLE_NOTICE_TYPES = new Set(["CP89", "CP289", "CP521", "CP523", "CP01E", "2273C", "2840C", "4458C"]);
+const CARE_OF_ELIGIBLE_NOTICE_TYPES = new Set(["CP89", "CP289", "CP521", "CP523", "CP01E", "CP14", "CP14D", "2273C", "2840C", "4458C"]);
 
 /** So khớp không phân biệt hoa/thường, khoảng trắng thừa, và tiền tố "LTR" (dòng thư dạng
  * "Letter ####C" có thể được `detectRecords()` chuẩn hoá thành "LTR####C") -- không phụ
