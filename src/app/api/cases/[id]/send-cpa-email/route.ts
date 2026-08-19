@@ -81,6 +81,7 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/cases/[
   }
   const cc: string[] = Array.isArray(body.cc) ? body.cc.filter((s: unknown) => typeof s === "string" && s.trim()) : [];
   if (!isAttachmentInputArray(body.attachments)) {
+    console.error("[send-cpa-email] attachments không hợp lệ, body.attachments nhận được:", JSON.stringify(body.attachments));
     return NextResponse.json({ error: "Tệp đính kèm không hợp lệ" }, { status: 400 });
   }
   const attachmentInputs: AttachmentInput[] = body.attachments;
