@@ -23,7 +23,13 @@ function isNonEmptyEmailArray(v: unknown): v is string[] {
 interface AttachmentInput {
   filename: string;
   contentType: string;
-  blobUrl: string;
+  /** Bản mới -- file đã upload thẳng lên Vercel Blob phía client. */
+  blobUrl?: string;
+  /** Bản CŨ (giữ tương thích ngược) -- base64 thuần gửi trực tiếp trong body. Client hiện
+   * tại LUÔN gửi `blobUrl`, không còn field này -- vẫn chấp nhận đề phòng trình duyệt nào đó
+   * còn kẹt bundle JS cũ (CDN/edge cache HTML trỏ tới chunk cũ) chưa kịp cập nhật, tránh chặn
+   * cứng người dùng gửi mail trong lúc đó. */
+  contentBase64?: string;
 }
 
 function isAttachmentInputArray(v: unknown): v is AttachmentInput[] {
@@ -34,8 +40,8 @@ function isAttachmentInputArray(v: unknown): v is AttachmentInput[] {
         a &&
         typeof a.filename === "string" &&
         typeof a.contentType === "string" &&
-        typeof a.blobUrl === "string" &&
-        a.blobUrl.length > 0
+        ((typeof a.blobUrl === "string" && a.blobUrl.length > 0) ||
+          (typeof a.contentBase64 === "string" && a.contentBase64.length > 0))
     )
   );
 }
@@ -94,11 +100,16 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/cases/[
   try {
     attachments = await Promise.all(
       attachmentInputs.map(async (a): Promise<CpaEmailAttachment> => {
-        const res = await fetch(a.blobUrl);
-        if (!res.ok) {
-          throw new Error(`Không tải được tệp đính kèm "${a.filename}" từ storage tạm (link có thể đã hết hạn).`);
+        let content: Buffer;
+        if (a.blobUrl) {
+          const res = await fetch(a.blobUrl);
+          if (!res.ok) {
+            throw new Error(`Không tải được tệp đính kèm "${a.filename}" từ storage tạm (link có thể đã hết hạn).`);
+          }
+          content = Buffer.from(await res.arrayBuffer());
+        } else {
+          content = Buffer.from(a.contentBase64!, "base64");
         }
-        const content = Buffer.from(await res.arrayBuffer());
         totalBytes += content.length;
         return { filename: a.filename, contentType: a.contentType, content };
       })
@@ -110,6 +121,7 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/cases/[
     // Xoá blob NGAY sau khi đã tải xong (dù thành công hay lỗi) -- gửi mail là bước cuối
     // cùng của luồng này, không cần giữ lại blob chờ bước nào khác.
     for (const a of attachmentInputs) {
+      if (!a.blobUrl) continue;
       del(a.blobUrl).catch((err) => console.error("[send-cpa-email] xoá blob thất bại", a.blobUrl, err));
     }
   }
