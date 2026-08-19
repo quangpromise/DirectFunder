@@ -28,8 +28,11 @@ function getTransporter() {
 export interface CpaEmailAttachment {
   filename: string;
   contentType: string;
-  /** Base64 thuần (đã tách khỏi tiền tố "data:...;base64," ở phía client). */
-  contentBase64: string;
+  /** Bytes gốc -- route `send-cpa-email` tự tải về từ Vercel Blob (client upload thẳng lên
+   * Blob, né giới hạn ~4.5MB thân request, xem `.claude/skills/vercel-blob-large-upload/
+   * SKILL.md`) rồi truyền thẳng Buffer vào đây, không qua base64 (nodemailer nhận Buffer
+   * trực tiếp, không cần encode/decode thêm 1 vòng). */
+  content: Buffer;
 }
 
 export interface SendCpaEmailInput {
@@ -68,7 +71,7 @@ export async function sendCpaEmail(input: SendCpaEmailInput): Promise<void> {
       text: input.text,
       attachments: input.attachments.map((a) => ({
         filename: a.filename,
-        content: Buffer.from(a.contentBase64, "base64"),
+        content: a.content,
         contentType: a.contentType,
       })),
     });

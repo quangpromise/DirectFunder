@@ -2,9 +2,9 @@
 
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Mail, X, Paperclip, AlertCircle } from "lucide-react";
+import { upload } from "@vercel/blob/client";
+import { Mail, X, Paperclip, AlertCircle, Loader2 } from "lucide-react";
 import { CaseRecord, CpaEmailDefaults } from "@/lib/types";
-import { fileToDataUrl } from "@/lib/file-to-data-url";
 import {
   buildTemplateVars,
   renderCpaEmailTemplate,
@@ -14,7 +14,11 @@ import {
 import { useT, useLanguage } from "@/lib/i18n";
 import { MailBodyEditor } from "@/components/mail-body-editor";
 
-const MAX_TOTAL_ATTACHMENT_BYTES = 4 * 1024 * 1024;
+// File đính kèm upload THẲNG lên Vercel Blob từ trình duyệt (né giới hạn ~4.5MB thân request
+// của Serverless Function -- xem .claude/skills/vercel-blob-large-upload/SKILL.md), server
+// chỉ nhận blobUrl rồi tự tải bytes về đính kèm mail. 20MB đủ rộng cho hầu hết file CPA thật
+// mà vẫn có margin dưới giới hạn đính kèm thật của Gmail (~25MB).
+const MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 
 type SendResult = { ok: true } | { ok: false; error: string };
 type SendPayload = {
@@ -23,7 +27,7 @@ type SendPayload = {
   subject: string;
   html: string;
   text: string;
-  attachments: { filename: string; contentType: string; contentBase64: string }[];
+  attachments: { filename: string; contentType: string; blobUrl: string }[];
 };
 
 function splitEmails(raw: string): string[] {
@@ -79,6 +83,7 @@ export function SendCpaEmailDialog({
   const [bodyHtml, setBodyHtml] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<{ done: number; total: number } | null>(null);
   const [error, setError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const t = useT();
@@ -149,13 +154,23 @@ export function SendCpaEmailDialog({
     setSending(true);
     setError("");
     try {
-      const attachments = await Promise.all(
-        files.map(async (file) => {
-          const dataUrl = await fileToDataUrl(file);
-          const base64 = dataUrl.split(",")[1] ?? "";
-          return { filename: file.name, contentType: file.type || "application/octet-stream", contentBase64: base64 };
-        })
-      );
+      // Upload từng file THẲNG lên Vercel Blob (không qua base64/JSON body nữa -- xem
+      // MAX_TOTAL_ATTACHMENT_BYTES ở đầu file) trước khi gọi API gửi mail thật.
+      const attachments: { filename: string; contentType: string; blobUrl: string }[] = [];
+      setUploadStatus(files.length > 0 ? { done: 0, total: files.length } : null);
+      for (const file of files) {
+        const blob = await upload(file.name, file, {
+          access: "public",
+          handleUploadUrl: "/api/cpa-email/blob-upload",
+        });
+        attachments.push({
+          filename: file.name,
+          contentType: file.type || "application/octet-stream",
+          blobUrl: blob.url,
+        });
+        setUploadStatus((s) => (s ? { done: s.done + 1, total: s.total } : s));
+      }
+      setUploadStatus(null);
       // Editor giữ HTML trong state qua onChange; text fallback lấy từ chính đoạn HTML
       // (đủ dùng — email client không đọc được HTML sẽ thấy văn bản thô, không cần bản
       // plain-text tách biệt hoàn hảo).
@@ -166,7 +181,12 @@ export function SendCpaEmailDialog({
       } else {
         setError(result.error);
       }
+    } catch (err) {
+      // upload() (tải file đính kèm lên Vercel Blob) có thể thất bại vì lỗi mạng -- khác
+      // fileToDataUrl (đọc file local, gần như không bao giờ lỗi) trước đây không cần catch.
+      setError(err instanceof Error ? err.message : t("cpaEmail.attachmentUploadFailed"));
     } finally {
+      setUploadStatus(null);
       setSending(false);
     }
   }
@@ -284,6 +304,13 @@ export function SendCpaEmailDialog({
                   </div>
                 </div>
               </div>
+
+              {uploadStatus && (
+                <div className="mx-5 mt-3 flex items-center gap-1.5 rounded-lg border border-border bg-bg-elevated px-3 py-2 text-xs text-text-dim">
+                  <Loader2 size={13} className="shrink-0 animate-spin" />
+                  {t("cpaEmail.uploadingAttachments", { done: uploadStatus.done, total: uploadStatus.total })}
+                </div>
+              )}
 
               {error && (
                 <div className="mx-5 mt-3 flex items-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300 light:text-red-700">

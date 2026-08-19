@@ -178,7 +178,7 @@ export const api = {
       subject: string;
       html: string;
       text: string;
-      attachments: { filename: string; contentType: string; contentBase64: string }[];
+      attachments: { filename: string; contentType: string; blobUrl: string }[];
     }
   ) =>
     request<{ ok: true; cpaEmailSentAt: string }>(`/api/cases/${caseId}/send-cpa-email`, {
