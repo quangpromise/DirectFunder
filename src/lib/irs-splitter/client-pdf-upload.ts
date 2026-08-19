@@ -1,9 +1,8 @@
-// Helper dùng chung ở CLIENT (browser) cho cả 2 tab con "Tách thư"/"Nén PDF" trong Notice
-// Splitter -- upload file PDF lên Vercel Blob + gọi API xử lý, kèm timeout/lỗi rõ ràng thay
-// vì để trình duyệt treo vô thời hạn (xem deployment-database-sync.md mục 4.31 cho bối cảnh
-// đầy đủ: giới hạn ~4.5MB thân request của Vercel Serverless Function, gotcha treo vô thời
-// hạn khi hàm bị Vercel cắt kết nối, và việc tách riêng % tiến trình upload khỏi trạng thái
-// xử lý ở server).
+// Helper dùng chung ở CLIENT (browser) cho tab "Tách thư" trong Notice Splitter -- upload
+// file PDF lên Vercel Blob + gọi API xử lý, kèm timeout/lỗi rõ ràng thay vì để trình duyệt
+// treo vô thời hạn (xem deployment-database-sync.md mục 4.31 cho bối cảnh đầy đủ: giới hạn
+// ~4.5MB thân request của Vercel Serverless Function, gotcha treo vô thời hạn khi hàm bị
+// Vercel cắt kết nối, và việc tách riêng % tiến trình upload khỏi trạng thái xử lý ở server).
 
 import { upload } from "@vercel/blob/client";
 
@@ -62,16 +61,4 @@ export async function uploadPdfToBlob(file: File, onProgress: (percentage: numbe
   } finally {
     clearTimeout(timer);
   }
-}
-
-/** Upload bytes 1 trang PDF nhỏ (đã cắt riêng từ file gốc, xem `pdf-compress-panel.tsx`) lên
- * Vercel Blob -- CHỈ dùng khi trang đó quá nặng để gửi thẳng trong thân request (fallback,
- * xem `compress-chunk/route.ts`). Mỗi blob ở đây chỉ bị đọc lại ĐÚNG 1 LẦN (khác blobUrl của
- * cả file cũ trước đây, bị đọc lặp lại hàng chục lần và gây lỗi 403 -- xem lịch sử ở route
- * trên), nên không cần cơ chế theo dõi % tiến trình (luôn nhỏ, nhanh). */
-export async function uploadBytesToBlob(name: string, bytes: Uint8Array): Promise<{ url: string }> {
-  return await upload(name, new Blob([new Uint8Array(bytes)], { type: "application/pdf" }), {
-    access: "public",
-    handleUploadUrl: "/api/irs-splitter/blob-upload",
-  });
 }

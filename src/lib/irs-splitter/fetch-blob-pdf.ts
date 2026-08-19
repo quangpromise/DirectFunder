@@ -12,15 +12,10 @@ function sleep(ms: number): Promise<void> {
 
 /** Tải bytes của 1 file đã upload lên Vercel Blob (client upload thẳng lên Blob, né giới
  * hạn ~4.5MB thân request của Serverless Function -- xem `/api/irs-splitter/blob-upload`)
- * -- dùng chung giữa route `analyze`, `split`, và `compress-chunk`.
+ * -- dùng chung giữa route `analyze` và `split` (tab "Tách thư").
  *
- * Tự retry (3 lần, 300ms/800ms) trước khi báo lỗi -- route `compress-chunk` (nén PDF theo
- * TỪNG TRANG, xem `pdf-compress-panel.tsx`) gọi hàm này RẤT NHIỀU LẦN cho CÙNG 1 blobUrl
- * trong 1 lượt nén (mỗi request tự tải lại toàn bộ file gốc dù chỉ cần render 1 trang, vì mỗi
- * lần gọi là 1 serverless invocation độc lập, không chia sẻ được bytes đã tải giữa các lần) --
- * gặp thật production (2026-08-19): file 10MB/10-50 trang, hàng chục lần tải lặp lại trong
- * vài giây làm lộ ra lỗi mạng/rate-limit thoáng qua ở 1 lần tải cụ thể, trước đây không có
- * retry nên fail cả lượt nén dù chỉ 1/nhiều chục lần tải bị trục trặc. */
+ * Tự retry (3 lần, 300ms/800ms) trước khi báo lỗi -- phòng lỗi mạng/rate-limit thoáng qua ở
+ * Vercel Blob thay vì fail ngay ở lần thử đầu tiên. */
 export async function fetchBlobPdfBytes(blobUrl: unknown): Promise<Uint8Array> {
   if (typeof blobUrl !== "string" || !blobUrl) {
     throw new BlobFetchError("Thiếu blobUrl");

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Download, FileText, Loader2, Minimize2, Scissors, Trash2, Upload, X } from "lucide-react";
+import { Download, FileText, Loader2, Trash2, Upload, X } from "lucide-react";
 import { useT } from "@/lib/i18n";
 import { isCareOfEligibleNoticeType } from "@/lib/irs-splitter/care-of-eligibility";
 import {
@@ -10,7 +10,6 @@ import {
   readErrorMessage,
   uploadPdfToBlob,
 } from "@/lib/irs-splitter/client-pdf-upload";
-import { PdfCompressPanel } from "@/components/pdf-compress-panel";
 
 interface ApiRecord {
   id: string;
@@ -34,55 +33,22 @@ interface EditableRecord {
   hasCareOf: boolean;
 }
 
-type NoticeSplitterSubTab = "split" | "compress";
-
 /**
- * Tab "Notice Splitter" trong popup "For Processor" (`for-processor-dialog.tsx`) — 2 tab con
- * nhỏ bên trong: "Tách thư" (`SplitTab`, logic gốc) và "Nén PDF" (`PdfCompressPanel`, thêm
- * 2026-08-18) — dùng chung 1 lần upload/1 permission `useIrsNoticeSplitter`, không cần feature
- * key riêng cho tab con vì đây là công cụ xử lý PDF cùng nhóm, không phải mục điều hướng
- * độc lập.
+ * Tab "Notice Splitter" trong popup "For Processor" (`for-processor-dialog.tsx`) — bỏ 1 file
+ * PDF gộp nhiều thư IRS (bản scan nhiều khách hàng dồn vào 1 file), tự nhận diện ranh giới
+ * từng thư + đoán tên/loại thư/tax year (xem src/lib/irs-splitter), cho soát/sửa trước khi
+ * tách thành 1 file PDF/khách hàng đóng gói trong 1 file .zip tải về. Xử lý HOÀN TOÀN trong bộ
+ * nhớ của request (2 API route) — không lưu file gốc/record nào xuống DB, client tự giữ
+ * blobUrl (đã upload Vercel Blob) suốt 2 bước (phân tích -> tách) nên không cần dọn dẹp state
+ * tạm ở server.
+ *
+ * Từng có thêm 1 tab con "Nén PDF" (2026-08-18) -- đã BỎ HẲN (2026-08-19) sau nhiều lần vá vẫn
+ * không đủ tin cậy trên gói Hobby (timeout/504/403 tuỳ file), và với file nhiều trang thì
+ * ngưỡng nén dưới 3MB nhiều khi không đạt được ở chất lượng đọc được -- xem lịch sử đầy đủ ở
+ * `.claude/rules/deployment-database-sync.md` mục 4.31 (đoạn "Nén PDF") trước khi cân nhắc làm
+ * lại tính năng tương tự.
  */
 export function NoticeSplitterPanel() {
-  const [subTab, setSubTab] = useState<NoticeSplitterSubTab>("split");
-  const t = useT();
-
-  return (
-    <div className="flex h-full flex-col">
-      <div className="flex items-center gap-1 border-b border-border px-4 py-2">
-        <button
-          onClick={() => setSubTab("split")}
-          className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition ${
-            subTab === "split" ? "gradient-btn text-white" : "text-text-faint hover:text-text-dim"
-          }`}
-        >
-          <Scissors size={12} />
-          {t("irsSplitter.subTabSplit")}
-        </button>
-        <button
-          onClick={() => setSubTab("compress")}
-          className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition ${
-            subTab === "compress" ? "gradient-btn text-white" : "text-text-faint hover:text-text-dim"
-          }`}
-        >
-          <Minimize2 size={12} />
-          {t("irsSplitter.subTabCompress")}
-        </button>
-      </div>
-      <div className="min-h-0 flex-1">{subTab === "split" ? <SplitTab /> : <PdfCompressPanel />}</div>
-    </div>
-  );
-}
-
-/**
- * Bỏ 1 file PDF gộp nhiều thư IRS (bản scan nhiều khách hàng dồn vào 1 file), tự nhận diện
- * ranh giới từng thư + đoán tên/loại thư/tax year (xem src/lib/irs-splitter), cho soát/sửa
- * trước khi tách thành 1 file PDF/khách hàng đóng gói trong 1 file .zip tải về. Xử lý HOÀN
- * TOÀN trong bộ nhớ của request (2 API route) — không lưu file gốc/record nào xuống DB,
- * client tự giữ blobUrl (đã upload Vercel Blob) suốt 2 bước (phân tích -> tách) nên không
- * cần dọn dẹp state tạm ở server.
- */
-function SplitTab() {
   const t = useT();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
