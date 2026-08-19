@@ -63,3 +63,15 @@ export async function uploadPdfToBlob(file: File, onProgress: (percentage: numbe
     clearTimeout(timer);
   }
 }
+
+/** Upload bytes 1 trang PDF nhỏ (đã cắt riêng từ file gốc, xem `pdf-compress-panel.tsx`) lên
+ * Vercel Blob -- CHỈ dùng khi trang đó quá nặng để gửi thẳng trong thân request (fallback,
+ * xem `compress-chunk/route.ts`). Mỗi blob ở đây chỉ bị đọc lại ĐÚNG 1 LẦN (khác blobUrl của
+ * cả file cũ trước đây, bị đọc lặp lại hàng chục lần và gây lỗi 403 -- xem lịch sử ở route
+ * trên), nên không cần cơ chế theo dõi % tiến trình (luôn nhỏ, nhanh). */
+export async function uploadBytesToBlob(name: string, bytes: Uint8Array): Promise<{ url: string }> {
+  return await upload(name, new Blob([new Uint8Array(bytes)], { type: "application/pdf" }), {
+    access: "public",
+    handleUploadUrl: "/api/irs-splitter/blob-upload",
+  });
+}

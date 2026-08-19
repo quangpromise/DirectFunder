@@ -4,22 +4,24 @@ import { useRef, useState } from "react";
 import { PDFDocument } from "pdf-lib";
 import { CheckCircle2, FileText, Loader2, Upload, X } from "lucide-react";
 import { useT } from "@/lib/i18n";
-import { MAX_UPLOAD_BYTES, fetchWithTimeout, readErrorMessage, uploadPdfToBlob } from "@/lib/irs-splitter/client-pdf-upload";
+import { MAX_UPLOAD_BYTES, fetchWithTimeout, readErrorMessage, uploadBytesToBlob } from "@/lib/irs-splitter/client-pdf-upload";
 
-// Đảm bảo dưới 3MB cho MỌI file bất kể nặng bao nhiêu/trang -- xử lý theo TỪNG KHOẢNG TRANG
-// nhỏ, gọi server nhiều lần (mỗi lần được cấp lại đủ 60s, không cộng dồn) thay vì 1 lần gọi
-// xử lý trọn file. Gặp thật trên production (2026-08-18): file 15 trang/48MB (~3.2MB/trang)
-// vượt quá 60s nếu xử lý trong 1 lần gọi -- riêng bước GIẢI MÃ ảnh gốc độ phân giải cao của
-// từng trang đã tốn nhiều giây, cộng dồn nhiều trang thì vượt giới hạn cứng của gói Hobby.
+// Đảm bảo dưới 3MB cho MỌI file bất kể nặng bao nhiêu/trang -- xử lý ĐÚNG 1 TRANG/lần gọi
+// server (mỗi lần được cấp lại đủ 60s, không cộng dồn) thay vì 1 lần gọi xử lý trọn file.
 // Ngưỡng 3MB (đổi từ 1MB, 2026-08-19) cho phép giữ chất lượng ảnh tốt hơn (ít lượt hạ DPI hơn
-// mới đạt ngân sách) mà vẫn đủ nhỏ để gửi email/lưu trữ -- kiến trúc chunk không đổi gì khác,
-// chỉ 1 hằng số này quyết định ngưỡng đích.
+// mới đạt ngân sách) mà vẫn đủ nhỏ để gửi email/lưu trữ.
 const TARGET_BYTES = 3_000_000;
 const SAFETY_MARGIN = 0.92;
 const DPI_STEPS = [200, 150, 120, 96, 72];
-// Số request chunk chạy song song -- giảm thời gian chờ thực tế của người dùng (nhiều lần
-// gọi độc lập, không cộng dồn thời gian tuần tự) mà không dồn quá nhiều request cùng lúc.
+// Số request chạy song song -- giảm thời gian chờ thực tế của người dùng (nhiều lần gọi độc
+// lập, không cộng dồn thời gian tuần tự) mà không dồn quá nhiều request cùng lúc.
 const CHUNK_CONCURRENCY = 3;
+
+// Trang được gửi THẲNG trong thân request (base64) nếu đủ nhỏ -- ngưỡng để base64 hoá (~+33%)
+// vẫn nằm an toàn dưới giới hạn ~4.5MB thân request Serverless Function của Vercel. Trang nặng
+// hơn (ảnh scan độ phân giải rất cao, hiếm) rơi về đường dự phòng: upload RIÊNG trang đó (rất
+// nhỏ so với cả file) lên Vercel Blob rồi gửi URL -- xem `compress-chunk/route.ts`.
+const DIRECT_BODY_MAX_BYTES = 3_000_000;
 
 interface CompressSummary {
   beforeBytes: number;
@@ -38,33 +40,33 @@ function base64ToUint8Array(base64: string): Uint8Array {
   return bytes;
 }
 
-/** LUÔN đúng 1 trang/lần gọi (2026-08-19, đổi từ 1-3 trang tuỳ dung lượng trung bình) -- gặp
- * thật production: file 10MB/10-50 trang, vài request đầu (khoảng 3 trang) chạy nhanh nhưng
- * 1 request sau đó 504 (Vercel tự giết ở đúng 60s) -- nhiều khả năng 1 TRANG CỤ THỂ trong file
- * (nội dung/ảnh cục bộ phức tạp hơn hẳn mặt bằng chung) rơi chung khoảng với 2 trang khác, kéo
- * cả khoảng vượt ngưỡng. Gộp nhiều trang/lần gọi vốn chỉ để giảm số lượt gọi (tối ưu tốc độ),
- * không phải yêu cầu bắt buộc -- đổi về 1 trang/lần gọi cô lập hoàn toàn rủi ro "trang nặng
- * kéo theo trang khác", đổi lại nhiều request hơn (bù bằng CHUNK_CONCURRENCY chạy song song).
- * Giữ lại tham số `avgSourceBytesPerPage` (không dùng nữa ở đây) cho `pickStartDpiIndex` bên
- * dưới, cùng logic tính theo dung lượng trung bình. */
-function pickChunkPageCount(): number {
-  return 1;
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
 }
 
-/** Cùng lý do -- bỏ qua thẳng các mức DPI cao gần như chắc chắn không vừa ngân sách với file
- * nặng/trang, đỡ tốn 1 lượt xử lý chắc chắn hỏng. File "nhẹ" giờ cũng bắt đầu ở DPI 150 thay
- * vì 200 (giảm chi phí render lần đầu, xem lý do ở pickChunkPageCount). */
+/** Cắt riêng 1 trang của `srcDoc` thành 1 file PDF độc lập chỉ chứa đúng trang đó -- gửi trang
+ * này lên server thay vì để server tự tải lại TOÀN BỘ file gốc từ Blob mỗi lần gọi (thiết kế
+ * cũ). Gặp thật production (2026-08-19): với thiết kế cũ, mỗi request (1 trang/lần) vẫn phải
+ * tải lại toàn bộ file gốc -- file nhiều trang khiến số lần tải lặp lại CÙNG 1 blobUrl tăng
+ * vọt trong vài giây, bị Vercel Blob trả 403 (nghi ngờ chặn do truy cập dồn dập) và làm fail
+ * cả lượt nén dù đã thêm retry. Cắt riêng từng trang loại bỏ hẳn việc tải lặp lại này. */
+async function extractSinglePagePdfBytes(srcDoc: PDFDocument, pageIndex: number): Promise<Uint8Array> {
+  const singleDoc = await PDFDocument.create();
+  const [copiedPage] = await singleDoc.copyPages(srcDoc, [pageIndex - 1]);
+  singleDoc.addPage(copiedPage);
+  return await singleDoc.save();
+}
+
+/** File càng nặng/trang (scan độ phân giải cao) càng cần bỏ qua thẳng các mức DPI cao gần như
+ * chắc chắn không vừa ngân sách, đỡ tốn 1 lượt xử lý chắc chắn hỏng. */
 function pickStartDpiIndex(avgSourceBytesPerPage: number): number {
   if (avgSourceBytesPerPage > 3_000_000) return 2;
   return 1;
-}
-
-function buildPageRanges(pageCount: number, chunkPageCount: number): Array<[number, number]> {
-  const ranges: Array<[number, number]> = [];
-  for (let start = 1; start <= pageCount; start += chunkPageCount) {
-    ranges.push([start, Math.min(start + chunkPageCount - 1, pageCount)]);
-  }
-  return ranges;
 }
 
 interface ChunkAttemptResult {
@@ -73,38 +75,54 @@ interface ChunkAttemptResult {
   bailed: boolean;
 }
 
-/** Chạy 1 lượt xử lý (1 mức DPI) trên TOÀN BỘ trang -- chia thành nhiều request chunk, chạy
- * song song có giới hạn (`CHUNK_CONCURRENCY`). Dừng sớm (`bailed: true`) ngay khi biết chắc
- * tổng byte đã vượt `TARGET_BYTES` (còn trang chưa xử lý) -- các chunk CHƯA bắt đầu sẽ không
- * được dispatch nữa (chunk đang chạy dở vẫn hoàn thành bình thường, kết quả bị bỏ qua). */
+/** Chạy 1 lượt xử lý (1 mức DPI) trên TOÀN BỘ trang -- mỗi trang 1 request riêng, chạy song
+ * song có giới hạn (`CHUNK_CONCURRENCY`). Dừng sớm (`bailed: true`) ngay khi biết chắc tổng
+ * byte đã vượt `TARGET_BYTES` (còn trang chưa xử lý) -- các trang CHƯA bắt đầu sẽ không được
+ * dispatch nữa (trang đang xử lý dở vẫn hoàn thành bình thường, kết quả bị bỏ qua). */
 async function runDpiAttempt(
-  blobUrl: string,
+  srcDoc: PDFDocument,
   pageCount: number,
   dpi: number,
   perPageBudgetBytes: number,
-  chunkPageCount: number,
   allowBail: boolean,
   t: (key: string, vars?: Record<string, string | number>) => string,
   onProgress: (pagesDone: number) => void
 ): Promise<ChunkAttemptResult> {
-  const ranges = buildPageRanges(pageCount, chunkPageCount);
   const pages = new Map<number, Uint8Array>();
   let totalBytes = 0;
   let pagesDone = 0;
   let bailed = false;
-  let nextRangeIndex = 0;
+  let nextPageIndex = 1;
   let firstError: Error | null = null;
 
   async function worker() {
     while (!bailed && !firstError) {
-      const idx = nextRangeIndex++;
-      if (idx >= ranges.length) return;
-      const [startPage, endPage] = ranges[idx];
+      const pageIndex = nextPageIndex++;
+      if (pageIndex > pageCount) return;
+
+      const pageBytes = await extractSinglePagePdfBytes(srcDoc, pageIndex);
+      let requestBody: Record<string, unknown>;
+      let pageBlobUrl: string | null = null;
+      if (pageBytes.length <= DIRECT_BODY_MAX_BYTES) {
+        requestBody = { pagePdfBase64: uint8ArrayToBase64(pageBytes), pageIndex, dpi, perPageBudgetBytes };
+      } else {
+        const blob = await uploadBytesToBlob(`page-${pageIndex}.pdf`, pageBytes);
+        pageBlobUrl = blob.url;
+        requestBody = { blobUrl: blob.url, pageIndex, dpi, perPageBudgetBytes };
+      }
+
       const res = await fetchWithTimeout("/api/irs-splitter/compress-chunk", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ blobUrl, startPage, endPage, dpi, perPageBudgetBytes }),
+        body: JSON.stringify(requestBody),
       });
+      if (pageBlobUrl) {
+        fetch("/api/irs-splitter/blob-delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ blobUrl: pageBlobUrl }),
+        }).catch(() => {});
+      }
       if (!res.ok) {
         firstError = new Error(await readErrorMessage(res, t("compressPdf.compressFailed")));
         return;
@@ -123,7 +141,7 @@ async function runDpiAttempt(
     }
   }
 
-  const workerCount = Math.min(CHUNK_CONCURRENCY, ranges.length);
+  const workerCount = Math.min(CHUNK_CONCURRENCY, pageCount);
   await Promise.all(Array.from({ length: workerCount }, () => worker()));
 
   if (firstError) throw firstError;
@@ -132,25 +150,24 @@ async function runDpiAttempt(
 
 /**
  * Tab con "Nén PDF" trong "Notice Splitter" -- chọn 1 file PDF, tự động nén xuống dưới 3MB
- * BẤT KỂ file gốc nặng bao nhiêu. Xử lý theo TỪNG KHOẢNG TRANG qua nhiều lần gọi
- * `/api/irs-splitter/compress-chunk` (né giới hạn 60s/lần của route xử lý, xem comment
- * TARGET_BYTES phía trên), rồi tự RÁP LẠI PDF cuối cùng NGAY TRÊN TRÌNH DUYỆT bằng `pdf-lib`
- * (không cần thêm 1 lần gọi server để ráp) -- đổi lại mất lớp text/copy-paste/search chữ
- * (rasterize toàn bộ trang thành ảnh), đánh đổi đã được người dùng xác nhận chấp nhận.
+ * BẤT KỂ file gốc nặng bao nhiêu. Xử lý ĐÚNG 1 TRANG/lần gọi `/api/irs-splitter/compress-chunk`
+ * (né giới hạn 60s/lần của route xử lý), mỗi trang được CẮT RIÊNG thành 1 PDF nhỏ NGAY TRÊN
+ * TRÌNH DUYỆT bằng `pdf-lib` rồi gửi thẳng (không qua Vercel Blob cho file gốc nữa -- xem
+ * comment ở `extractSinglePagePdfBytes`), rồi tự RÁP LẠI PDF cuối cùng NGAY TRÊN TRÌNH DUYỆT
+ * -- đổi lại mất lớp text/copy-paste/search chữ (rasterize toàn bộ trang thành ảnh), đánh đổi
+ * đã được người dùng xác nhận chấp nhận.
  */
 export function PdfCompressPanel() {
   const t = useT();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
-  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [compressProgress, setCompressProgress] = useState<{ dpi: number; pagesDone: number; totalPages: number } | null>(null);
   const [result, setResult] = useState<CompressSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   function resetAll() {
     setFile(null);
-    setUploadProgress(null);
     setCompressProgress(null);
     setResult(null);
     setError(null);
@@ -160,12 +177,10 @@ export function PdfCompressPanel() {
   async function compress(f: File) {
     setError(null);
     setResult(null);
-    setUploadProgress(0);
-    let blobUrl: string | null = null;
     try {
-      // Đọc file NGAY TRÊN TRÌNH DUYỆT bằng pdf-lib trước khi upload -- lấy số trang + kích
-      // thước point từng trang (cần để ráp lại đúng tỷ lệ sau này), không cần gọi server cho
-      // việc này.
+      // Đọc file NGAY TRÊN TRÌNH DUYỆT bằng pdf-lib -- lấy số trang + kích thước point từng
+      // trang (cần để ráp lại đúng tỷ lệ sau này), đồng thời giữ luôn `srcDoc` để cắt riêng
+      // từng trang gửi lên server (không cần upload cả file lên Blob nữa).
       const srcBytes = new Uint8Array(await f.arrayBuffer());
       const srcDoc = await PDFDocument.load(srcBytes);
       const pageCount = srcDoc.getPageCount();
@@ -174,27 +189,14 @@ export function PdfCompressPanel() {
 
       const perPageBudgetBytes = Math.max(1, Math.floor((TARGET_BYTES * SAFETY_MARGIN) / pageCount));
       const avgSourceBytesPerPage = f.size / pageCount;
-      const chunkPageCount = pickChunkPageCount();
       const startDpiIndex = pickStartDpiIndex(avgSourceBytesPerPage);
       const dpiSteps = DPI_STEPS.slice(startDpiIndex);
-
-      let blob: { url: string };
-      try {
-        blob = await uploadPdfToBlob(f, setUploadProgress);
-      } catch (err) {
-        if (err instanceof DOMException && err.name === "AbortError") {
-          throw new Error(t("irsSplitter.uploadTimeout"));
-        }
-        throw err;
-      }
-      blobUrl = blob.url;
-      setUploadProgress(null);
 
       let finalAttempt: ChunkAttemptResult | null = null;
 
       for (const dpi of dpiSteps) {
         setCompressProgress({ dpi, pagesDone: 0, totalPages: pageCount });
-        const attempt = await runDpiAttempt(blob.url, pageCount, dpi, perPageBudgetBytes, chunkPageCount, true, t, (pagesDone) =>
+        const attempt = await runDpiAttempt(srcDoc, pageCount, dpi, perPageBudgetBytes, true, t, (pagesDone) =>
           setCompressProgress({ dpi, pagesDone, totalPages: pageCount })
         );
         finalAttempt = attempt;
@@ -207,7 +209,7 @@ export function PdfCompressPanel() {
         // để luôn có đủ toàn bộ trang trả về (dù vẫn vượt 3MB) thay vì 1 bản dở dang.
         const floorDpi = DPI_STEPS[DPI_STEPS.length - 1];
         setCompressProgress({ dpi: floorDpi, pagesDone: 0, totalPages: pageCount });
-        finalAttempt = await runDpiAttempt(blob.url, pageCount, floorDpi, perPageBudgetBytes, chunkPageCount, false, t, (pagesDone) =>
+        finalAttempt = await runDpiAttempt(srcDoc, pageCount, floorDpi, perPageBudgetBytes, false, t, (pagesDone) =>
           setCompressProgress({ dpi: floorDpi, pagesDone, totalPages: pageCount })
         );
         hitFloor = true;
@@ -251,15 +253,7 @@ export function PdfCompressPanel() {
             : t("compressPdf.compressFailed")
       );
     } finally {
-      setUploadProgress(null);
       setCompressProgress(null);
-      if (blobUrl) {
-        fetch("/api/irs-splitter/blob-delete", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ blobUrl }),
-        }).catch(() => {});
-      }
     }
   }
 
@@ -276,7 +270,7 @@ export function PdfCompressPanel() {
     await compress(f);
   }
 
-  const busy = uploadProgress !== null || compressProgress !== null;
+  const busy = compressProgress !== null;
 
   return (
     <div className="flex h-full flex-col">
@@ -323,18 +317,6 @@ export function PdfCompressPanel() {
 
         {error && (
           <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">{error}</div>
-        )}
-
-        {uploadProgress !== null && (
-          <div className="flex flex-col gap-2 py-8">
-            <div className="flex items-center gap-2 text-sm text-text-dim">
-              <Loader2 size={16} className="animate-spin" />
-              {t("irsSplitter.uploading", { percent: Math.round(uploadProgress) })}
-            </div>
-            <div className="h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-surface">
-              <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${uploadProgress}%` }} />
-            </div>
-          </div>
         )}
 
         {compressProgress !== null && (
