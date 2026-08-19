@@ -731,12 +731,11 @@ const dict: Record<Language, Record<string, string>> = {
     "cpaReviewConnect.secretOnceWarning": "Bí mật này chỉ hiện ĐÚNG 1 LẦN — nếu mất đoạn script, ngắt kết nối rồi kết nối lại để sinh secret mới.",
 
     // Notice Splitter (tab trong popup "For Processor" — tách thư IRS gộp thành file riêng theo khách hàng)
-    "irsSplitter.intro": "Chọn 1 file PDF gộp nhiều thư IRS (bản scan) — hệ thống tự nhận diện ranh giới từng thư, đoán tên khách hàng/loại thư/tax year, để bạn soát lại rồi tách thành 1 file PDF riêng cho mỗi khách hàng.",
+    "irsSplitter.intro": "Chọn 1 file PDF gộp nhiều thư IRS (bản scan) — xử lý ngay trên trình duyệt của bạn (file không tải lên server), tự nhận diện ranh giới từng thư, đoán tên khách hàng/loại thư/tax year, để bạn soát lại rồi tách thành 1 file PDF riêng cho mỗi khách hàng.",
     "irsSplitter.chooseFile": "Chọn file PDF",
     "irsSplitter.changeFile": "Đổi file khác",
     "irsSplitter.reset": "Làm lại",
     "irsSplitter.pageCount": "{count} trang",
-    "irsSplitter.uploading": "Đang tải file lên... {percent}%",
     "irsSplitter.analyzing": "Đang phân tích file, có thể mất chút thời gian với file nhiều trang...",
     "irsSplitter.reviewHint": "Soát lại khoảng trang / tên khách hàng / loại thư / tax year trước khi tách — OCR đôi khi đọc sai tên hoặc bỏ sót tax year, sửa trực tiếp trong bảng bên dưới. Bỏ tick \"Not Update CRM\" nếu thư đã gửi thẳng cho khách (không qua địa chỉ văn phòng).",
     "irsSplitter.col.pages": "Trang",
@@ -748,12 +747,10 @@ const dict: Record<Language, Record<string, string>> = {
     "irsSplitter.splitAndDownload": "Tách & tải xuống ({count} file)",
     "irsSplitter.splitting": "Đang tách file...",
     "irsSplitter.noRecords": "Không nhận diện được thư nào trong file này — kiểm tra lại file PDF gốc.",
-    "irsSplitter.analyzeFailed": "Phân tích thất bại",
+    "irsSplitter.analyzeFailed": "Phân tích thất bại — file có thể bị hỏng hoặc không đúng định dạng PDF.",
     "irsSplitter.splitFailed": "Tách file thất bại",
-    "irsSplitter.fileTooLarge": "File quá nặng (tối đa 50MB mỗi lần tải lên) — hãy chia nhỏ file trước.",
-    "irsSplitter.maxSizeHint": "Tối đa 50MB mỗi lần tải lên.",
-    "irsSplitter.processingTimeout": "Xử lý quá lâu (quá 55 giây) — file có thể quá lớn/quá nhiều trang cho giới hạn xử lý của nền tảng hosting, hãy thử chia nhỏ file trước khi tải lên.",
-    "irsSplitter.uploadTimeout": "Tải file lên quá lâu (quá 5 phút) — kiểm tra lại kết nối mạng hoặc thử lại với file nhỏ hơn.",
+    "irsSplitter.fileTooLarge": "File quá nặng (tối đa 50MB) — trình duyệt có thể xử lý chậm/bị treo với file quá lớn, hãy chia nhỏ file trước.",
+    "irsSplitter.maxSizeHint": "Tối đa 50MB/lần xử lý.",
   },
   en: {
     // Top nav
@@ -1478,12 +1475,11 @@ const dict: Record<Language, Record<string, string>> = {
     "cpaReviewConnect.secretOnceWarning": "This secret is shown only ONCE — if you lose the script, disconnect and reconnect to generate a new one.",
 
     // Notice Splitter (tab inside the "For Processor" popup)
-    "irsSplitter.intro": "Pick a scanned PDF that bundles several IRS notices together — the tool detects each letter's page boundaries and guesses the client name / notice type / tax year, for you to review before splitting into one PDF per client.",
+    "irsSplitter.intro": "Pick a scanned PDF that bundles several IRS notices together — processed right in your browser (the file is never uploaded to any server), detects each letter's page boundaries and guesses the client name / notice type / tax year, for you to review before splitting into one PDF per client.",
     "irsSplitter.chooseFile": "Choose PDF file",
     "irsSplitter.changeFile": "Change file",
     "irsSplitter.reset": "Start over",
     "irsSplitter.pageCount": "{count} pages",
-    "irsSplitter.uploading": "Uploading file... {percent}%",
     "irsSplitter.analyzing": "Analyzing the file, this can take a moment for long files...",
     "irsSplitter.reviewHint": "Review the page range / client name / notice type / tax year before splitting — OCR sometimes misreads a name or misses the tax year, edit directly in the table below. Uncheck \"Not Update CRM\" if the letter was already mailed straight to the client (not via the office address).",
     "irsSplitter.col.pages": "Pages",
@@ -1495,12 +1491,10 @@ const dict: Record<Language, Record<string, string>> = {
     "irsSplitter.splitAndDownload": "Split & download ({count} files)",
     "irsSplitter.splitting": "Splitting...",
     "irsSplitter.noRecords": "No letters detected in this file — check the source PDF.",
-    "irsSplitter.analyzeFailed": "Analysis failed",
+    "irsSplitter.analyzeFailed": "Analysis failed — the file may be corrupted or not a valid PDF.",
     "irsSplitter.splitFailed": "Split failed",
-    "irsSplitter.fileTooLarge": "File is too large (max 50MB per upload) — split the file first.",
-    "irsSplitter.maxSizeHint": "Max 50MB per upload.",
-    "irsSplitter.processingTimeout": "Processing took too long (over 55s) — the file may be too large/have too many pages for the hosting platform's processing limit, try splitting it before uploading.",
-    "irsSplitter.uploadTimeout": "Upload took too long (over 5 minutes) — check your network connection or try a smaller file.",
+    "irsSplitter.fileTooLarge": "File is too large (max 50MB) — very large files may make the browser slow or unresponsive, split it first.",
+    "irsSplitter.maxSizeHint": "Max 50MB per file.",
   },
 };
 

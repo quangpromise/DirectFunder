@@ -4,24 +4,15 @@ import { useRef, useState } from "react";
 import { Download, FileText, Loader2, Trash2, Upload, X } from "lucide-react";
 import { useT } from "@/lib/i18n";
 import { isCareOfEligibleNoticeType } from "@/lib/irs-splitter/care-of-eligibility";
-import {
-  MAX_UPLOAD_BYTES,
-  fetchWithTimeout,
-  readErrorMessage,
-  uploadPdfToBlob,
-} from "@/lib/irs-splitter/client-pdf-upload";
+import { detectRecords } from "@/lib/irs-splitter/detect-records";
+import { splitPdf } from "@/lib/irs-splitter/split-pdf";
+import type { IrsNoticeRecord } from "@/lib/irs-splitter/types";
 
-interface ApiRecord {
-  id: string;
-  startPage: number;
-  endPage: number;
-  noticeType: string | null;
-  name: string | null;
-  taxYear: string | null;
-  hasCareOf: boolean;
-}
+// File nặng hơn ngưỡng này có thể khiến trình duyệt xử lý chậm/treo tab (giải mã PDF +
+// render text đều chạy trên chính máy người dùng, không còn server nào xử lý hộ nữa).
+const MAX_FILE_BYTES = 50 * 1024 * 1024;
 
-/** Bản trong bảng soát/sửa — cùng field như ApiRecord nhưng text field không null (input
+/** Bản trong bảng soát/sửa — cùng field như IrsNoticeRecord nhưng text field không null (input
  * điều khiển được) thay vì null. */
 interface EditableRecord {
   id: string;
@@ -33,46 +24,51 @@ interface EditableRecord {
   hasCareOf: boolean;
 }
 
+function toEditableRecord(r: IrsNoticeRecord): EditableRecord {
+  return {
+    id: r.id,
+    startPage: r.startPage,
+    endPage: r.endPage,
+    noticeType: r.noticeType ?? "",
+    name: r.name ?? "",
+    taxYear: r.taxYear ?? "",
+    hasCareOf: r.hasCareOf,
+  };
+}
+
 /**
  * Tab "Notice Splitter" trong popup "For Processor" (`for-processor-dialog.tsx`) — bỏ 1 file
  * PDF gộp nhiều thư IRS (bản scan nhiều khách hàng dồn vào 1 file), tự nhận diện ranh giới
  * từng thư + đoán tên/loại thư/tax year (xem src/lib/irs-splitter), cho soát/sửa trước khi
- * tách thành 1 file PDF/khách hàng đóng gói trong 1 file .zip tải về. Xử lý HOÀN TOÀN trong bộ
- * nhớ của request (2 API route) — không lưu file gốc/record nào xuống DB, client tự giữ
- * blobUrl (đã upload Vercel Blob) suốt 2 bước (phân tích -> tách) nên không cần dọn dẹp state
- * tạm ở server.
+ * tách thành 1 file PDF/khách hàng đóng gói trong 1 file .zip tải về.
  *
- * Từng có thêm 1 tab con "Nén PDF" (2026-08-18) -- đã BỎ HẲN (2026-08-19) sau nhiều lần vá vẫn
- * không đủ tin cậy trên gói Hobby (timeout/504/403 tuỳ file), và với file nhiều trang thì
- * ngưỡng nén dưới 3MB nhiều khi không đạt được ở chất lượng đọc được -- xem lịch sử đầy đủ ở
- * `.claude/rules/deployment-database-sync.md` mục 4.31 (đoạn "Nén PDF") trước khi cân nhắc làm
- * lại tính năng tương tự.
+ * Xử lý HOÀN TOÀN trong trình duyệt (2026-08-19, đổi từ kiến trúc server + Vercel Blob) --
+ * `pdfjs-dist` bản trình duyệt (extract-text-browser.ts) trích text, `pdf-lib`/`jszip` (đã là
+ * dependency isomorphic sẵn có) tách trang + đóng gói zip, tất cả ngay trên máy người dùng.
+ * File scan gốc (có thể chứa SSN) KHÔNG BAO GIỜ rời khỏi trình duyệt -- không còn route server
+ * nào (`analyze`/`split`/`blob-upload` đã xoá), không còn phụ thuộc Vercel Blob cho tính năng
+ * này. Đổi lại: xử lý tốn CPU máy người dùng thay vì server, và không còn bị giới hạn cứng
+ * `maxDuration=60s` của Vercel Hobby -- loại bỏ hẳn lớp lỗi timeout/504/403 từng gặp khi
+ * tính năng "Nén PDF" (đã bỏ hẳn) còn dùng kiến trúc server.
+ *
+ * `pdfjs-dist`/`jszip` chỉ tải (lazy-import) khi người dùng THẬT SỰ chọn file, không cộng dồn
+ * vào bundle chính của Dashboard -- ai không dùng tab này không tải thêm gì.
  */
 export function NoticeSplitterPanel() {
   const t = useT();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [pageCount, setPageCount] = useState<number | null>(null);
   const [records, setRecords] = useState<EditableRecord[] | null>(null);
-  // Tách riêng 2 pha (upload lên Blob vs server phân tích) thay vì gộp chung 1 cờ "analyzing"
-  // — trước đây gộp chung khiến người dùng KHÔNG PHÂN BIỆT được đang tải lên (có thể chính
-  // đáng mất 30-60s+ với file vài chục MB trên mạng chậm) hay thật sự bị treo, tưởng nhầm là
-  // bug (gặp thật trên production 2026-08-18 với file 48MB — hoá ra vẫn đang tải lên, không
-  // phải server bị treo). `uploadProgress` (0-100) hiện %  tiến trình thật từ
-  // `onUploadProgress` của @vercel/blob để người dùng thấy nó vẫn đang chạy.
-  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [splitting, setSplitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function resetAll() {
     setFile(null);
-    setBlobUrl(null);
     setPageCount(null);
     setRecords(null);
-    setUploadProgress(null);
     setError(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
@@ -81,51 +77,17 @@ export function NoticeSplitterPanel() {
     setError(null);
     setRecords(null);
     setPageCount(null);
-    setBlobUrl(null);
-    setUploadProgress(0);
+    setAnalyzing(true);
     try {
-      // Upload THẲNG lên Vercel Blob từ trình duyệt -- né giới hạn ~4.5MB thân request của
-      // Vercel Serverless Function, xem client-pdf-upload.ts. Với file vài chục MB, riêng
-      // bước NÀY có thể mất hàng chục giây trên mạng chậm -- báo % tiến trình thật để phân
-      // biệt với bước phân tích ở server bên dưới.
-      let blob: { url: string };
-      try {
-        blob = await uploadPdfToBlob(f, setUploadProgress);
-      } catch (err) {
-        if (err instanceof DOMException && err.name === "AbortError") {
-          throw new Error(t("irsSplitter.uploadTimeout"));
-        }
-        throw err;
-      }
-      setBlobUrl(blob.url);
-      setUploadProgress(null);
-      setAnalyzing(true);
-
-      const res = await fetchWithTimeout("/api/irs-splitter/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ blobUrl: blob.url }),
-      });
-      if (!res.ok) {
-        throw new Error(await readErrorMessage(res, t("irsSplitter.analyzeFailed")));
-      }
-      const data = await res.json();
-      setPageCount(data.pageCount as number);
-      setRecords(
-        (data.records as ApiRecord[]).map((r) => ({
-          id: r.id,
-          startPage: r.startPage,
-          endPage: r.endPage,
-          noticeType: r.noticeType ?? "",
-          name: r.name ?? "",
-          taxYear: r.taxYear ?? "",
-          hasCareOf: r.hasCareOf,
-        }))
-      );
+      const { extractPageTextsBrowser } = await import("@/lib/irs-splitter/extract-text-browser");
+      const bytes = new Uint8Array(await f.arrayBuffer());
+      const pageTexts = await extractPageTextsBrowser(bytes);
+      const detected = detectRecords(pageTexts);
+      setPageCount(pageTexts.length);
+      setRecords(detected.map(toEditableRecord));
     } catch (err) {
-      setError(err instanceof DOMException && err.name === "AbortError" ? t("irsSplitter.processingTimeout") : err instanceof Error ? err.message : t("irsSplitter.analyzeFailed"));
+      setError(err instanceof Error ? err.message : t("irsSplitter.analyzeFailed"));
     } finally {
-      setUploadProgress(null);
       setAnalyzing(false);
     }
   }
@@ -133,7 +95,7 @@ export function NoticeSplitterPanel() {
   async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     if (!f) return;
-    if (f.size > MAX_UPLOAD_BYTES) {
+    if (f.size > MAX_FILE_BYTES) {
       setFile(f);
       setError(t("irsSplitter.fileTooLarge"));
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -152,37 +114,46 @@ export function NoticeSplitterPanel() {
   }
 
   async function handleSplit() {
-    if (!file || !blobUrl || !records || records.length === 0) return;
+    if (!file || !records || records.length === 0) return;
     setSplitting(true);
     setError(null);
     try {
-      const res = await fetchWithTimeout("/api/irs-splitter/split", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ blobUrl, fileName: file.name, records }),
-      });
-      if (!res.ok) {
-        throw new Error(await readErrorMessage(res, t("irsSplitter.splitFailed")));
-      }
-      const blob = await res.blob();
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const fullRecords: IrsNoticeRecord[] = records.map((r) => ({
+        id: r.id,
+        startPage: r.startPage,
+        endPage: r.endPage,
+        pageCount: r.endPage - r.startPage + 1,
+        noticeType: r.noticeType.trim() || null,
+        name: r.name.trim() || null,
+        taxYear: r.taxYear.trim() || null,
+        hasCareOf: r.hasCareOf && isCareOfEligibleNoticeType(r.noticeType),
+      }));
+      const files = await splitPdf(bytes, fullRecords);
+
+      const { default: JSZip } = await import("jszip");
+      const zip = new JSZip();
+      for (const f of files) zip.file(`${f.filename}.pdf`, f.bytes);
+      const zipBytes = await zip.generateAsync({ type: "uint8array" });
+
+      const zipName = file.name.replace(/\.pdf$/i, "") || "notices";
+      const blob = new Blob([new Uint8Array(zipBytes)], { type: "application/zip" });
       const url = URL.createObjectURL(blob);
-      const disposition = res.headers.get("Content-Disposition") || "";
-      const match = disposition.match(/filename="([^"]+)"/);
       const a = document.createElement("a");
       a.href = url;
-      a.download = match ? match[1] : "split.zip";
+      a.download = `${zipName} - split.zip`;
       document.body.appendChild(a);
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
     } catch (err) {
-      setError(err instanceof DOMException && err.name === "AbortError" ? t("irsSplitter.processingTimeout") : err instanceof Error ? err.message : t("irsSplitter.splitFailed"));
+      setError(err instanceof Error ? err.message : t("irsSplitter.splitFailed"));
     } finally {
       setSplitting(false);
     }
   }
 
-  const busy = uploadProgress !== null || analyzing || splitting;
+  const busy = analyzing || splitting;
 
   return (
     <div className="flex h-full flex-col">
@@ -233,18 +204,6 @@ export function NoticeSplitterPanel() {
 
         {file && pageCount != null && (
           <p className="mb-3 text-xs text-text-faint">{t("irsSplitter.pageCount", { count: pageCount })}</p>
-        )}
-
-        {uploadProgress !== null && (
-          <div className="flex flex-col gap-2 py-8">
-            <div className="flex items-center gap-2 text-sm text-text-dim">
-              <Loader2 size={16} className="animate-spin" />
-              {t("irsSplitter.uploading", { percent: Math.round(uploadProgress) })}
-            </div>
-            <div className="h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-surface">
-              <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${uploadProgress}%` }} />
-            </div>
-          </div>
         )}
 
         {analyzing && (
