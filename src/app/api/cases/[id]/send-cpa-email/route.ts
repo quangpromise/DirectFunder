@@ -9,11 +9,15 @@ import type { FeaturePermissions } from "@/lib/types";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-// File đính kèm giờ upload thẳng lên Vercel Blob từ client (né giới hạn ~4.5MB thân request
-// của Serverless Function -- xem .claude/skills/vercel-blob-large-upload/SKILL.md), route
-// này chỉ nhận blobUrl rồi tự tải bytes về. 20MB đủ rộng cho hầu hết file CPA thật (scan/xlsx)
-// mà vẫn để margin an toàn dưới giới hạn đính kèm thật của Gmail (~25MB, tính cả overhead
-// MIME encoding).
+// File đính kèm dưới 4MB tổng gửi thẳng base64 trong JSON body (KHÔNG phụ thuộc Vercel Blob
+// -- xem SMALL_ATTACHMENT_THRESHOLD_BYTES ở send-cpa-email-dialog.tsx); trên ngưỡng đó client
+// tự upload thẳng lên Vercel Blob (né giới hạn ~4.5MB thân request của Serverless Function,
+// xem .claude/skills/vercel-blob-large-upload/SKILL.md) rồi gửi `blobUrl`, route này tự tải
+// bytes về. 20MB đủ rộng cho hầu hết file CPA thật (scan/xlsx) mà vẫn để margin an toàn dưới
+// giới hạn đính kèm thật của Gmail (~25MB, tính cả overhead MIME encoding). Chấp nhận CẢ 2
+// hình dạng cùng lúc (không phải cái này thay cái kia) -- xem lý do ở mục 4.32
+// deployment-database-sync.md: gửi base64 trực tiếp cho file nhỏ giúp phần lớn email vẫn gửi
+// được ngay cả khi Vercel Blob gặp sự cố/chạm hạn mức free (Hobby: khoá 30 ngày khi vượt).
 const MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 
 function isNonEmptyEmailArray(v: unknown): v is string[] {
@@ -23,12 +27,9 @@ function isNonEmptyEmailArray(v: unknown): v is string[] {
 interface AttachmentInput {
   filename: string;
   contentType: string;
-  /** Bản mới -- file đã upload thẳng lên Vercel Blob phía client. */
+  /** File lớn (>4MB tổng) -- đã upload thẳng lên Vercel Blob phía client. */
   blobUrl?: string;
-  /** Bản CŨ (giữ tương thích ngược) -- base64 thuần gửi trực tiếp trong body. Client hiện
-   * tại LUÔN gửi `blobUrl`, không còn field này -- vẫn chấp nhận đề phòng trình duyệt nào đó
-   * còn kẹt bundle JS cũ (CDN/edge cache HTML trỏ tới chunk cũ) chưa kịp cập nhật, tránh chặn
-   * cứng người dùng gửi mail trong lúc đó. */
+  /** File nhỏ (<=4MB tổng) -- base64 thuần gửi trực tiếp trong body, không qua Blob. */
   contentBase64?: string;
 }
 

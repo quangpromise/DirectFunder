@@ -385,9 +385,14 @@ interface AppState {
       subject: string;
       html: string;
       text: string;
-      /** `blobUrl` -- file đã upload thẳng lên Vercel Blob phía client (né giới hạn ~4.5MB
-       * thân request), server tự tải bytes về rồi xoá blob sau khi gửi xong. */
-      attachments: { filename: string; contentType: string; blobUrl: string }[];
+      /** File nhỏ (<=4MB tổng) gửi thẳng `contentBase64`; file lớn hơn upload thẳng lên
+       * Vercel Blob phía client (né giới hạn ~4.5MB thân request) rồi gửi `blobUrl` -- server
+       * tự tải bytes về rồi xoá blob sau khi gửi xong. Xem SMALL_ATTACHMENT_THRESHOLD_BYTES
+       * trong send-cpa-email-dialog.tsx. */
+      attachments: (
+        | { filename: string; contentType: string; blobUrl: string }
+        | { filename: string; contentType: string; contentBase64: string }
+      )[];
     }
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
   /** Đánh dấu "Đã gửi" mail CPA thủ công (manual) hoặc xoá đánh dấu khi xác nhận "muốn gửi

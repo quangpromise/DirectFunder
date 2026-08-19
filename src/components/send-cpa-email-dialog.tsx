@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { upload } from "@vercel/blob/client";
 import { Mail, X, Paperclip, AlertCircle, Loader2 } from "lucide-react";
 import { CaseRecord, CpaEmailDefaults } from "@/lib/types";
+import { fileToDataUrl } from "@/lib/file-to-data-url";
 import {
   buildTemplateVars,
   renderCpaEmailTemplate,
@@ -14,20 +15,28 @@ import {
 import { useT, useLanguage } from "@/lib/i18n";
 import { MailBodyEditor } from "@/components/mail-body-editor";
 
-// File đính kèm upload THẲNG lên Vercel Blob từ trình duyệt (né giới hạn ~4.5MB thân request
-// của Serverless Function -- xem .claude/skills/vercel-blob-large-upload/SKILL.md), server
-// chỉ nhận blobUrl rồi tự tải bytes về đính kèm mail. 20MB đủ rộng cho hầu hết file CPA thật
-// mà vẫn có margin dưới giới hạn đính kèm thật của Gmail (~25MB).
+// Tổng đính kèm tối đa 20MB (đủ rộng cho hầu hết file CPA thật, vẫn có margin dưới giới hạn
+// đính kèm thật ~25MB của Gmail). Dưới ngưỡng nhỏ SMALL_ATTACHMENT_THRESHOLD_BYTES gửi thẳng
+// base64 trong JSON body (không phụ thuộc Vercel Blob) — trên ngưỡng đó mới upload qua Blob
+// (né giới hạn ~4.5MB thân request của Serverless Function, xem .claude/skills/
+// vercel-blob-large-upload/SKILL.md). Chọn nhánh nào KHÔNG đổi trải nghiệm người dùng, chỉ
+// khác cách server nhận file — nhưng đảm bảo phần lớn email (đính kèm nhỏ) vẫn gửi được ngay
+// cả khi Vercel Blob gặp sự cố/chạm hạn mức free (Hobby: khoá 30 ngày khi vượt hạn mức, xem
+// deployment-database-sync.md mục 4.32).
 const MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+const SMALL_ATTACHMENT_THRESHOLD_BYTES = 4 * 1024 * 1024;
 
 type SendResult = { ok: true } | { ok: false; error: string };
+type SendAttachment =
+  | { filename: string; contentType: string; blobUrl: string }
+  | { filename: string; contentType: string; contentBase64: string };
 type SendPayload = {
   to: string[];
   cc: string[];
   subject: string;
   html: string;
   text: string;
-  attachments: { filename: string; contentType: string; blobUrl: string }[];
+  attachments: SendAttachment[];
 };
 
 function splitEmails(raw: string): string[] {
@@ -154,23 +163,34 @@ export function SendCpaEmailDialog({
     setSending(true);
     setError("");
     try {
-      // Upload từng file THẲNG lên Vercel Blob (không qua base64/JSON body nữa -- xem
-      // MAX_TOTAL_ATTACHMENT_BYTES ở đầu file) trước khi gọi API gửi mail thật.
-      const attachments: { filename: string; contentType: string; blobUrl: string }[] = [];
-      setUploadStatus(files.length > 0 ? { done: 0, total: files.length } : null);
-      for (const file of files) {
-        const blob = await upload(file.name, file, {
-          access: "public",
-          handleUploadUrl: "/api/cpa-email/blob-upload",
-        });
-        attachments.push({
-          filename: file.name,
-          contentType: file.type || "application/octet-stream",
-          blobUrl: blob.url,
-        });
-        setUploadStatus((s) => (s ? { done: s.done + 1, total: s.total } : s));
+      // Dưới ngưỡng nhỏ -- gửi thẳng base64 trong JSON body, KHÔNG phụ thuộc Vercel Blob (xem
+      // SMALL_ATTACHMENT_THRESHOLD_BYTES ở đầu file: đa số email CPA có đính kèm nhỏ, giữ
+      // đường base64 cũ cho nhánh này vừa đỡ tốn quota Blob vừa tự chịu được nếu Blob gặp sự
+      // cố/chạm hạn mức free). Trên ngưỡng đó mới upload qua Blob (né giới hạn ~4.5MB thân
+      // request Serverless Function).
+      const attachments: SendAttachment[] = [];
+      if (totalBytes <= SMALL_ATTACHMENT_THRESHOLD_BYTES) {
+        for (const file of files) {
+          const dataUrl = await fileToDataUrl(file);
+          const contentBase64 = dataUrl.split(",")[1] ?? "";
+          attachments.push({ filename: file.name, contentType: file.type || "application/octet-stream", contentBase64 });
+        }
+      } else {
+        setUploadStatus(files.length > 0 ? { done: 0, total: files.length } : null);
+        for (const file of files) {
+          const blob = await upload(file.name, file, {
+            access: "public",
+            handleUploadUrl: "/api/cpa-email/blob-upload",
+          });
+          attachments.push({
+            filename: file.name,
+            contentType: file.type || "application/octet-stream",
+            blobUrl: blob.url,
+          });
+          setUploadStatus((s) => (s ? { done: s.done + 1, total: s.total } : s));
+        }
+        setUploadStatus(null);
       }
-      setUploadStatus(null);
       // Editor giữ HTML trong state qua onChange; text fallback lấy từ chính đoạn HTML
       // (đủ dùng — email client không đọc được HTML sẽ thấy văn bản thô, không cần bản
       // plain-text tách biệt hoàn hảo).

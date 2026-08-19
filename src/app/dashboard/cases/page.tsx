@@ -1539,7 +1539,10 @@ function RowCells({
       subject: string;
       html: string;
       text: string;
-      attachments: { filename: string; contentType: string; blobUrl: string }[];
+      attachments: (
+        | { filename: string; contentType: string; blobUrl: string }
+        | { filename: string; contentType: string; contentBase64: string }
+      )[];
     }
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
   markCpaEmailSent: (caseId: string, action: "manual" | "clear") => Promise<void>;
