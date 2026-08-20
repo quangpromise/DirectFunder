@@ -55,6 +55,7 @@ function groupTasksBySection(tasks: ProcessorReportTaskDef[]) {
 const TASK_COL_WIDTH = 220;
 const DAY_COL_WIDTH = 52;
 const WEEK_COL_WIDTH = 60;
+const ROW_TOTAL_COL_WIDTH = 64;
 
 export function ForProcessorButton() {
   const user = useCurrentUser();
@@ -170,11 +171,20 @@ function SectionRows({
   renderCell,
   computeSectionTotal,
   columns,
+  renderRowTotal,
+  computeSectionRowTotal,
 }: {
   sections: ReturnType<typeof groupTasksBySection>;
   renderCell: (taskId: string, colIndex: number) => React.ReactNode;
   computeSectionTotal: (taskIds: string[], colIndex: number) => number;
   columns: { key: string; width: number; sticky?: boolean }[];
+  /** Cột "Tổng" riêng, đặt NGAY SAU cột Task/tên section (trước các cột ngày/tuần) — khác
+   * cột TOTAL cuối bảng (nếu có, xem ProcessorLeaderReportGrid) vốn tổng theo processor.
+   * Optional: chỉ render khi có truyền vào (ProcessorSelfReportGrid dùng, tổng theo NGÀY
+   * trong tháng cho từng task; ProcessorLeaderReportGrid không dùng vì đã có cột TOTAL riêng
+   * ở cuối theo đúng ý nghĩa khác). */
+  renderRowTotal?: (taskId: string) => React.ReactNode;
+  computeSectionRowTotal?: (taskIds: string[]) => number;
 }) {
   const t = useT();
   return (
@@ -187,6 +197,11 @@ function SectionRows({
           >
             {sIdx + 1} {section.sectionLabel}
           </div>
+          {renderRowTotal && computeSectionRowTotal && (
+            <div className="flex items-center justify-center border-b border-r border-border-strong bg-accent-soft text-xs font-semibold text-red-400 light:text-red-600">
+              {computeSectionRowTotal(section.tasks.map((tk) => tk.id)) || ""}
+            </div>
+          )}
           {columns.map((col, colIndex) => (
             <div
               key={col.key}
@@ -207,6 +222,11 @@ function SectionRows({
               >
                 <span className="truncate">{task.label}</span>
               </div>
+              {renderRowTotal && (
+                <div className="flex h-full items-center justify-center border-b border-r border-border bg-accent-soft text-xs font-medium text-text">
+                  {renderRowTotal(task.id)}
+                </div>
+              )}
               {columns.map((col, colIndex) => (
                 <div key={col.key} className="border-b border-r border-border">
                   {renderCell(task.id, colIndex)}
@@ -412,8 +432,15 @@ function ProcessorSelfReportGrid({ userId }: { userId: string }) {
   function weekValue(taskId: string, weekIndex: number): number {
     return days.filter((d) => d.weekIndex === weekIndex).reduce((sum, d) => sum + dayValue(taskId, d.date), 0);
   }
+  // Tổng cả tháng cho 1 task — cộng dồn dayValue mọi ngày trong tháng đang xem, hiện ở cột
+  // "Tổng" ngay sau cột Task (yêu cầu 2026-08-20).
+  function monthTotal(taskId: string): number {
+    return days.reduce((sum, d) => sum + dayValue(taskId, d.date), 0);
+  }
 
-  const gridTemplateColumns = [`${TASK_COL_WIDTH}px`, ...columns.map((c) => `${c.width}px`)].join(" ");
+  const gridTemplateColumns = [`${TASK_COL_WIDTH}px`, `${ROW_TOTAL_COL_WIDTH}px`, ...columns.map((c) => `${c.width}px`)].join(
+    " "
+  );
   const canManageTasks = role ? hasFeature(permissions, "manageProcessorReportTasks", role) : false;
 
   return (
@@ -426,6 +453,9 @@ function ProcessorSelfReportGrid({ userId }: { userId: string }) {
         <div className="grid text-sm" style={{ gridTemplateColumns }}>
           <div className="sticky left-0 top-0 z-30 border-b-2 border-r border-border-strong border-b-accent bg-table-head-bg px-2 py-2 text-[10px] font-semibold uppercase text-table-head-text">
             {t("processorReport.tasksHeader")}
+          </div>
+          <div className="sticky top-0 z-20 flex items-center justify-center border-b-2 border-r border-border-strong border-b-accent bg-accent-soft px-1 py-2 text-[10px] font-semibold text-table-head-text">
+            {t("processorReport.totalHeader")}
           </div>
           {columns.map((col) => (
             <div
@@ -441,6 +471,8 @@ function ProcessorSelfReportGrid({ userId }: { userId: string }) {
           <SectionRows
             sections={sections}
             columns={columns}
+            computeSectionRowTotal={(taskIds) => taskIds.reduce((sum, id) => sum + monthTotal(id), 0)}
+            renderRowTotal={(taskId) => monthTotal(taskId) || ""}
             computeSectionTotal={(taskIds, colIndex) => {
               const col = columns[colIndex];
               if (col.kind === "day") return taskIds.reduce((sum, id) => sum + dayValue(id, col.date!), 0);
