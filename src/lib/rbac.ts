@@ -293,6 +293,21 @@ export const DEFAULT_COLUMNS: ColumnDef[] = [
       { id: "processing", label: "Processing", bg: "rgba(245,158,11,0.15)", color: "#fcd34d" },
     ],
   },
+  // Cột GIẢ (không có field dữ liệu thật nào trong CaseRecord) chỉ dùng làm chỗ lưu trạng
+  // thái ẩn/hiện dòng "Agent 2" bên trong cell "Agent" (2 slot giao việc xếp chồng trong CÙNG
+  // 1 cột, xem RowCells trong cases/page.tsx) -- tái dùng đúng cơ chế `hiddenFromGrid` sẵn có
+  // của các cột thường (bật/tắt qua nút cài đặt riêng cạnh header "Agent", KHÔNG phải qua
+  // ColumnSettingsDialog tiêu chuẩn vì cột này không có rename/editableBy/xoá gì để quản lý).
+  // `hidden: true` để loại khỏi MỌI chỗ khác lặp qua `columns` (bảng chính, Send to Sheet...)
+  // -- xem types.ts cho ý nghĩa 2 flag `hidden`/`hiddenFromGrid` khác nhau thế nào.
+  {
+    id: "agentSlot2",
+    key: "agentSlot2",
+    label: "Agent 2",
+    type: "text",
+    editableBy: [],
+    hidden: true,
+  },
 ];
 
 /**

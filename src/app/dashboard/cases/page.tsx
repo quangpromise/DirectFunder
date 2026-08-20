@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Search, Plus, Trash2, FileText, DollarSign, GripVertical, ShieldAlert, Download, Upload, Layers, CheckCircle2, X, BarChart3, Maximize2, Minimize2, SlidersHorizontal } from "lucide-react";
+import { AgentSlot2Toggle } from "@/components/agent-slot2-toggle";
 import { downloadCaseTemplate, parseCaseExcelFile, formatDuplicateSsnLines } from "@/lib/excel";
 import { useAppStore, useCurrentUser } from "@/store/app-store";
 import { canEditCase, canEditColumn, canViewCase, hasFeature } from "@/lib/rbac";
@@ -650,6 +651,11 @@ export default function CasesPage() {
       !col.hidden &&
       !col.hiddenFromGrid
   );
+  // Cột giả "agentSlot2" (xem DEFAULT_COLUMNS, rbac.ts) chỉ lưu trạng thái ẩn/hiện dòng
+  // "Agent 2" xếp chồng bên trong cell "Agent" — không phải cột dữ liệu thật nên đã bị lọc
+  // khỏi otherColumns bởi `!col.hidden` phía trên, đọc riêng ở đây cho header/RowCells.
+  const agentSlot2Hidden = Boolean(columns.find((c) => c.id === "agentSlot2")?.hiddenFromGrid);
+
   // Giao việc cột Agent hiện nhóm Agent + Agent Leader, cột Processor hiện nhóm
   // Processor + Processor Leader — không lẫn các vai trò khác vào danh sách chọn.
   const agentUsers = users.filter((u) => u.role === "agent" || u.role === "agent_leader");
@@ -1204,10 +1210,16 @@ export default function CasesPage() {
             </div>
           ))}
           <div
-            className="sticky top-0 z-20 flex items-center justify-center whitespace-nowrap border-b-2 border-r border-border-strong border-b-accent bg-table-head-bg px-3 py-2.5 text-center text-[10px] font-semibold uppercase tracking-normal text-table-head-text"
+            className="group/head sticky top-0 z-20 flex items-center justify-center gap-1 whitespace-nowrap border-b-2 border-r border-border-strong border-b-accent bg-table-head-bg px-3 py-2.5 text-center text-[10px] font-semibold uppercase tracking-normal text-table-head-text"
             style={{ gridRow: "1" }}
           >
-            {t("col.header.agent")}
+            <span>{t("col.header.agent")}</span>
+            {canEditColumnFeature && (
+              <AgentSlot2Toggle
+                hidden={agentSlot2Hidden}
+                onSetHidden={(hidden) => setColumnHiddenFromGrid("agentSlot2", hidden)}
+              />
+            )}
           </div>
           <div
             className="sticky top-0 z-20 flex items-center justify-center whitespace-nowrap border-b-2 border-r border-border-strong border-b-accent bg-table-head-bg px-3 py-2.5 text-center text-[10px] font-semibold uppercase tracking-normal text-table-head-text"
@@ -1599,6 +1611,7 @@ function RowCells({
 }) {
   const t = useT();
   const { language } = useLanguage();
+  const agentSlot2Hidden = Boolean(columns.find((c) => c.id === "agentSlot2")?.hiddenFromGrid);
   const cpaEmailStatusLabel = (() => {
     const opt = statusColumn?.options?.find((o) => o.id === row.status);
     return opt ? translateOptionLabel(language, opt.id, opt.label) : row.status;
@@ -1932,9 +1945,8 @@ function RowCells({
           </div>
         )
       )}
-      <div className="flex h-full min-w-0 flex-col divide-y divide-border border-b border-r border-border bg-[var(--row-bg)] transition-colors group-hover:bg-surface-hover">
-        <div className="flex min-h-0 flex-1 items-center gap-0.5">
-          <span className="w-3 shrink-0 text-center text-[9px] font-semibold text-text-faint">1</span>
+      {agentSlot2Hidden ? (
+        <div className="flex h-full min-w-0 items-center gap-0.5 border-b border-r border-border bg-[var(--row-bg)] transition-colors group-hover:bg-surface-hover">
           <AssignMenu
             users={agentUsers}
             assignedTo={row.assignedTo}
@@ -1942,16 +1954,28 @@ function RowCells({
             onAssign={(uid) => assignCase(row.id, uid, "assignedTo")}
           />
         </div>
-        <div className="flex min-h-0 flex-1 items-center gap-0.5">
-          <span className="w-3 shrink-0 text-center text-[9px] font-semibold text-text-faint">2</span>
-          <AssignMenu
-            users={agentUsers}
-            assignedTo={row.assignedTo2}
-            canAssign={canAssignFeature && canEditRow}
-            onAssign={(uid) => assignCase(row.id, uid, "assignedTo2")}
-          />
+      ) : (
+        <div className="flex h-full min-w-0 flex-col divide-y divide-border border-b border-r border-border bg-[var(--row-bg)] transition-colors group-hover:bg-surface-hover">
+          <div className="flex min-h-0 flex-1 items-center gap-0.5">
+            <span className="w-3 shrink-0 text-center text-[9px] font-semibold text-text-faint">1</span>
+            <AssignMenu
+              users={agentUsers}
+              assignedTo={row.assignedTo}
+              canAssign={canAssignFeature && canEditRow}
+              onAssign={(uid) => assignCase(row.id, uid, "assignedTo")}
+            />
+          </div>
+          <div className="flex min-h-0 flex-1 items-center gap-0.5">
+            <span className="w-3 shrink-0 text-center text-[9px] font-semibold text-text-faint">2</span>
+            <AssignMenu
+              users={agentUsers}
+              assignedTo={row.assignedTo2}
+              canAssign={canAssignFeature && canEditRow}
+              onAssign={(uid) => assignCase(row.id, uid, "assignedTo2")}
+            />
+          </div>
         </div>
-      </div>
+      )}
       <div className="flex h-full min-w-0 items-center gap-0.5 border-b border-r border-border bg-[var(--row-bg)] transition-colors group-hover:bg-surface-hover">
         <AssignMenu
           users={processorUsers}
