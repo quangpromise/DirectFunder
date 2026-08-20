@@ -23,8 +23,15 @@ import { MailBodyEditor } from "@/components/mail-body-editor";
 // khác cách server nhận file — nhưng đảm bảo phần lớn email (đính kèm nhỏ) vẫn gửi được ngay
 // cả khi Vercel Blob gặp sự cố/chạm hạn mức free (Hobby: khoá 30 ngày khi vượt hạn mức, xem
 // deployment-database-sync.md mục 4.32).
+//
+// QUAN TRỌNG: ngưỡng này so với DUNG LƯỢNG GỐC của file, nhưng base64 encode làm phình thêm
+// ~33% (n bytes -> ~n*4/3 ký tự) khi nhét vào JSON body — nếu để ngưỡng sát 4MB, 1 file gốc
+// 3.5MB sẽ tạo ra body base64 ~4.67MB, VƯỢT giới hạn cứng ~4.5MB của Vercel Serverless
+// Function -> lỗi 413 (đã gặp thật trên production 2026-08-20, hồ sơ Thanh Nguyen, file
+// 3.5MB). Hạ ngưỡng xuống 2.5MB gốc (~3.33MB sau base64 + overhead JSON khác) để còn nhiều
+// margin an toàn dưới mốc 4.5MB.
 const MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
-const SMALL_ATTACHMENT_THRESHOLD_BYTES = 4 * 1024 * 1024;
+const SMALL_ATTACHMENT_THRESHOLD_BYTES = 2.5 * 1024 * 1024;
 
 type SendResult = { ok: true } | { ok: false; error: string };
 type SendAttachment =
