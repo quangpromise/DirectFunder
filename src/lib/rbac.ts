@@ -300,6 +300,10 @@ export const DEFAULT_COLUMNS: ColumnDef[] = [
   // ColumnSettingsDialog tiêu chuẩn vì cột này không có rename/editableBy/xoá gì để quản lý).
   // `hidden: true` để loại khỏi MỌI chỗ khác lặp qua `columns` (bảng chính, Send to Sheet...)
   // -- xem types.ts cho ý nghĩa 2 flag `hidden`/`hiddenFromGrid` khác nhau thế nào.
+  // `hiddenFromGrid: true` NGAY TỪ ĐẦU (khác mọi cột khác trong app, mặc định luôn là hiện) --
+  // theo yêu cầu 2026-08-20 "ẩn Agent 2 ở màn hình hồ sơ" ngay lập tức, không cần Admin tự tay
+  // bật lại toggle sau khi deploy. `isAgentSlot2Hidden()` (cases/page.tsx) còn tự coi CHƯA có
+  // entry này trong `columns` (DB cũ chưa merge) cũng là ẩn -- giữ đồng bộ với giá trị ở đây.
   {
     id: "agentSlot2",
     key: "agentSlot2",
@@ -307,6 +311,7 @@ export const DEFAULT_COLUMNS: ColumnDef[] = [
     type: "text",
     editableBy: [],
     hidden: true,
+    hiddenFromGrid: true,
   },
 ];
 

@@ -78,6 +78,17 @@ const AGENT_COL_WIDTH = 100;
 const PROCESSOR_COL_WIDTH = 100;
 const ACTIONS_COL_WIDTH = 32;
 
+/** Cột giả "agentSlot2" (xem DEFAULT_COLUMNS, rbac.ts) chỉ lưu trạng thái ẩn/hiện dòng
+ * "Agent 2" xếp chồng bên trong cell "Agent". MẶC ĐỊNH ẨN khi CHƯA có trong `columns` (khác
+ * mọi cột khác trong app, vốn mặc định HIỆN khi chưa cấu hình) — production/dev hiện tại chưa
+ * seed field này (mới thêm), nên nếu default theo kiểu thường (`Boolean(x?.hiddenFromGrid)` ~
+ * false khi không tìm thấy) thì Agent 2 sẽ HIỆN cho tới khi Admin tự tay bấm ẩn qua UI; đảo
+ * ngược default để Agent 2 tự ẩn ngay sau khi deploy mà không cần thao tác gì thêm. */
+function isAgentSlot2Hidden(columns: ColumnDef[]): boolean {
+  const col = columns.find((c) => c.id === "agentSlot2");
+  return col ? Boolean(col.hiddenFromGrid) : true;
+}
+
 type CaseTab = "all" | "cannot_process" | "active" | "done";
 /** Nhóm status thực tế dùng để lọc dữ liệu — "all" không phải 1 nhóm status, chỉ là bỏ qua lọc. */
 type CaseStatusGroup = Exclude<CaseTab, "all">;
@@ -651,10 +662,7 @@ export default function CasesPage() {
       !col.hidden &&
       !col.hiddenFromGrid
   );
-  // Cột giả "agentSlot2" (xem DEFAULT_COLUMNS, rbac.ts) chỉ lưu trạng thái ẩn/hiện dòng
-  // "Agent 2" xếp chồng bên trong cell "Agent" — không phải cột dữ liệu thật nên đã bị lọc
-  // khỏi otherColumns bởi `!col.hidden` phía trên, đọc riêng ở đây cho header/RowCells.
-  const agentSlot2Hidden = Boolean(columns.find((c) => c.id === "agentSlot2")?.hiddenFromGrid);
+  const agentSlot2Hidden = isAgentSlot2Hidden(columns);
 
   // Giao việc cột Agent hiện nhóm Agent + Agent Leader, cột Processor hiện nhóm
   // Processor + Processor Leader — không lẫn các vai trò khác vào danh sách chọn.
@@ -1611,7 +1619,7 @@ function RowCells({
 }) {
   const t = useT();
   const { language } = useLanguage();
-  const agentSlot2Hidden = Boolean(columns.find((c) => c.id === "agentSlot2")?.hiddenFromGrid);
+  const agentSlot2Hidden = isAgentSlot2Hidden(columns);
   const cpaEmailStatusLabel = (() => {
     const opt = statusColumn?.options?.find((o) => o.id === row.status);
     return opt ? translateOptionLabel(language, opt.id, opt.label) : row.status;
