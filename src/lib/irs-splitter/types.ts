@@ -22,6 +22,11 @@ export interface DetectOptions {
   officeZipPrefix?: string;
   careOfSearchWindow?: number;
   idAfterAddressWindow?: number;
+  /** Danh sách loại thư được coi là "gửi qua văn phòng" (hasCareOf) -- mặc định
+   * DEFAULT_CARE_OF_ELIGIBLE_NOTICE_TYPES (care-of-eligibility.ts) nếu không truyền, nhưng
+   * caller có quyền quản lý (notice-splitter-panel.tsx) nên luôn truyền danh sách hiện tại
+   * từ AppConfig.careOfEligibleNoticeTypes. */
+  careOfEligibleNoticeTypes?: string[];
 }
 
 export interface FilenameOptions {

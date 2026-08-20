@@ -232,6 +232,11 @@ model AppConfig {
   /// Thời điểm subscription trên hết hạn (ISO, RingCentral trả về lúc tạo/gia hạn) — dùng
   /// để tự biết khi nào cần gọi renew trước khi hết hạn.
   ringcentralSubscriptionExpiresAt DateTime?
+  /// string[] — danh sách loại thư IRS được coi là "gửi qua văn phòng" (hasCareOf / hậu tố
+  /// " Not Update CRM") trong tab "Notice Splitter" (popup "For Processor") — Quản lý thêm/
+  /// xoá qua UI (NoticeSplitterCareOfManager). null/thiếu = dùng
+  /// DEFAULT_CARE_OF_ELIGIBLE_NOTICE_TYPES trong src/lib/irs-splitter/care-of-eligibility.ts.
+  careOfEligibleNoticeTypes Json?
   updatedAt          DateTime @updatedAt
 
   @@map("app_config")

@@ -18,7 +18,7 @@
 // review") trước khi coi tên/tax year là chính xác tuyệt đối.
 
 import { DetectOptions, IrsNoticeRecord } from "./types";
-import { isCareOfEligibleNoticeType } from "./care-of-eligibility";
+import { DEFAULT_CARE_OF_ELIGIBLE_NOTICE_TYPES, isCareOfEligibleNoticeType } from "./care-of-eligibility";
 
 export const DEFAULT_OPTIONS: Required<DetectOptions> = {
   // Địa chỉ văn phòng "in care of" in trên thư chưa được chuyển thẳng cho khách hàng. Chỉ
@@ -35,6 +35,8 @@ export const DEFAULT_OPTIONS: Required<DetectOptions> = {
 
   // Số ký tự tính từ sau city/state/zip văn phòng để tìm mã số record.
   idAfterAddressWindow: 80,
+
+  careOfEligibleNoticeTypes: DEFAULT_CARE_OF_ELIGIBLE_NOTICE_TYPES,
 };
 
 function escapeRegExp(s: string): string {
@@ -48,12 +50,18 @@ function wordsToFuzzyPattern(phrase: string): string {
 interface Patterns {
   addressRe: RegExp;
   cityStateZipRe: RegExp;
+  companyNameRe: RegExp;
 }
 
 function buildPatterns(opts: Required<DetectOptions>): Patterns {
   const street = wordsToFuzzyPattern(opts.officeStreet);
   const city = wordsToFuzzyPattern(opts.officeCity);
   const state = wordsToFuzzyPattern(opts.officeState);
+  // Dòng "RA SOLUTIONS CORPORATION" (đôi khi viết tắt "CORP") luôn in NGAY DƯỚI tên khách
+  // hàng, ngay trên địa chỉ văn phòng -- dùng làm ranh giới để cắt tên (xem extractName),
+  // thay vì lấy mọi token ngay trước địa chỉ (sẽ dính luôn cụm này vào cuối tên).
+  const companyFull = wordsToFuzzyPattern("RA SOLUTIONS CORPORATION");
+  const companyAbbrev = wordsToFuzzyPattern("RA SOLUTIONS CORP");
   return {
     // vd /\d{3,4}\s*ZANKER\s*RD\s*STE\s*230/i -- số nhà cố ý lỏng (3-4 số) vì OCR hay đọc
     // sai chữ số đầu.
@@ -64,6 +72,7 @@ function buildPatterns(opts: Required<DetectOptions>): Patterns {
       `${city}\\s*${state}\\s*${opts.officeZipPrefix}\\s*\\d\\s*\\d\\s*\\d\\s*\\d[\\s.-]*\\d?\\s*\\d?\\s*\\d?\\s*\\d?`,
       "i"
     ),
+    companyNameRe: new RegExp(`${companyFull}|${companyAbbrev}`, "i"),
   };
 }
 
@@ -118,17 +127,23 @@ function extractName(content: string, patterns: Patterns): { name: string | null
   if (!addrMatch || addrMatch.index == null) return { name: null, hasCareOf: false };
   const addrIdx = addrMatch.index;
 
-  let boundaryIdx = addrIdx;
+  // Ranh giới MẶC ĐỊNH của tên là ngay trước dòng "RA SOLUTIONS CORPORATION" (nếu tìm thấy
+  // trước địa chỉ) -- đây chính là "hàng nằm ngay trên chữ RA SOLUTIONS CORPORATION" mà tên
+  // khách hàng cần lấy. Không tìm thấy (OCR đọc hỏng cụm này) thì lùi về cách cũ, cắt ngay
+  // trước địa chỉ.
+  const companyMatch = content.slice(0, addrIdx).match(patterns.companyNameRe);
+  let boundaryIdx = companyMatch && companyMatch.index != null ? companyMatch.index : addrIdx;
+
   let hasCareOf = false;
-  const pctIdx = content.lastIndexOf("%", addrIdx);
-  if (pctIdx > -1 && addrIdx - pctIdx < DEFAULT_OPTIONS.careOfSearchWindow) {
+  const pctIdx = content.lastIndexOf("%", boundaryIdx);
+  if (pctIdx > -1 && boundaryIdx - pctIdx < DEFAULT_OPTIONS.careOfSearchWindow) {
     boundaryIdx = pctIdx;
     hasCareOf = true;
   }
-  const coMatch = content.slice(Math.max(0, addrIdx - 60), addrIdx).match(/C[/\\]?[0O]\s*RA/i);
+  const coMatch = content.slice(Math.max(0, boundaryIdx - 60), boundaryIdx).match(/C[/\\]?[0O]\s*RA/i);
   if (coMatch && coMatch.index != null) {
-    const coIdx = Math.max(0, addrIdx - 60) + coMatch.index;
-    if (coIdx < boundaryIdx || !hasCareOf) boundaryIdx = Math.min(boundaryIdx, coIdx);
+    const coIdx = Math.max(0, boundaryIdx - 60) + coMatch.index;
+    if (coIdx < boundaryIdx) boundaryIdx = coIdx;
     hasCareOf = true;
   }
 
@@ -252,11 +267,12 @@ export function detectRecords(pageTexts: string[], options: DetectOptions = {}):
     }
   }
 
-  // Chỉ 1 nhóm loại thư cụ thể (CP89/CP289/CP521/CP523/CP01E/Letter 2273C/Letter 2840C/4458C)
-  // mới thật sự cần đánh dấu "Not Update CRM" -- áp dụng SAU pass 2 (lúc noticeType đã hoàn
-  // thiện từ cả trang đầu lẫn trang tiếp nối), không phải lúc tạo record ban đầu.
+  // Chỉ nhóm loại thư nằm trong opts.careOfEligibleNoticeTypes (Quản lý thêm/xoá được qua
+  // NoticeSplitterCareOfManager, mặc định DEFAULT_CARE_OF_ELIGIBLE_NOTICE_TYPES) mới thật sự
+  // cần đánh dấu "Not Update CRM" -- áp dụng SAU pass 2 (lúc noticeType đã hoàn thiện từ cả
+  // trang đầu lẫn trang tiếp nối), không phải lúc tạo record ban đầu.
   for (const rec of records) {
-    if (rec.hasCareOf && !isCareOfEligibleNoticeType(rec.noticeType)) {
+    if (rec.hasCareOf && !isCareOfEligibleNoticeType(rec.noticeType, opts.careOfEligibleNoticeTypes)) {
       rec.hasCareOf = false;
     }
   }

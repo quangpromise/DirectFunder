@@ -9,6 +9,7 @@ import {
   DEFAULT_REFUND_YEAR_STATUS_OPTIONS,
 } from "@/lib/rbac";
 import { CPA_REVIEW_STATUS_OPTIONS } from "@/lib/cpa-review-columns";
+import { DEFAULT_CARE_OF_ELIGIBLE_NOTICE_TYPES } from "@/lib/irs-splitter/care-of-eligibility";
 import { currentMonthKey } from "@/lib/cpa-review-month";
 import { todayIsoDate } from "@/lib/date-format";
 import { INITIAL_CASES, INITIAL_NOTIFICATIONS, INITIAL_USERS } from "@/lib/mock-data";
@@ -215,6 +216,11 @@ interface AppState {
   processorReportSummary: { entries: ProcessorReportMonthlySummaryEntry[]; processors: { id: string; name: string }[] };
   /** Tháng đang chọn trên popup "For Processor" ("YYYY-MM"). */
   processorReportSelectedMonth: string;
+  /** Danh sách loại thư IRS được coi là "gửi qua văn phòng" (checkbox "Not Update CRM") trong
+   * tab "Notice Splitter" — Quản lý thêm/xoá qua NoticeSplitterCareOfManager (xem
+   * addCareOfEligibleNoticeType/removeCareOfEligibleNoticeType bên dưới). Mặc định
+   * DEFAULT_CARE_OF_ELIGIBLE_NOTICE_TYPES (care-of-eligibility.ts) nếu Admin chưa từng đổi. */
+  careOfEligibleNoticeTypes: string[];
 
   /** true khi đã hydrate xong dữ liệu thật từ server ít nhất 1 lần trong phiên này. */
   hydrated: boolean;
@@ -268,6 +274,10 @@ interface AppState {
   addRefundYearStatusOption: (option: Omit<SelectOption, "id">) => void;
   updateRefundYearStatusOption: (optionId: string, patch: Partial<Omit<SelectOption, "id">>) => void;
   removeRefundYearStatusOption: (optionId: string) => void;
+  /** Thêm/xoá 1 loại thư trong AppConfig.careOfEligibleNoticeTypes — chỉ Admin (manager) dùng
+   * qua NoticeSplitterCareOfManager (tab "Notice Splitter" trong popup "For Processor"). */
+  addCareOfEligibleNoticeType: (noticeType: string) => void;
+  removeCareOfEligibleNoticeType: (noticeType: string) => void;
   /** Cùng pattern add/update/removeRefundYearStatusOption ở trên nhưng cho danh sách Status
    * của tab "CPA Review" (mỗi khối năm) — không có id nào bị khoá xoá (khác "pending" ở
    * refund), tự do thêm/sửa/xoá. Thêm 2026-08-14. */
@@ -608,7 +618,8 @@ export const useAppStore = create<AppState>()(
             state.collectingColumns,
             state.cpaReviewStatusOptions,
             state.cpaReviewHiddenColumns,
-            state.processorReportTasks
+            state.processorReportTasks,
+            state.careOfEligibleNoticeTypes
           );
         });
         syncInBackground("config", configSyncChain);
@@ -647,6 +658,7 @@ export const useAppStore = create<AppState>()(
       processorReportEntries: [],
       processorReportSummary: { entries: [], processors: [] },
       processorReportSelectedMonth: currentMonthKey(),
+      careOfEligibleNoticeTypes: DEFAULT_CARE_OF_ELIGIBLE_NOTICE_TYPES,
 
       login: async (email, password) => {
         try {
@@ -706,6 +718,10 @@ export const useAppStore = create<AppState>()(
             config.processorReportTasks && config.processorReportTasks.length > 0
               ? config.processorReportTasks
               : DEFAULT_PROCESSOR_REPORT_TASKS,
+          careOfEligibleNoticeTypes:
+            config.careOfEligibleNoticeTypes && config.careOfEligibleNoticeTypes.length > 0
+              ? config.careOfEligibleNoticeTypes
+              : DEFAULT_CARE_OF_ELIGIBLE_NOTICE_TYPES,
           rules,
           collectingRecords,
           cpaReviewRecords,
@@ -1753,6 +1769,24 @@ export const useAppStore = create<AppState>()(
         if (optionId === "pending") return;
         set((state) => ({
           refundYearStatusOptions: state.refundYearStatusOptions.filter((o) => o.id !== optionId),
+        }));
+        syncConfig();
+      },
+
+      addCareOfEligibleNoticeType: (noticeType) => {
+        const trimmed = noticeType.trim().toUpperCase();
+        if (!trimmed) return;
+        set((state) =>
+          state.careOfEligibleNoticeTypes.some((t) => t.toUpperCase() === trimmed)
+            ? {}
+            : { careOfEligibleNoticeTypes: [...state.careOfEligibleNoticeTypes, trimmed] }
+        );
+        syncConfig();
+      },
+
+      removeCareOfEligibleNoticeType: (noticeType) => {
+        set((state) => ({
+          careOfEligibleNoticeTypes: state.careOfEligibleNoticeTypes.filter((t) => t !== noticeType),
         }));
         syncConfig();
       },

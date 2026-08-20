@@ -1,12 +1,15 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Download, FileText, Loader2, Trash2, Upload, X } from "lucide-react";
+import { createPortal } from "react-dom";
+import { Download, FileText, Loader2, Plus, Settings, Trash2, Upload, X } from "lucide-react";
 import { useT } from "@/lib/i18n";
 import { isCareOfEligibleNoticeType } from "@/lib/irs-splitter/care-of-eligibility";
 import { detectRecords } from "@/lib/irs-splitter/detect-records";
 import { splitPdf } from "@/lib/irs-splitter/split-pdf";
 import type { IrsNoticeRecord } from "@/lib/irs-splitter/types";
+import { useAppStore, useCurrentUser } from "@/store/app-store";
+import { useConfirm } from "@/components/confirm-dialog";
 
 // File nặng hơn ngưỡng này có thể khiến trình duyệt xử lý chậm/treo tab (giải mã PDF +
 // render text đều chạy trên chính máy người dùng, không còn server nào xử lý hộ nữa).
@@ -56,6 +59,11 @@ function toEditableRecord(r: IrsNoticeRecord): EditableRecord {
  */
 export function NoticeSplitterPanel() {
   const t = useT();
+  const user = useCurrentUser();
+  const careOfEligibleNoticeTypes = useAppStore((s) => s.careOfEligibleNoticeTypes);
+  const addCareOfEligibleNoticeType = useAppStore((s) => s.addCareOfEligibleNoticeType);
+  const removeCareOfEligibleNoticeType = useAppStore((s) => s.removeCareOfEligibleNoticeType);
+  const canManageCareOfTypes = user?.role === "manager";
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -64,6 +72,7 @@ export function NoticeSplitterPanel() {
   const [analyzing, setAnalyzing] = useState(false);
   const [splitting, setSplitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [managingCareOfTypes, setManagingCareOfTypes] = useState(false);
 
   function resetAll() {
     setFile(null);
@@ -82,7 +91,7 @@ export function NoticeSplitterPanel() {
       const { extractPageTextsBrowser } = await import("@/lib/irs-splitter/extract-text-browser");
       const bytes = new Uint8Array(await f.arrayBuffer());
       const pageTexts = await extractPageTextsBrowser(bytes);
-      const detected = detectRecords(pageTexts);
+      const detected = detectRecords(pageTexts, { careOfEligibleNoticeTypes });
       setPageCount(pageTexts.length);
       setRecords(detected.map(toEditableRecord));
     } catch (err) {
@@ -127,7 +136,7 @@ export function NoticeSplitterPanel() {
         noticeType: r.noticeType.trim() || null,
         name: r.name.trim() || null,
         taxYear: r.taxYear.trim() || null,
-        hasCareOf: r.hasCareOf && isCareOfEligibleNoticeType(r.noticeType),
+        hasCareOf: r.hasCareOf && isCareOfEligibleNoticeType(r.noticeType, careOfEligibleNoticeTypes),
       }));
       const files = await splitPdf(bytes, fullRecords);
 
@@ -160,6 +169,16 @@ export function NoticeSplitterPanel() {
       <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-2.5">
         <p className="truncate text-xs text-text-faint">{file ? file.name : t("irsSplitter.intro")}</p>
         <div className="flex shrink-0 items-center gap-2">
+          {canManageCareOfTypes && (
+            <button
+              onClick={() => setManagingCareOfTypes(true)}
+              title={t("irsSplitter.manageCareOfTypes")}
+              aria-label={t("irsSplitter.manageCareOfTypes")}
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-surface text-text-dim transition hover:bg-surface-hover hover:text-text"
+            >
+              <Settings size={13} />
+            </button>
+          )}
           <input ref={fileInputRef} type="file" accept=".pdf,application/pdf" hidden onChange={handleFileSelected} />
           <button
             onClick={() => fileInputRef.current?.click()}
@@ -181,6 +200,15 @@ export function NoticeSplitterPanel() {
           )}
         </div>
       </div>
+
+      {managingCareOfTypes && (
+        <NoticeSplitterCareOfManager
+          types={careOfEligibleNoticeTypes}
+          onAdd={addCareOfEligibleNoticeType}
+          onRemove={removeCareOfEligibleNoticeType}
+          onClose={() => setManagingCareOfTypes(false)}
+        />
+      )}
 
       <div className="flex-1 overflow-auto px-4 py-4">
         {!file && (
@@ -230,7 +258,7 @@ export function NoticeSplitterPanel() {
                 </thead>
                 <tbody>
                   {records.map((r, i) => {
-                    const careOfEligible = isCareOfEligibleNoticeType(r.noticeType);
+                    const careOfEligible = isCareOfEligibleNoticeType(r.noticeType, careOfEligibleNoticeTypes);
                     return (
                     <tr key={i} className="border-b border-border last:border-b-0 hover:bg-surface-hover">
                       <td className="px-2 py-1.5">
@@ -259,7 +287,9 @@ export function NoticeSplitterPanel() {
                             const noticeType = e.target.value;
                             updateRecord(
                               i,
-                              isCareOfEligibleNoticeType(noticeType) ? { noticeType } : { noticeType, hasCareOf: false }
+                              isCareOfEligibleNoticeType(noticeType, careOfEligibleNoticeTypes)
+                                ? { noticeType }
+                                : { noticeType, hasCareOf: false }
                             );
                           }}
                           placeholder="CP504..."
@@ -286,7 +316,11 @@ export function NoticeSplitterPanel() {
                           type="checkbox"
                           checked={r.hasCareOf}
                           disabled={!careOfEligible}
-                          title={careOfEligible ? undefined : t("irsSplitter.careOfNotEligible")}
+                          title={
+                            careOfEligible
+                              ? undefined
+                              : t("irsSplitter.careOfNotEligible", { list: careOfEligibleNoticeTypes.join(", ") })
+                          }
                           onChange={(e) => updateRecord(i, { hasCareOf: e.target.checked })}
                           className="h-4 w-4 accent-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-30"
                         />
@@ -325,5 +359,97 @@ export function NoticeSplitterPanel() {
         )}
       </div>
     </div>
+  );
+}
+
+/** Popup quản lý danh sách loại thư tính là "Not Update CRM" (AppConfig.careOfEligibleNoticeTypes)
+ * — mở qua nút bánh răng cạnh nút chọn file, chỉ hiện với manager (canManageCareOfTypes). Cùng
+ * pattern modal trung tâm với SendCollectingReportDialog (case-refund-status-button.tsx). */
+function NoticeSplitterCareOfManager({
+  types,
+  onAdd,
+  onRemove,
+  onClose,
+}: {
+  types: string[];
+  onAdd: (noticeType: string) => void;
+  onRemove: (noticeType: string) => void;
+  onClose: () => void;
+}) {
+  const [newType, setNewType] = useState("");
+  const { confirm, ConfirmDialogUI } = useConfirm();
+  const t = useT();
+
+  function handleAdd() {
+    if (!newType.trim()) return;
+    onAdd(newType);
+    setNewType("");
+  }
+
+  async function handleRemove(type: string) {
+    if (await confirm(t("irsSplitter.careOfRemoveConfirm", { type }), { title: t("irsSplitter.careOfRemoveTitle"), tone: "danger" })) {
+      onRemove(type);
+    }
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 px-4 py-8" onClick={onClose}>
+      {ConfirmDialogUI}
+      <div
+        className="popover max-h-[80vh] w-full max-w-sm overflow-y-auto rounded-2xl p-5 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-1 flex items-center justify-between">
+          <h3 className="text-sm font-semibold">{t("irsSplitter.careOfManagerTitle")}</h3>
+          <button onClick={onClose} className="text-text-faint hover:text-text" aria-label={t("common.close")}>
+            <X size={16} />
+          </button>
+        </div>
+        <p className="mb-3 text-xs text-text-faint">{t("irsSplitter.careOfManagerHint")}</p>
+
+        {types.length === 0 ? (
+          <p className="py-4 text-center text-xs text-text-faint">{t("irsSplitter.careOfEmpty")}</p>
+        ) : (
+          <div className="flex max-h-64 flex-col gap-1.5 overflow-y-auto pr-0.5">
+            {types.map((type) => (
+              <div key={type} className="flex items-center justify-between gap-2 rounded-lg border border-border bg-bg-elevated px-3 py-1.5">
+                <span className="text-sm">{type}</span>
+                <button
+                  onClick={() => handleRemove(type)}
+                  title={t("common.delete")}
+                  className="shrink-0 text-text-faint transition hover:text-red-400"
+                  aria-label={t("common.delete")}
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="mt-3 flex gap-1.5">
+          <input
+            value={newType}
+            onChange={(e) => setNewType(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                handleAdd();
+              }
+            }}
+            placeholder={t("irsSplitter.careOfNewTypePlaceholder")}
+            className="w-full rounded-lg border border-border bg-bg-elevated px-3 py-1.5 text-sm outline-none focus:border-accent"
+          />
+          <button
+            onClick={handleAdd}
+            className="flex shrink-0 items-center gap-1 rounded-lg border border-dashed border-border-strong px-3 text-xs font-medium text-text-dim hover:bg-surface-hover hover:text-text"
+          >
+            <Plus size={12} />
+            {t("common.add")}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
   );
 }

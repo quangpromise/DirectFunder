@@ -127,6 +127,7 @@ export const api = {
       cpaReviewHiddenColumns: string[] | null;
       cpaReviewSheetConfig: Record<string, Omit<CpaReviewSheetConfig, "webhookSecret" | "rowIndex">> | null;
       processorReportTasks: ProcessorReportTaskDef[] | null;
+      careOfEligibleNoticeTypes: string[] | null;
     }>("/api/config"),
   putConfig: (
     columns: ColumnDef[],
@@ -138,7 +139,8 @@ export const api = {
     collectingColumns?: ColumnDef[],
     cpaReviewStatusOptions?: SelectOption[],
     cpaReviewHiddenColumns?: string[],
-    processorReportTasks?: ProcessorReportTaskDef[]
+    processorReportTasks?: ProcessorReportTaskDef[],
+    careOfEligibleNoticeTypes?: string[]
   ) =>
     request<{
       columns: ColumnDef[];
@@ -151,6 +153,7 @@ export const api = {
       cpaReviewStatusOptions: SelectOption[] | null;
       cpaReviewHiddenColumns: string[] | null;
       processorReportTasks: ProcessorReportTaskDef[] | null;
+      careOfEligibleNoticeTypes: string[] | null;
     }>("/api/config", {
       method: "PUT",
       body: JSON.stringify({
@@ -164,6 +167,7 @@ export const api = {
         cpaReviewStatusOptions,
         cpaReviewHiddenColumns,
         processorReportTasks,
+        careOfEligibleNoticeTypes,
       }),
     }),
 

@@ -54,6 +54,7 @@ export async function GET() {
     // Chỉ đọc — ghi qua /api/config/cpa-review-sheet (connect/resync/disconnect riêng).
     cpaReviewSheetConfig: redactCpaReviewSheetConfig(config.cpaReviewSheetConfig),
     processorReportTasks: config.processorReportTasks,
+    careOfEligibleNoticeTypes: config.careOfEligibleNoticeTypes,
   });
 }
 
@@ -198,6 +199,11 @@ export async function PUT(request: NextRequest) {
   ) {
     data.processorReportTasks = body.processorReportTasks;
   }
+  // Danh sách loại thư IRS "gửi qua văn phòng" trong tab Notice Splitter — cùng cơ chế
+  // "chỉ manager" như refundYearStatusOptions/clientEmailTemplate ở trên.
+  if (me.role === "manager" && "careOfEligibleNoticeTypes" in body) {
+    data.careOfEligibleNoticeTypes = body.careOfEligibleNoticeTypes;
+  }
 
   // Không có field hợp lệ nào để ghi (vd role không phải manager, columns/featurePermissions
   // lệch bản server nên bị bỏ qua ở trên, VÀ cũng không có quyền field độc lập nào khác) — lúc
@@ -221,5 +227,6 @@ export async function PUT(request: NextRequest) {
     cpaReviewStatusOptions: config.cpaReviewStatusOptions,
     cpaReviewHiddenColumns: config.cpaReviewHiddenColumns,
     processorReportTasks: config.processorReportTasks,
+    careOfEligibleNoticeTypes: config.careOfEligibleNoticeTypes,
   });
 }

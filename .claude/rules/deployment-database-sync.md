@@ -472,6 +472,21 @@ File đính kèm popup "Gửi email cho CPA" (`SendCpaEmailDialog`) trước đ�
 
 **Gotcha thật đã gặp cùng ngày (trước khi đổi sang hybrid) — không phải bug, mà nghi vấn cache**: user báo lỗi "Tệp đính kèm không hợp lệ" trên production dù deployment đã "Ready". Debug qua Vercel Logs (filter theo từ khoá "attachments") lộ ra `body.attachments` nhận được vẫn ở hình dạng `contentBase64` CŨ dù code client/server trong git đã đổi hoàn toàn sang `blobUrl` — tức trình duyệt của user vẫn đang chạy JS cũ dù đã hard refresh + tab ẩn danh (loại trừ được cache trình duyệt thường, nghi vấn còn lại là CDN/edge cache của Vercel giữ HTML cũ trỏ tới chunk JS cũ, CHƯA xác nhận được nguyên nhân gốc). Đã vá tạm bằng cách chấp nhận cả 2 hình dạng ở server (không chặn cứng người dùng chờ tìm nguyên nhân) — thiết kế hybrid theo ngưỡng ở trên đã thay thế bản vá tạm này thành thiết kế chính thức, không cần rollback gì thêm.
 
+### 4.33 [CHỜ XỬ LÝ] Danh sách loại thư "Not Update CRM" trong tab Notice Splitter đổi thành cấu hình được qua UI (thêm 2026-08-20)
+
+Trước đây danh sách loại thư IRS được tính là "gửi qua văn phòng" (checkbox "Not Update CRM" trong bảng soát/sửa của tab Notice Splitter) là hằng số cứng trong code (`CARE_OF_ELIGIBLE_NOTICE_TYPES`, `src/lib/irs-splitter/care-of-eligibility.ts`) — Quản lý không tự thêm/xoá được. Đổi thành danh sách cấu hình qua UI: nút bánh răng cạnh nút "Chọn file PDF" (chỉ hiện với **manager**, `NoticeSplitterCareOfManager` trong `notice-splitter-panel.tsx`) mở popup thêm/xoá tự do (chuỗi thuần, không có id/màu như các danh sách SelectOption khác trong app). Lưu ở `AppConfig.careOfEligibleNoticeTypes` (cột mới, `Json?`, additive) — cùng cơ chế `refundYearStatusOptions`/`processorReportTasks` (mục 4.17/4.28): null/thiếu = dùng `DEFAULT_CARE_OF_ELIGIBLE_NOTICE_TYPES` (vẫn giữ nguyên 10 loại cũ: CP89/CP289/CP521/CP523/CP01E/CP14/CP14D/2273C/2840C/4458C) làm mặc định.
+
+`isCareOfEligibleNoticeType()` đổi chữ ký — bỏ hẳn default ngầm, giờ **bắt buộc truyền tường minh** danh sách hiện tại làm tham số thứ 2 (tránh 1 nơi gọi âm thầm dùng danh sách cũ trong khi nơi khác đã theo danh sách Admin vừa sửa) — mọi lời gọi (`detectRecords()` qua `DetectOptions.careOfEligibleNoticeTypes`, và 3 chỗ trong `notice-splitter-panel.tsx`) đều đã cập nhật đọc từ `useAppStore((s) => s.careOfEligibleNoticeTypes)`.
+
+Vì tính năng Notice Splitter xử lý 100% trên trình duyệt (không còn route server nào, xem mục 4.31), thay đổi này **CHỈ đụng tới `AppConfig.careOfEligibleNoticeTypes`** (đọc/ghi qua `GET|PUT /api/config` có sẵn, cùng field độc lập "chỉ manager" như `refundYearStatusOptions`) — không đụng gì tới pipeline tách file.
+
+**Sau khi deploy code này lên production PHẢI làm đủ các bước sau** (xoá mục này khỏi file khi đã làm xong):
+1. `prisma migrate deploy` nhắm production (thêm cột `careOfEligibleNoticeTypes` trên `app_config`, an toàn/additive/nullable — không cần script merge `AppConfig` vì fallback runtime `config.careOfEligibleNoticeTypes ?? DEFAULT_CARE_OF_ELIGIBLE_NOTICE_TYPES` giữ đúng hành vi 10 loại thư cũ cho tới khi Admin chủ động sửa).
+2. Đăng nhập production bằng tài khoản **manager** thật, mở popup "For Processor" → tab "Notice Splitter" → xác nhận thấy nút bánh răng cạnh nút "Chọn file PDF" → mở popup, xác nhận thấy đủ 10 loại thư mặc định.
+3. Thêm thử 1 loại thư mới (vd "CP504") → xử lý 1 file PDF test có chứa thư CP504 với tín hiệu "%"/"C/O" → xác nhận checkbox "Not Update CRM" giờ tick được (trước đó bị khoá). Xoá loại thư đó → xử lý lại → xác nhận checkbox quay lại bị khoá.
+4. Đăng nhập bằng tài khoản KHÔNG phải manager (vd Processor/Kế toán) → mở tab Notice Splitter → xác nhận KHÔNG thấy nút bánh răng (chỉ xem/dùng danh sách hiện có, không sửa được).
+5. Reload trang (F5) sau khi đổi danh sách ở bước 3 → xác nhận danh sách vẫn giữ đúng thay đổi (đã lưu server, không chỉ local state).
+
 Mục 2–5 bên dưới là kiến trúc/quy trình đề xuất (phần lớn đã áp dụng đúng như mô tả, trừ Auth đã nêu ở trên). Mục 6 là checklist hành động cụ thể để đưa app này lên cloud thật.
 
 ## 2. Kiến trúc đề xuất
