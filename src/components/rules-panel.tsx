@@ -30,16 +30,20 @@ function RuleCard({
   authorColor,
   authorUrl,
   canManage,
+  canPermanentlyDelete,
   onEdit,
   onDelete,
+  onPermanentlyDelete,
 }: {
   rule: RuleRecord;
   authorName: string;
   authorColor: string;
   authorUrl: string | null;
   canManage: boolean;
+  canPermanentlyDelete: boolean;
   onEdit: (content: string) => Promise<boolean>;
   onDelete: () => void;
+  onPermanentlyDelete: () => void;
 }) {
   const t = useT();
   const [editing, setEditing] = useState(false);
@@ -107,6 +111,17 @@ function RuleCard({
             </button>
           </div>
         )}
+
+        {deleted && canPermanentlyDelete && (
+          <button
+            onClick={onPermanentlyDelete}
+            className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-red-400/80 transition hover:bg-red-500/15 hover:text-red-400"
+            title={t("rules.permanentDeleteBtn")}
+          >
+            <Trash2 size={11} />
+            {t("rules.permanentDeleteBtn")}
+          </button>
+        )}
       </div>
 
       <div className="mt-1 pl-[28px]">
@@ -165,6 +180,7 @@ export function RulesPanel({ variant = "icon" }: { variant?: "icon" | "tab" }) {
   const addRule = useAppStore((s) => s.addRule);
   const editRule = useAppStore((s) => s.editRule);
   const deleteRule = useAppStore((s) => s.deleteRule);
+  const permanentlyDeleteRule = useAppStore((s) => s.permanentlyDeleteRule);
   const { confirm, ConfirmDialogUI } = useConfirm();
   const { alertWarn, AlertDialogUI } = useAlert();
 
@@ -173,6 +189,10 @@ export function RulesPanel({ variant = "icon" }: { variant?: "icon" | "tab" }) {
 
   if (!user) return null;
   const canManage = hasFeature(permissions, "manageRules", user.role);
+  // Xoá vĩnh viễn hard-code role "manager" (KHÔNG dùng feature manageRules cấu hình được) —
+  // không thể hoàn tác nên không giao được cho role khác qua trang Phân quyền, xem
+  // requireManageRules/DELETE ?hard=1 trong src/app/api/rules/[id]/route.ts.
+  const canPermanentlyDelete = user.role === "manager";
   const ordered = sortRulesForDisplay(rules);
   const newCount = newRuleCountToday(rules);
 
@@ -261,6 +281,7 @@ export function RulesPanel({ variant = "icon" }: { variant?: "icon" | "tab" }) {
                         authorColor={author?.avatarColor ?? "#3b8fd1"}
                         authorUrl={author?.avatarUrl ?? null}
                         canManage={canManage}
+                        canPermanentlyDelete={canPermanentlyDelete}
                         onEdit={async (content) => {
                           const res = await editRule(rule.id, content);
                           if (!res.ok) {
@@ -274,6 +295,15 @@ export function RulesPanel({ variant = "icon" }: { variant?: "icon" | "tab" }) {
                           if (!ok) return;
                           const res = await deleteRule(rule.id);
                           if (!res.ok) await alertWarn(res.error || t("rules.deleteError"));
+                        }}
+                        onPermanentlyDelete={async () => {
+                          const ok = await confirm(t("rules.permanentDeleteConfirm"), {
+                            title: t("rules.permanentDeleteTitle"),
+                            tone: "danger",
+                          });
+                          if (!ok) return;
+                          const res = await permanentlyDeleteRule(rule.id);
+                          if (!res.ok) await alertWarn(res.error || t("rules.permanentDeleteError"));
                         }}
                       />
                     );

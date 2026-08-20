@@ -238,6 +238,9 @@ interface AppState {
    * thay đổi đến từ webhook Google Sheet (Sheet -> App), trước đây KHÔNG có cơ chế nào báo
    * cho tab đang mở biết để tự cập nhật, chỉ thấy sau khi F5 tay. */
   refetchCpaReview: () => Promise<void>;
+  /** Nạp lại rules sau khi nhận tín hiệu "rules:changed" qua Pusher — trước đây rules chỉ
+   * nạp 1 lần lúc hydrateFromServer nên user khác thấy rule mới rất trễ (phải tự F5). */
+  refetchRules: () => Promise<void>;
   /** Nạp cpaReviewRecords của 1 tháng nếu CHƯA có trong cache (xem cpaReviewLoadedMonths) —
    * no-op nếu đã nạp rồi. Gọi mỗi khi đổi tháng qua setCpaReviewSelectedMonth. */
   ensureCpaReviewMonthLoaded: (month: string) => Promise<void>;
@@ -380,6 +383,10 @@ interface AppState {
   resetUserPassword: (userId: string, newPassword: string) => Promise<boolean>;
   updateAvatar: (userId: string, avatarUrl: string | null) => void;
   updateUserTeam: (userId: string, teamMemberIds: string[]) => void;
+  /** Admin đổi email tài khoản KHÁC — KHÔNG optimistic (khác updateUserRole/updateAvatar)
+   * vì email unique, server có thể trả lỗi trùng (409), phải đợi kết quả thật trước khi cập
+   * nhật state, tránh hiện email mới trên UI dù server đã từ chối. */
+  updateUserEmail: (userId: string, email: string) => Promise<{ ok: true } | { ok: false; error: string }>;
 
   setFeaturePermission: (feature: FeatureKey, role: Role, allowed: boolean) => void;
   setCpaEmailDefaults: (defaults: CpaEmailDefaults) => void;
@@ -554,6 +561,9 @@ interface AppState {
   addRule: (content: string) => Promise<{ ok: true } | { ok: false; error: string }>;
   editRule: (ruleId: string, content: string) => Promise<{ ok: true } | { ok: false; error: string }>;
   deleteRule: (ruleId: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+  /** Xoá VĨNH VIỄN 1 rule đã xoá mềm khỏi DB — chỉ Quản lý gọi được (server tự chặn role
+   * khác), xem PATCH .../route.ts (`?hard=1`). */
+  permanentlyDeleteRule: (ruleId: string) => Promise<{ ok: true } | { ok: false; error: string }>;
 }
 
 export const useAppStore = create<AppState>()(
@@ -746,6 +756,10 @@ export const useAppStore = create<AppState>()(
       refetchCases: async () => {
         const cases = await api.listCases();
         set({ cases });
+      },
+      refetchRules: async () => {
+        const rules = await api.listRules();
+        set({ rules });
       },
       refetchCpaReview: async () => {
         // Chỉ refetch ĐÚNG tháng đang xem (tín hiệu Pusher không kèm tháng nào đã đổi) —
@@ -1919,6 +1933,18 @@ export const useAppStore = create<AppState>()(
         syncInBackground("updateUserTeam", api.updateUserTeam(userId, teamMemberIds));
       },
 
+      updateUserEmail: async (userId, email) => {
+        try {
+          const updated = await api.updateUserEmail(userId, email);
+          set((state) => ({
+            users: state.users.map((u) => (u.id === userId ? { ...u, email: updated.email } : u)),
+          }));
+          return { ok: true };
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Đổi email thất bại" };
+        }
+      },
+
       setFeaturePermission: (feature, role, allowed) => {
         set((state) => {
           const current = state.featurePermissions[feature] ?? [];
@@ -2332,6 +2358,15 @@ export const useAppStore = create<AppState>()(
           return { ok: true };
         } catch (err) {
           return { ok: false, error: err instanceof Error ? err.message : "Xoá rule thất bại" };
+        }
+      },
+      permanentlyDeleteRule: async (ruleId) => {
+        try {
+          await api.permanentlyDeleteRule(ruleId);
+          set((s) => ({ rules: s.rules.filter((r) => r.id !== ruleId) }));
+          return { ok: true };
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Xoá vĩnh viễn rule thất bại" };
         }
       },
       };

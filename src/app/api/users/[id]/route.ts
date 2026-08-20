@@ -45,12 +45,26 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/users/
     return NextResponse.json({ ok: true });
   }
 
-  const patch: { role?: string; avatarUrl?: string | null; teamMemberIds?: string[] } = {};
+  const patch: { role?: string; email?: string; avatarUrl?: string | null; teamMemberIds?: string[] } = {};
   if (typeof body.role === "string") {
     if (!(await canManageUsers(me.role))) {
       return NextResponse.json({ error: "Không có quyền quản lý tài khoản" }, { status: 403 });
     }
     patch.role = body.role;
+  }
+  if (typeof body.email === "string") {
+    if (!(await canManageUsers(me.role))) {
+      return NextResponse.json({ error: "Không có quyền đổi email tài khoản" }, { status: 403 });
+    }
+    const nextEmail = body.email.trim().toLowerCase();
+    if (!nextEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(nextEmail)) {
+      return NextResponse.json({ error: "Email không hợp lệ" }, { status: 400 });
+    }
+    const existing = await prisma.user.findUnique({ where: { email: nextEmail } });
+    if (existing && existing.id !== id) {
+      return NextResponse.json({ error: "Email đã được sử dụng" }, { status: 409 });
+    }
+    patch.email = nextEmail;
   }
   if ("avatarUrl" in body) {
     if (me.id !== id && !(await canManageUsers(me.role))) {

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
 import { hasFeature } from "@/lib/rbac";
 import { sanitizeRuleHtml, stripHtmlTags } from "@/lib/rich-text";
+import { broadcastRulesChanged } from "@/lib/pusher-server";
 import type { FeaturePermissions, RuleRecord } from "@/lib/types";
 
 function toRuleRecord(row: {
@@ -58,5 +59,6 @@ export async function POST(request: NextRequest) {
   }
 
   const row = await prisma.rule.create({ data: { content, createdBy: me.id } });
+  await broadcastRulesChanged(row.id, request.headers.get("x-pusher-socket-id"));
   return NextResponse.json(toRuleRecord(row), { status: 201 });
 }

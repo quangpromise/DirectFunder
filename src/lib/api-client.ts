@@ -73,6 +73,10 @@ export const api = {
     request<ApiUser>(`/api/users/${userId}`, { method: "PATCH", body: JSON.stringify({ avatarUrl }) }),
   updateUserTeam: (userId: string, teamMemberIds: string[]) =>
     request<ApiUser>(`/api/users/${userId}`, { method: "PATCH", body: JSON.stringify({ teamMemberIds }) }),
+  /** Admin đổi email tài khoản KHÁC (xem PATCH /api/users/[id]) — server tự chuẩn hoá
+   * lowercase + kiểm tra trùng, trả 409 nếu email đã dùng cho tài khoản khác. */
+  updateUserEmail: (userId: string, email: string) =>
+    request<ApiUser>(`/api/users/${userId}`, { method: "PATCH", body: JSON.stringify({ email }) }),
   changePassword: (userId: string, currentPassword: string, newPassword: string) =>
     request<{ ok: true }>(`/api/users/${userId}`, {
       method: "PATCH",
@@ -336,6 +340,8 @@ export const api = {
   updateRule: (ruleId: string, content: string) =>
     request<RuleRecord>(`/api/rules/${ruleId}`, { method: "PATCH", body: JSON.stringify({ content }) }),
   deleteRule: (ruleId: string) => request<RuleRecord>(`/api/rules/${ruleId}`, { method: "DELETE" }),
+  permanentlyDeleteRule: (ruleId: string) =>
+    request<{ ok: true }>(`/api/rules/${ruleId}?hard=1`, { method: "DELETE" }),
 
   /** Kết nối Sheet CPA Review (dán link) — NHẬP TOÀN BỘ dòng có SSN trong Sheet thành
    * CpaReviewRecord mới (bảng độc lập, không có Case sẵn để đối chiếu). Trả về

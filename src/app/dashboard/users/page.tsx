@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Plus, Trash2, ShieldAlert, X, Users, Key, CheckCircle2, Search } from "lucide-react";
+import { Plus, Trash2, ShieldAlert, X, Users, Key, Mail, CheckCircle2, Search } from "lucide-react";
 import { useAppStore, useCurrentUser } from "@/store/app-store";
 import { ROLE_LABEL, Role, LEADER_MANAGES_ROLE, User } from "@/lib/types";
 import { ASSIGNABLE_ROLES } from "@/lib/rbac";
@@ -25,6 +25,7 @@ export default function UsersPage() {
   const updateAvatar = useAppStore((s) => s.updateAvatar);
   const updateUserTeam = useAppStore((s) => s.updateUserTeam);
   const resetUserPassword = useAppStore((s) => s.resetUserPassword);
+  const updateUserEmail = useAppStore((s) => s.updateUserEmail);
 
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
@@ -39,6 +40,10 @@ export default function UsersPage() {
   const [resetPwValue, setResetPwValue] = useState(DEFAULT_NEW_USER_PASSWORD);
   const [resetPwError, setResetPwError] = useState("");
   const [resetPwSuccess, setResetPwSuccess] = useState(false);
+  const [editEmailUserId, setEditEmailUserId] = useState<string | null>(null);
+  const [editEmailValue, setEditEmailValue] = useState("");
+  const [editEmailError, setEditEmailError] = useState("");
+  const [editEmailSuccess, setEditEmailSuccess] = useState(false);
   const t = useT();
   const { language } = useLanguage();
   const { confirm, ConfirmDialogUI } = useConfirm();
@@ -139,6 +144,30 @@ export default function UsersPage() {
     setResetPwSuccess(true);
   }
 
+  const editEmailUser = users.find((u) => u.id === editEmailUserId) ?? null;
+
+  function openEditEmail(userId: string, currentEmail: string) {
+    setEditEmailUserId(userId);
+    setEditEmailValue(currentEmail);
+    setEditEmailError("");
+    setEditEmailSuccess(false);
+  }
+
+  async function handleEditEmail() {
+    if (!editEmailUser) return;
+    if (!editEmailValue.trim()) {
+      setEditEmailError(t("users.errRequired"));
+      return;
+    }
+    const res = await updateUserEmail(editEmailUser.id, editEmailValue.trim());
+    if (!res.ok) {
+      setEditEmailError(res.error || t("users.editEmailError"));
+      return;
+    }
+    setEditEmailError("");
+    setEditEmailSuccess(true);
+  }
+
   const teamEditUser = users.find((u) => u.id === teamEditUserId) ?? null;
   const teamEditManagesRole = teamEditUser ? LEADER_MANAGES_ROLE[teamEditUser.role] : undefined;
   const teamEditCandidates = teamEditManagesRole ? users.filter((u) => u.role === teamEditManagesRole) : [];
@@ -212,6 +241,7 @@ export default function UsersPage() {
                     onRemove={() => handleRemoveUser(u)}
                     onAvatarChange={(url) => updateAvatar(u.id, url)}
                     onOpenResetPassword={() => openResetPassword(u.id)}
+                    onOpenEditEmail={() => openEditEmail(u.id, u.email)}
                     onOpenTeamEdit={() => setTeamEditUserId(u.id)}
                   />
                 ))}
@@ -425,6 +455,63 @@ export default function UsersPage() {
           </div>
         </div>
       )}
+
+      {editEmailUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4">
+          <div className="popover w-full max-w-sm rounded-2xl p-5 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold">
+                {t("users.editEmail")} — {editEmailUser.name}
+              </h3>
+              <button onClick={() => setEditEmailUserId(null)} className="text-text-faint hover:text-text">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="mt-4">
+              <label className="mb-1 block text-xs text-text-dim">{t("users.newEmail")}</label>
+              <input
+                autoFocus
+                type="email"
+                value={editEmailValue}
+                onChange={(e) => {
+                  setEditEmailValue(e.target.value);
+                  setEditEmailSuccess(false);
+                }}
+                placeholder="ten@directfunder.com"
+                className="w-full rounded-lg border border-border bg-bg-elevated px-3 py-2 text-sm outline-none focus:border-accent"
+              />
+            </div>
+
+            {editEmailError && (
+              <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300 light:text-red-700">
+                {editEmailError}
+              </div>
+            )}
+            {editEmailSuccess && (
+              <div className="mt-3 flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300 light:text-emerald-700">
+                <CheckCircle2 size={13} className="shrink-0" />
+                {t("users.editEmailSuccess")}
+              </div>
+            )}
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                onClick={() => setEditEmailUserId(null)}
+                className="rounded-lg px-3.5 py-2 text-sm text-text-dim hover:bg-surface-hover"
+              >
+                {t("common.close")}
+              </button>
+              <button
+                onClick={handleEditEmail}
+                className="gradient-btn rounded-lg px-3.5 py-2 text-sm font-medium text-white"
+              >
+                {t("common.save")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -442,6 +529,7 @@ function UserCard({
   onRemove,
   onAvatarChange,
   onOpenResetPassword,
+  onOpenEditEmail,
   onOpenTeamEdit,
 }: {
   u: User;
@@ -451,6 +539,7 @@ function UserCard({
   onRemove: () => void;
   onAvatarChange: (url: string | null) => void;
   onOpenResetPassword: () => void;
+  onOpenEditEmail: () => void;
   onOpenTeamEdit: () => void;
 }) {
   const t = useT();
@@ -491,6 +580,15 @@ function UserCard({
           className="shrink-0 rounded-md border border-border p-1.5 text-text-faint transition hover:bg-surface-hover hover:text-text"
         >
           <Key size={13} />
+        </button>
+
+        <button
+          onClick={onOpenEditEmail}
+          title={t("users.editEmail")}
+          aria-label={t("users.editEmail")}
+          className="shrink-0 rounded-md border border-border p-1.5 text-text-faint transition hover:bg-surface-hover hover:text-text"
+        >
+          <Mail size={13} />
         </button>
 
         {isTeamLead && (

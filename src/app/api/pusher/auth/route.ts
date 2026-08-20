@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/api-auth";
-import { getPusherServer, notificationChannel, CASES_CHANNEL, CPA_REVIEW_CHANNEL } from "@/lib/pusher-server";
+import { getPusherServer, notificationChannel, CASES_CHANNEL, CPA_REVIEW_CHANNEL, RULES_CHANNEL } from "@/lib/pusher-server";
 
 /**
  * Auth endpoint cho private channel của Pusher client (src/lib/pusher-client.ts,
  * authEndpoint) — Pusher JS tự POST tới đây (form-urlencoded, không phải JSON) mỗi khi
  * subscribe 1 kênh private, kèm socket_id + channel_name.
  *
- * Chỉ cho phép subscribe: "private-cases"/"private-cpa-review" (mọi user đã đăng nhập —
+ * Chỉ cho phép subscribe: "private-cases"/"private-cpa-review"/"private-rules" (mọi user đã đăng nhập —
  * kênh tín hiệu chung, không kèm dữ liệu nhạy cảm, xem broadcastCaseChanged/
  * broadcastCpaReviewChanged) hoặc đúng kênh thông báo CỦA CHÍNH MÌNH
  * ("private-notifications-{userId}") — chặn nghe lén kênh thông báo người khác.
@@ -27,7 +27,10 @@ export async function POST(request: NextRequest) {
   }
 
   const allowed =
-    channelName === CASES_CHANNEL || channelName === CPA_REVIEW_CHANNEL || channelName === notificationChannel(me.id);
+    channelName === CASES_CHANNEL ||
+    channelName === CPA_REVIEW_CHANNEL ||
+    channelName === RULES_CHANNEL ||
+    channelName === notificationChannel(me.id);
   if (!allowed) return NextResponse.json({ error: "Không có quyền subscribe kênh này" }, { status: 403 });
 
   const auth = pusher.authorizeChannel(socketId, channelName);

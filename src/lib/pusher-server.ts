@@ -13,6 +13,7 @@ import Pusher from "pusher";
 
 const CASES_CHANNEL = "private-cases";
 const CPA_REVIEW_CHANNEL = "private-cpa-review";
+const RULES_CHANNEL = "private-rules";
 
 function notificationChannel(userId: string): string {
   return `private-notifications-${userId}`;
@@ -70,6 +71,13 @@ export async function broadcastCpaReviewChanged(recordId: string, socketId: stri
   await safeTrigger(CPA_REVIEW_CHANNEL, "cpaReview:changed", { recordId }, socketId);
 }
 
+/** Tín hiệu RỖNG tương tự broadcastCaseChanged nhưng cho bảng tin "Rules" — trước đây
+ * đăng/sửa/xoá rule KHÔNG bắn tín hiệu gì, các trình duyệt khác chỉ thấy rule mới sau khi
+ * tự F5/rời-vào-lại dashboard (hydrateFromServer là nơi DUY NHẤT nạp rules). */
+export async function broadcastRulesChanged(ruleId: string, socketId: string | null): Promise<void> {
+  await safeTrigger(RULES_CHANNEL, "rules:changed", { ruleId }, socketId);
+}
+
 /** Thông báo thật (Notification row đầy đủ) — an toàn để gửi thẳng vì luôn "địa chỉ hoá"
  * đúng 1 người nhận (kênh riêng theo userId, chỉ user đó auth được — xem
  * src/app/api/pusher/auth/route.ts), không phải kênh chung. */
@@ -81,4 +89,4 @@ export async function broadcastNotification(
   await safeTrigger(notificationChannel(toUserId), "notification:new", notification, socketId);
 }
 
-export { CASES_CHANNEL, CPA_REVIEW_CHANNEL, notificationChannel, getPusherServer };
+export { CASES_CHANNEL, CPA_REVIEW_CHANNEL, RULES_CHANNEL, notificationChannel, getPusherServer };

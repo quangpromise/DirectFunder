@@ -8,6 +8,7 @@ import type { AppNotification } from "@/lib/types";
 
 const CASES_CHANNEL = "private-cases";
 const CPA_REVIEW_CHANNEL = "private-cpa-review";
+const RULES_CHANNEL = "private-rules";
 
 /** Subscribe realtime (Pusher) cho toàn dashboard — gọi 1 lần ở layout, cạnh
  * hydrateFromServer(). No-op nếu chưa đăng nhập hoặc Pusher chưa được cấu hình
@@ -53,12 +54,22 @@ export function useRealtime(userId: string | undefined): void {
     function onNotification(n: AppNotification) {
       useAppStore.getState().receiveNotification(n);
     }
+    let rulesDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+    function onRulesChanged() {
+      if (rulesDebounceTimer) clearTimeout(rulesDebounceTimer);
+      rulesDebounceTimer = setTimeout(() => {
+        useAppStore.getState().refetchRules();
+      }, 500);
+    }
 
     const casesChannel = pusher.subscribe(CASES_CHANNEL);
     casesChannel.bind("case:changed", onCaseChanged);
 
     const cpaReviewChannel = pusher.subscribe(CPA_REVIEW_CHANNEL);
     cpaReviewChannel.bind("cpaReview:changed", onCpaReviewChanged);
+
+    const rulesChannel = pusher.subscribe(RULES_CHANNEL);
+    rulesChannel.bind("rules:changed", onRulesChanged);
 
     const notifChannelName = `private-notifications-${userId}`;
     const notifChannel = pusher.subscribe(notifChannelName);
@@ -67,11 +78,14 @@ export function useRealtime(userId: string | undefined): void {
     return () => {
       if (debounceTimer) clearTimeout(debounceTimer);
       if (cpaReviewDebounceTimer) clearTimeout(cpaReviewDebounceTimer);
+      if (rulesDebounceTimer) clearTimeout(rulesDebounceTimer);
       casesChannel.unbind("case:changed", onCaseChanged);
       cpaReviewChannel.unbind("cpaReview:changed", onCpaReviewChanged);
+      rulesChannel.unbind("rules:changed", onRulesChanged);
       notifChannel.unbind("notification:new", onNotification);
       pusher.unsubscribe(CASES_CHANNEL);
       pusher.unsubscribe(CPA_REVIEW_CHANNEL);
+      pusher.unsubscribe(RULES_CHANNEL);
       pusher.unsubscribe(notifChannelName);
     };
   }, [userId]);
