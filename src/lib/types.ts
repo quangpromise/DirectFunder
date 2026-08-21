@@ -332,6 +332,30 @@ export interface ClientNameEntry {
   lastName: string;
 }
 
+/** Dữ liệu đã soát/sửa ở form xem trước (agentc3-import-dialog.tsx) trước khi lưu thật —
+ * xem `importCaseFromAgentC3` (app-store.ts) + `POST /api/agentc3-import/fetch`. */
+export interface AgentC3ImportFields {
+  taxpayer: ClientNameEntry;
+  spouse: ClientNameEntry;
+  ssn: string | null;
+  spouseSsn: string | null;
+  dob: string | null;
+  spouseDob: string | null;
+  phone: string;
+  phone2: string;
+  email: string;
+  address: string;
+  zipcode: string;
+  refunds: Record<string, number>;
+  statusId: string | null;
+  agentUserId: string | null;
+  bankName: string | null;
+  routingNumber: string | null;
+  accountNumber: string | null;
+  fcDate: string | null;
+  elDate: string | null;
+}
+
 export type OrderType = "order8821" | "orderTtsWit";
 
 /**

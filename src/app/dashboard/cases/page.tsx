@@ -27,6 +27,7 @@ import type { ClientProfilePayload } from "@/lib/api-client";
 import { EditableCell } from "@/components/editable-cell";
 import { AssignMenu } from "@/components/assign-menu";
 import { AddColumnDialog } from "@/components/add-column-dialog";
+import { AgentC3ImportDialog } from "@/components/agentc3-import-dialog";
 import { ColumnSettingsDialog } from "@/components/column-settings-dialog";
 import { ClientNameCell } from "@/components/client-name-cell";
 import { SsnCell } from "@/components/ssn-cell";
@@ -871,6 +872,7 @@ export default function CasesPage() {
                 <Upload size={12} />
                 {importing ? t("cases.importing") : t("cases.uploadExcel")}
               </button>
+              <AgentC3ImportDialog />
             </>
           )}
         </div>
@@ -1062,6 +1064,7 @@ export default function CasesPage() {
                     {importing ? t("cases.importing") : t("cases.uploadExcel")}
                   </button>
                 )}
+                {canAddRowFeature && <AgentC3ImportDialog />}
               </div>
 
               <div className="flex flex-col gap-2">

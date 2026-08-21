@@ -2,6 +2,7 @@ import type {
   AppNotification,
   CaseRecord,
   ClientEmailTemplate,
+  ClientNameEntry,
   CollectingRecord,
   CollectingReportManualFields,
   ColumnDef,
@@ -331,6 +332,11 @@ export const api = {
       { method: "POST", body: JSON.stringify(payload) }
     ),
 
+  /** Xem trước dữ liệu 1 hồ sơ trên CRM ngoài agentc3 (dán link) — chỉ đọc, không ghi gì.
+   * Xem `AgentC3ImportPreview` bên dưới cho hình dạng dữ liệu trả về. */
+  fetchAgentC3Preview: (link: string) =>
+    request<AgentC3ImportPreview>("/api/agentc3-import/fetch", { method: "POST", body: JSON.stringify({ link }) }),
+
   listNotifications: () => request<AppNotification[]>("/api/notifications"),
   markNotificationRead: (id: string) => request<{ ok: true }>(`/api/notifications/${id}`, { method: "PATCH" }),
   markAllNotificationsRead: () => request<{ ok: true }>("/api/notifications/mark-all-read", { method: "POST" }),
@@ -453,6 +459,35 @@ export interface ClientProfilePayload {
   note?: string | null;
   accountant?: string | null;
   accountantSupport?: string | null;
+}
+
+/** Kết quả `POST /api/agentc3-import/fetch` — dữ liệu đã đọc + gợi ý khớp Status/Agent từ
+ * CRM ngoài agentc3, chưa lưu gì (xem `agentc3-import-dialog.tsx`). */
+export interface AgentC3ImportPreview {
+  customerId: string;
+  sourceUrl: string;
+  taxpayer: ClientNameEntry;
+  spouse: ClientNameEntry;
+  ssn: string | null;
+  spouseSsn: string | null;
+  dob: string | null;
+  spouseDob: string | null;
+  address: string;
+  zipIrs: string;
+  email1: string;
+  phone1: string;
+  phone2: string;
+  statusRaw: string;
+  matchedStatusId: string | null;
+  refunds: Record<string, string>;
+  agentNameRaw: string;
+  matchedAgentUserId: string | null;
+  bankName: string;
+  routingNumber: string;
+  accountNumber: string;
+  fcDate: string | null;
+  elDate: string | null;
+  existingCase: CaseRecord | null;
 }
 
 /** Gọi API nền, không chặn UI (các action Zustand vẫn cập nhật local state ngay lập

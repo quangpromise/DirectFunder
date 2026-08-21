@@ -32,6 +32,17 @@ export function primarySsn(c: { ssn: [string | null, string | null] }): string |
   return c.ssn[0] || c.ssn[1] || null;
 }
 
+/** Tách tên theo TỪ CUỐI CÙNG -> Last Name, phần còn lại -> First Name (vd "Nguyen Van A"
+ * -> First "Nguyen Van", Last "A"). Chỉ có 1 từ thì để nguyên vào Last Name. Dùng chung cho
+ * nhập Excel (app-store.ts importCases) và nhập từ CRM agentc3 (agentc3-client.ts). */
+export function splitNameLastWord(fullName: string): { firstName: string; lastName: string } {
+  const trimmed = fullName.trim();
+  if (!trimmed) return { firstName: "", lastName: "" };
+  const idx = trimmed.lastIndexOf(" ");
+  if (idx === -1) return { firstName: "", lastName: trimmed };
+  return { firstName: trimmed.slice(0, idx).trim(), lastName: trimmed.slice(idx + 1).trim() };
+}
+
 /**
  * Danh sách client đã điền tên (bỏ qua dòng trống) kèm slot gốc (0/1) — dùng để
  * tách 1 hồ sơ có 2 client thành 2 dòng riêng (ví dụ trong tab Order), mỗi dòng

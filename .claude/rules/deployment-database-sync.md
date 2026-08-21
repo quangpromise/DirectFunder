@@ -502,6 +502,31 @@ Thêm `Case.refundYearAlarm` (cột mới, `Json @default("{}")`, additive, migr
 4. Gọi lại route quét lần 2 ngay sau đó → xác nhận KHÔNG có Notification thứ 2 nào được tạo (đã set `notifiedAt`, không lặp lại cho tới khi đổi lại ngày).
 5. Mở lại popup, đổi lại ngày hẹn (bất kỳ, kể cả cùng ngày cũ) → xác nhận `notifiedAt` reset (kiểm tra bằng cách gọi lại route quét, thấy bắn Notification lần nữa nếu ngày mới <= hôm nay). Bấm nút X trong ô đặt lịch để xoá hẳn → xác nhận icon quay về màu xám mặc định.
 
+### 4.35 [CHỜ XỬ LÝ] Nút "Nhập từ CRM" — đọc hồ sơ khách hàng từ CRM ngoài tax.agentc3.com (thêm 2026-08-21)
+
+Nút mới trên toolbar bảng Hồ sơ (cạnh "Nhập Excel", gate cùng feature `addRow` có sẵn — KHÔNG
+thêm feature key mới) — dán link 1 hồ sơ khách hàng trên CRM cũ `tax.agentc3.com` (PHP/
+CodeIgniter, tách biệt hoàn toàn khỏi DB Direct Funder), app tự đăng nhập (1 tài khoản CHUNG,
+`AGENTC3_USERNAME`/`AGENTC3_PASSWORD`) + đọc HTML server-rendered (KHÔNG cần headless
+browser — xem `.claude/skills/agentc3-crm-import/SKILL.md` cho chi tiết đầy đủ: bảng field-id
+CRM, cơ chế đăng nhập, kiến trúc 3 lớp) → hiện form xem trước (mọi ô sửa được) → **tạo hồ sơ
+mới** nếu SSN chưa có, hoặc **chỉ điền vào ô đang trống** của hồ sơ đã trùng SSN (không bao
+giờ ghi đè dữ liệu có sẵn). Đã tự kiểm tra đầy đủ qua `curl` + Playwright thật (tài khoản CRM
+thật do người dùng cung cấp) — cả 2 nhánh tạo mới/điền-ô-trống đều hoạt động đúng, xác nhận
+qua ảnh chụp UI và truy vấn lại DB.
+
+**Đây CHỈ là thêm code (2 route mới, 1 dialog mới, 1 store action mới) — KHÔNG đổi schema,
+KHÔNG đổi `DEFAULT_COLUMNS`/`DEFAULT_FEATURE_PERMISSIONS`/`AppConfig`** (dùng lại đúng feature
+`addRow` sẵn có) nên **không cần** `prisma migrate deploy`, **không cần** script merge
+`AppConfig`.
+
+**Sau khi deploy code này lên production PHẢI làm đủ các bước sau** (xoá mục này khỏi file khi đã làm xong):
+1. Thêm `AGENTC3_USERNAME`/`AGENTC3_PASSWORD` vào Vercel Environment Variables (Production) — xem `.env.example`. Thiếu 1 trong 2 thì route tự trả lỗi rõ ràng 501, không crash app, nhưng nút sẽ luôn báo lỗi khi bấm "Lấy dữ liệu".
+2. Đăng nhập production bằng tài khoản có quyền `addRow`, bấm nút "Nhập từ CRM" trên toolbar bảng Hồ sơ → dán 1 link hồ sơ thật trên `tax.agentc3.com` → xác nhận form xem trước hiện đúng dữ liệu (tên/SSN/DOB/địa chỉ/refund/bank/FC-EL date), Status/Agent tự khớp đúng nếu tên trùng khớp.
+3. Bấm "Tạo hồ sơ" (SSN chưa có trong Direct Funder) → xác nhận hồ sơ mới lên đầu bảng, mở "Edit Hồ sơ" kiểm tra đủ field, cột Money = tổng đúng refund các năm.
+4. Dán lại ĐÚNG link đó lần 2 → xác nhận preview hiện banner "Đã tìm thấy hồ sơ có sẵn", các ô đã có dữ liệu bị khoá xám, bấm "Cập nhật hồ sơ" (nếu còn ô trống) hoặc thấy báo "không có gì để cập nhật" (nếu mọi field CRM tương ứng đã đầy đủ) — không tạo hồ sơ trùng.
+5. Đăng nhập bằng tài khoản KHÔNG có quyền `addRow` → xác nhận không thấy nút "Nhập từ CRM" trên toolbar.
+
 Mục 2–5 bên dưới là kiến trúc/quy trình đề xuất (phần lớn đã áp dụng đúng như mô tả, trừ Auth đã nêu ở trên). Mục 6 là checklist hành động cụ thể để đưa app này lên cloud thật.
 
 ## 2. Kiến trúc đề xuất

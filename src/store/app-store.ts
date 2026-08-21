@@ -13,18 +13,21 @@ import { DEFAULT_CARE_OF_ELIGIBLE_NOTICE_TYPES } from "@/lib/irs-splitter/care-o
 import { currentMonthKey } from "@/lib/cpa-review-month";
 import { todayIsoDate } from "@/lib/date-format";
 import { INITIAL_CASES, INITIAL_NOTIFICATIONS, INITIAL_USERS } from "@/lib/mock-data";
-import { getFullName, primarySsn } from "@/lib/client-name";
+import { getFullName, primarySsn, splitNameLastWord } from "@/lib/client-name";
 import { summarizeCheckInitial } from "@/lib/check-initial";
 import { DEFAULT_REFUND_YEAR_STATUS, findRefundStatusOption } from "@/lib/refund-status";
 import { api, syncInBackground, type ClientProfilePayload } from "@/lib/api-client";
 import type { ParsedCaseRow, DuplicateSsnInfo } from "@/lib/excel";
 import { formatSsn } from "@/lib/ssn";
 import { toE164US } from "@/lib/phone";
+import { REFUND_YEARS } from "@/lib/refund";
 import {
   AppNotification,
+  AgentC3ImportFields,
   CaseRecord,
   CheckInitialValue,
   ClientEmailTemplate,
+  ClientNameEntry,
   CollectingRecord,
   CollectingReportManualFields,
   CpaReviewRecord,
@@ -75,17 +78,6 @@ function splitCellLines(text: string): [string, string] {
     .filter(Boolean);
   return [lines[0] ?? "", lines[1] ?? ""];
 }
-
-/** Tách tên theo TỪ CUỐI CÙNG -> Last Name, phần còn lại -> First Name (vd "Nguyen Van A"
- * -> First "Nguyen Van", Last "A"). Chỉ có 1 từ thì để nguyên vào Last Name. */
-function splitNameLastWord(fullName: string): { firstName: string; lastName: string } {
-  const trimmed = fullName.trim();
-  if (!trimmed) return { firstName: "", lastName: "" };
-  const idx = trimmed.lastIndexOf(" ");
-  if (idx === -1) return { firstName: "", lastName: trimmed };
-  return { firstName: trimmed.slice(0, idx).trim(), lastName: trimmed.slice(idx + 1).trim() };
-}
-
 
 /**
  * Danh sách Status mặc định đã đổi theo thời gian. Khi đổi options mặc định, KHÔNG
@@ -265,6 +257,21 @@ interface AppState {
     creatorId: string,
     creatorRole: Role
   ) => Promise<{ success: number; failed: number; duplicateSsn: number; duplicates: DuplicateSsnInfo[] }>;
+  /** Nhập 1 hồ sơ từ CRM ngoài agentc3 (xem POST /api/agentc3-import/fetch) — `existingCaseId`
+   * null nghĩa là tạo hồ sơ mới (SSN chưa từng có); có giá trị nghĩa là CHỈ điền vào những ô
+   * đang trống của hồ sơ đã khớp SSN đó, không ghi đè dữ liệu có sẵn (xem plan đã duyệt). */
+  importCaseFromAgentC3: (
+    existingCaseId: string | null,
+    existingCaseFallback: CaseRecord | null,
+    fields: AgentC3ImportFields,
+    sourceCustomerId: string,
+    sourceUrl: string,
+    creatorId: string,
+    creatorRole: Role
+  ) => Promise<
+    | { ok: true; caseId: string; created: boolean; skippedNoChanges?: boolean }
+    | { ok: false; error: string }
+  >;
   deleteRow: (caseId: string, deletedByUserId: string) => void;
   updateClientLink: (caseId: string, link: string | null) => void;
   updateSsn: (caseId: string, slot: 0 | 1, value: string | null) => void;
@@ -1205,6 +1212,229 @@ export const useAppStore = create<AppState>()(
           set((s) => ({ cases: [...s.cases, ...created] }));
         }
         return { success: created.length, failed, duplicateSsn: duplicates.length, duplicates };
+      },
+
+      importCaseFromAgentC3: async (
+        existingCaseId,
+        existingCaseFallback,
+        fields,
+        sourceCustomerId,
+        sourceUrl,
+        creatorId,
+        creatorRole
+      ) => {
+        // Nhánh A — SSN chưa từng có, tạo hồ sơ mới. Cùng cấu trúc CaseRecord/mặc định
+        // Agent-Processor như addRow()/importCases() ở trên, chỉ khác nguồn dữ liệu (CRM
+        // agentc3 thay vì form rỗng/file Excel). Luôn kèm link hồ sơ gốc trên CRM vào
+        // clientLink (icon liên kết cạnh tên khách hàng) để tra cứu ngược lại dễ dàng.
+        if (!existingCaseId) {
+          const record: CaseRecord = {
+            id: uniqueId("c"),
+            status: fields.statusId ?? "pre_processing",
+            clients: [fields.taxpayer, fields.spouse],
+            clientLink: sourceUrl,
+            zipcode: fields.zipcode,
+            address: fields.address,
+            phone: fields.phone,
+            phone2: fields.phone2,
+            email: fields.email,
+            dateOfBirth: [fields.dob, fields.spouseDob],
+            description: "",
+            caseNumber: "0",
+            money: 0,
+            refunds: fields.refunds,
+            orders: [],
+            assignedTo: fields.agentUserId ?? (creatorRole === "agent" ? creatorId : null),
+            assignedTo2: null,
+            assignedProcessor: creatorId,
+            assignedProcessor2: null,
+            createdBy: creatorId,
+            ssn: [fields.ssn, fields.spouseSsn],
+            descriptionReplies: [],
+            descriptionReadBy: [],
+            custom: { caseLabel: 0 },
+            sheetSentAt: null,
+            cpaEmailSentAt: null,
+            cpaReviewTestSentAt: null,
+            clientEmailSentAt: null,
+            sortOrder: -Date.now(),
+            refundYearStatus: {},
+            refundYearPendingReason: {},
+            refundYearEfileDate: {},
+            refundYearAlarm: {},
+            fcDate: fields.fcDate,
+            processingDate: null,
+            elDate: fields.elDate,
+            bankName: null,
+            routingNumber: null,
+            accountNumber: null,
+            note: null,
+            accountant: null,
+            accountantSupport: null,
+            taxIntByYear: {},
+            hasUnreadSms: false,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          try {
+            const created = await api.createCase(record);
+            set((s) => ({ cases: [created, ...s.cases] }));
+            // Bank info không nằm trong body POST /api/cases (chỉ client-profile route mới
+            // ghi được, xem client-profile/route.ts) — gọi thêm 1 lần để lưu đủ + để server
+            // tự tính money/caseLabel từ refunds thay vì tin số 0 vừa tạo.
+            await get().updateClientProfile(created.id, {
+              refunds: fields.refunds,
+              bankName: fields.bankName,
+              routingNumber: fields.routingNumber,
+              accountNumber: fields.accountNumber,
+              fcDate: fields.fcDate,
+              elDate: fields.elDate,
+            });
+            logEdit(created.id, "Nhập từ CRM", "", `Tạo hồ sơ mới từ CRM agentc3 (${sourceCustomerId})`);
+            return { ok: true, caseId: created.id, created: true } as const;
+          } catch (err) {
+            return { ok: false, error: err instanceof Error ? err.message : "Tạo hồ sơ thất bại" } as const;
+          }
+        }
+
+        // Nhánh B — SSN đã trùng 1 hồ sơ có sẵn: CHỈ điền vào những ô đang trống, giữ
+        // nguyên mọi ô đã có dữ liệu. Đọc lại state MỚI NHẤT tại thời điểm bấm (không dùng
+        // bản existingCase nhận lúc preview) — chỉ fallback về bản preview nếu hồ sơ đó
+        // không nằm trong phạm vi xem của người đang thao tác (vd đã lọc theo RBAC).
+        const current = get().cases.find((c) => c.id === existingCaseId) ?? existingCaseFallback;
+        if (!current) {
+          return { ok: false, error: "Không tìm thấy hồ sơ đã khớp SSN — thử tải lại trang" } as const;
+        }
+
+        const isBlankName = (e: ClientNameEntry) => !e.firstName.trim() && !e.lastName.trim();
+        const isFilledName = (e: ClientNameEntry) => e.firstName.trim() || e.lastName.trim();
+
+        const nextClients: [ClientNameEntry, ClientNameEntry] = [...current.clients];
+        let clientsChanged = false;
+        if (isBlankName(current.clients[0]) && isFilledName(fields.taxpayer)) {
+          nextClients[0] = fields.taxpayer;
+          clientsChanged = true;
+        }
+        if (isBlankName(current.clients[1]) && isFilledName(fields.spouse)) {
+          nextClients[1] = fields.spouse;
+          clientsChanged = true;
+        }
+
+        const nextSsn: [string | null, string | null] = [...current.ssn];
+        let ssnChanged = false;
+        if (!current.ssn[0] && fields.ssn) {
+          nextSsn[0] = fields.ssn;
+          ssnChanged = true;
+        }
+        if (!current.ssn[1] && fields.spouseSsn) {
+          nextSsn[1] = fields.spouseSsn;
+          ssnChanged = true;
+        }
+
+        const nextDob: [string | null, string | null] = [...current.dateOfBirth];
+        let dobChanged = false;
+        if (!current.dateOfBirth[0] && fields.dob) {
+          nextDob[0] = fields.dob;
+          dobChanged = true;
+        }
+        if (!current.dateOfBirth[1] && fields.spouseDob) {
+          nextDob[1] = fields.spouseDob;
+          dobChanged = true;
+        }
+
+        const nextRefunds = { ...current.refunds };
+        let refundsChanged = false;
+        for (const year of REFUND_YEARS) {
+          const existingAmount = current.refunds[year] ?? 0;
+          const crmAmount = fields.refunds[year] ?? 0;
+          if (!existingAmount && crmAmount) {
+            nextRefunds[year] = crmAmount;
+            refundsChanged = true;
+          }
+        }
+
+        const payload: ClientProfilePayload = {};
+        const filledLabels: string[] = [];
+        if (clientsChanged) {
+          payload.clients = nextClients;
+          filledLabels.push("Tên Taxpayer/Spouse");
+        }
+        if (ssnChanged) {
+          payload.ssn = nextSsn;
+          filledLabels.push("SSN");
+        }
+        if (dobChanged) {
+          payload.dateOfBirth = nextDob;
+          filledLabels.push("DOB");
+        }
+        if (!current.phone && fields.phone) {
+          payload.phone = fields.phone;
+          filledLabels.push("Phone 1");
+        }
+        if (!current.phone2 && fields.phone2) {
+          payload.phone2 = fields.phone2;
+          filledLabels.push("Phone 2");
+        }
+        if (!current.email && fields.email) {
+          payload.email = fields.email;
+          filledLabels.push("Email");
+        }
+        if (!current.address && fields.address) {
+          payload.address = fields.address;
+          filledLabels.push("Address");
+        }
+        if (!current.zipcode && fields.zipcode) {
+          payload.zipcode = fields.zipcode;
+          filledLabels.push("Zip IRS");
+        }
+        if (refundsChanged) {
+          payload.refunds = nextRefunds;
+          filledLabels.push("Refund");
+        }
+        if (!current.bankName && fields.bankName) {
+          payload.bankName = fields.bankName;
+          filledLabels.push("Bank Name");
+        }
+        if (!current.routingNumber && fields.routingNumber) {
+          payload.routingNumber = fields.routingNumber;
+          filledLabels.push("Routing Number");
+        }
+        if (!current.accountNumber && fields.accountNumber) {
+          payload.accountNumber = fields.accountNumber;
+          filledLabels.push("Account Number");
+        }
+        if (!current.fcDate && fields.fcDate) {
+          payload.fcDate = fields.fcDate;
+          filledLabels.push("FC Date");
+        }
+        if (!current.elDate && fields.elDate) {
+          payload.elDate = fields.elDate;
+          filledLabels.push("EL Date");
+        }
+
+        const willAssignAgent = !current.assignedTo && fields.agentUserId;
+        // Link hồ sơ gốc trên CRM — chỉ tự điền nếu ô "Client Name - Link" đang trống, KHÔNG
+        // ghi đè nếu hồ sơ đã tự gắn link nào khác từ trước (đúng nguyên tắc chỉ điền ô trống).
+        const willSetClientLink = !current.clientLink;
+
+        if (Object.keys(payload).length === 0 && !willAssignAgent && !willSetClientLink) {
+          return { ok: true, caseId: existingCaseId, created: false, skippedNoChanges: true } as const;
+        }
+
+        if (Object.keys(payload).length > 0) {
+          const result = await get().updateClientProfile(existingCaseId, payload);
+          if (!result.ok) return { ok: false, error: result.error } as const;
+        }
+        if (willAssignAgent) {
+          get().assignCase(existingCaseId, fields.agentUserId!, "assignedTo");
+          filledLabels.push("Agent");
+        }
+        if (willSetClientLink) {
+          get().updateClientLink(existingCaseId, sourceUrl);
+          filledLabels.push("Link CRM");
+        }
+        logEdit(existingCaseId, "Nhập từ CRM", "", `Điền thêm từ CRM agentc3 (${sourceCustomerId}): ${filledLabels.join(", ")}`);
+        return { ok: true, caseId: existingCaseId, created: false } as const;
       },
 
       deleteRow: (caseId, deletedByUserId) => {
