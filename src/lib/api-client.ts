@@ -56,6 +56,7 @@ export interface ApiUser {
   avatarUrl: string | null;
   teamMemberIds?: string[];
   webmailUsername?: string | null;
+  teamsWebhookUrl?: string | null;
 }
 
 export const api = {
@@ -77,6 +78,10 @@ export const api = {
    * lowercase + kiểm tra trùng, trả 409 nếu email đã dùng cho tài khoản khác. */
   updateUserEmail: (userId: string, email: string) =>
     request<ApiUser>(`/api/users/${userId}`, { method: "PATCH", body: JSON.stringify({ email }) }),
+  /** Admin cấu hình/gỡ webhook Teams của Agent 1 (xem PATCH /api/users/[id]) — chuỗi rỗng
+   * hoặc null gỡ cấu hình. */
+  updateUserTeamsWebhook: (userId: string, teamsWebhookUrl: string | null) =>
+    request<ApiUser>(`/api/users/${userId}`, { method: "PATCH", body: JSON.stringify({ teamsWebhookUrl }) }),
   changePassword: (userId: string, currentPassword: string, newPassword: string) =>
     request<{ ok: true }>(`/api/users/${userId}`, {
       method: "PATCH",
@@ -92,8 +97,13 @@ export const api = {
 
   listCases: () => request<CaseRecord[]>("/api/cases"),
   createCase: (kase: CaseRecord) => request<CaseRecord>("/api/cases", { method: "POST", body: JSON.stringify(kase) }),
-  patchCase: (caseId: string, patch: Partial<CaseRecord>) =>
-    request<{ id: string; updatedAt: string }>(`/api/cases/${caseId}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  patchCase: (
+    caseId: string,
+    // `teamsAttachments` là field TẠM THỜI (không thuộc CaseRecord, không lưu DB) — chỉ dùng
+    // để server đính link file vào tin nhắn Teams khi Processor reply Description, xem
+    // PATCH /api/cases/[id]/route.ts.
+    patch: Partial<CaseRecord> & { teamsAttachments?: { name: string; url: string }[] }
+  ) => request<{ id: string; updatedAt: string }>(`/api/cases/${caseId}`, { method: "PATCH", body: JSON.stringify(patch) }),
   deleteCase: (caseId: string) => request<{ ok: true }>(`/api/cases/${caseId}`, { method: "DELETE" }),
 
   listCollecting: () => request<CollectingRecord[]>("/api/collecting"),

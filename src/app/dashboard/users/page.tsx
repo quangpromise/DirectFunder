@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Plus, Trash2, ShieldAlert, X, Users, Key, Mail, CheckCircle2, Search } from "lucide-react";
+import { Plus, Trash2, ShieldAlert, X, Users, Key, Mail, Webhook, CheckCircle2, Search } from "lucide-react";
 import { useAppStore, useCurrentUser } from "@/store/app-store";
 import { ROLE_LABEL, Role, LEADER_MANAGES_ROLE, User } from "@/lib/types";
 import { ASSIGNABLE_ROLES } from "@/lib/rbac";
@@ -26,6 +26,7 @@ export default function UsersPage() {
   const updateUserTeam = useAppStore((s) => s.updateUserTeam);
   const resetUserPassword = useAppStore((s) => s.resetUserPassword);
   const updateUserEmail = useAppStore((s) => s.updateUserEmail);
+  const updateUserTeamsWebhook = useAppStore((s) => s.updateUserTeamsWebhook);
 
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
@@ -44,6 +45,10 @@ export default function UsersPage() {
   const [editEmailValue, setEditEmailValue] = useState("");
   const [editEmailError, setEditEmailError] = useState("");
   const [editEmailSuccess, setEditEmailSuccess] = useState(false);
+  const [editTeamsUserId, setEditTeamsUserId] = useState<string | null>(null);
+  const [editTeamsValue, setEditTeamsValue] = useState("");
+  const [editTeamsError, setEditTeamsError] = useState("");
+  const [editTeamsSuccess, setEditTeamsSuccess] = useState(false);
   const t = useT();
   const { language } = useLanguage();
   const { confirm, ConfirmDialogUI } = useConfirm();
@@ -168,6 +173,26 @@ export default function UsersPage() {
     setEditEmailSuccess(true);
   }
 
+  const editTeamsUser = users.find((u) => u.id === editTeamsUserId) ?? null;
+
+  function openEditTeams(userId: string, currentWebhook: string | null | undefined) {
+    setEditTeamsUserId(userId);
+    setEditTeamsValue(currentWebhook ?? "");
+    setEditTeamsError("");
+    setEditTeamsSuccess(false);
+  }
+
+  async function handleEditTeams() {
+    if (!editTeamsUser) return;
+    const res = await updateUserTeamsWebhook(editTeamsUser.id, editTeamsValue.trim() || null);
+    if (!res.ok) {
+      setEditTeamsError(res.error || t("users.teamsWebhookError"));
+      return;
+    }
+    setEditTeamsError("");
+    setEditTeamsSuccess(true);
+  }
+
   const teamEditUser = users.find((u) => u.id === teamEditUserId) ?? null;
   const teamEditManagesRole = teamEditUser ? LEADER_MANAGES_ROLE[teamEditUser.role] : undefined;
   const teamEditCandidates = teamEditManagesRole ? users.filter((u) => u.role === teamEditManagesRole) : [];
@@ -242,6 +267,7 @@ export default function UsersPage() {
                     onAvatarChange={(url) => updateAvatar(u.id, url)}
                     onOpenResetPassword={() => openResetPassword(u.id)}
                     onOpenEditEmail={() => openEditEmail(u.id, u.email)}
+                    onOpenTeamsWebhook={() => openEditTeams(u.id, u.teamsWebhookUrl)}
                     onOpenTeamEdit={() => setTeamEditUserId(u.id)}
                   />
                 ))}
@@ -512,6 +538,64 @@ export default function UsersPage() {
           </div>
         </div>
       )}
+
+      {editTeamsUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4">
+          <div className="popover w-full max-w-sm rounded-2xl p-5 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold">
+                {t("users.teamsWebhook")} — {editTeamsUser.name}
+              </h3>
+              <button onClick={() => setEditTeamsUserId(null)} className="text-text-faint hover:text-text">
+                <X size={16} />
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-text-dim">{t("users.teamsWebhookHint")}</p>
+
+            <div className="mt-4">
+              <label className="mb-1 block text-xs text-text-dim">{t("users.teamsWebhookUrl")}</label>
+              <input
+                autoFocus
+                type="url"
+                value={editTeamsValue}
+                onChange={(e) => {
+                  setEditTeamsValue(e.target.value);
+                  setEditTeamsSuccess(false);
+                }}
+                placeholder="https://..."
+                className="w-full rounded-lg border border-border bg-bg-elevated px-3 py-2 text-sm outline-none focus:border-accent"
+              />
+            </div>
+
+            {editTeamsError && (
+              <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300 light:text-red-700">
+                {editTeamsError}
+              </div>
+            )}
+            {editTeamsSuccess && (
+              <div className="mt-3 flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300 light:text-emerald-700">
+                <CheckCircle2 size={13} className="shrink-0" />
+                {t("users.teamsWebhookSuccess")}
+              </div>
+            )}
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                onClick={() => setEditTeamsUserId(null)}
+                className="rounded-lg px-3.5 py-2 text-sm text-text-dim hover:bg-surface-hover"
+              >
+                {t("common.close")}
+              </button>
+              <button
+                onClick={handleEditTeams}
+                className="gradient-btn rounded-lg px-3.5 py-2 text-sm font-medium text-white"
+              >
+                {t("common.save")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -530,6 +614,7 @@ function UserCard({
   onAvatarChange,
   onOpenResetPassword,
   onOpenEditEmail,
+  onOpenTeamsWebhook,
   onOpenTeamEdit,
 }: {
   u: User;
@@ -540,6 +625,7 @@ function UserCard({
   onAvatarChange: (url: string | null) => void;
   onOpenResetPassword: () => void;
   onOpenEditEmail: () => void;
+  onOpenTeamsWebhook: () => void;
   onOpenTeamEdit: () => void;
 }) {
   const t = useT();
@@ -590,6 +676,17 @@ function UserCard({
         >
           <Mail size={13} />
         </button>
+
+        {u.role === "agent" && (
+          <button
+            onClick={onOpenTeamsWebhook}
+            title={t("users.teamsWebhook")}
+            aria-label={t("users.teamsWebhook")}
+            className="shrink-0 rounded-md border border-border p-1.5 text-text-faint transition hover:bg-surface-hover hover:text-text"
+          >
+            <Webhook size={13} />
+          </button>
+        )}
 
         {isTeamLead && (
           <button

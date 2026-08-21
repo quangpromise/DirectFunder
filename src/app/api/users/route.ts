@@ -25,6 +25,7 @@ export async function GET() {
       avatarUrl: true,
       teamMemberIds: true,
       webmailUsername: true,
+      teamsWebhookUrl: true,
     },
   });
   return NextResponse.json(users);
@@ -82,6 +83,7 @@ export async function POST(request: NextRequest) {
       avatarUrl: user.avatarUrl,
       teamMemberIds: user.teamMemberIds,
       webmailUsername: user.webmailUsername,
+      teamsWebhookUrl: user.teamsWebhookUrl,
     },
     { status: 201 }
   );

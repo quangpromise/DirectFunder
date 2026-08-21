@@ -45,7 +45,13 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/users/
     return NextResponse.json({ ok: true });
   }
 
-  const patch: { role?: string; email?: string; avatarUrl?: string | null; teamMemberIds?: string[] } = {};
+  const patch: {
+    role?: string;
+    email?: string;
+    avatarUrl?: string | null;
+    teamMemberIds?: string[];
+    teamsWebhookUrl?: string | null;
+  } = {};
   if (typeof body.role === "string") {
     if (!(await canManageUsers(me.role))) {
       return NextResponse.json({ error: "Không có quyền quản lý tài khoản" }, { status: 403 });
@@ -78,6 +84,16 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/users/
     }
     patch.teamMemberIds = body.teamMemberIds.map(String);
   }
+  if ("teamsWebhookUrl" in body) {
+    if (!(await canManageUsers(me.role))) {
+      return NextResponse.json({ error: "Không có quyền cấu hình Teams webhook" }, { status: 403 });
+    }
+    const raw = typeof body.teamsWebhookUrl === "string" ? body.teamsWebhookUrl.trim() : "";
+    if (raw && !/^https:\/\//i.test(raw)) {
+      return NextResponse.json({ error: "Teams webhook URL phải bắt đầu bằng https://" }, { status: 400 });
+    }
+    patch.teamsWebhookUrl = raw || null;
+  }
   const user = await prisma.user.update({ where: { id }, data: patch });
   return NextResponse.json({
     id: user.id,
@@ -89,6 +105,7 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/users/
     avatarUrl: user.avatarUrl,
     teamMemberIds: user.teamMemberIds,
     webmailUsername: user.webmailUsername,
+    teamsWebhookUrl: user.teamsWebhookUrl,
   });
 }
 

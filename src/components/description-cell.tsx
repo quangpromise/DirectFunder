@@ -2,12 +2,19 @@
 
 import { useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { History, MessageSquarePlus, X } from "lucide-react";
+import { upload } from "@vercel/blob/client";
+import { History, MessageSquarePlus, Paperclip, X } from "lucide-react";
 import { DescriptionReply, User } from "@/lib/types";
 import { Avatar } from "@/components/avatar";
 import { useT } from "@/lib/i18n";
 
 const MENU_MARGIN = 8;
+// File đính kèm CHỈ dùng để gửi kèm tin nhắn Teams (Processor -> Agent 1) khi reply
+// Description — KHÔNG lưu lại trong app (server tự xoá blob ngay sau khi gửi xong, xem
+// PATCH /api/cases/[id]/route.ts) — giới hạn dung lượng hợp lý, không phải giới hạn kỹ
+// thuật của Vercel Blob.
+const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+const MAX_ATTACHMENTS = 5;
 
 function formatTime(iso: string): string {
   const d = new Date(iso);
@@ -15,6 +22,7 @@ function formatTime(iso: string): string {
 }
 
 export function DescriptionCell({
+  caseId,
   description,
   replies,
   unread,
@@ -23,19 +31,24 @@ export function DescriptionCell({
   onReply,
   onMarkRead,
 }: {
+  caseId: string;
   description: string;
   replies: DescriptionReply[];
   unread: boolean;
   users: User[];
   editable: boolean;
-  onReply: (text: string) => void;
+  onReply: (text: string, teamsAttachments?: { name: string; url: string }[]) => void;
   onMarkRead: () => void;
 }) {
   const [hovering, setHovering] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [replyOpen, setReplyOpen] = useState(false);
   const [replyDraft, setReplyDraft] = useState("");
+  const [pendingFiles, setPendingFiles] = useState<{ name: string; url: string }[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [attachError, setAttachError] = useState("");
   const [popoverPos, setPopoverPos] = useState({ x: 0, y: 0 });
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const cellRef = useRef<HTMLDivElement>(null);
   const replyBtnRef = useRef<HTMLButtonElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -95,15 +108,53 @@ export function DescriptionCell({
     activeAlignRight.current = true;
     setHistoryOpen(false);
     setReplyDraft("");
+    setPendingFiles([]);
+    setAttachError("");
     setReplyOpen(true);
     setTimeout(() => textareaRef.current?.focus(), 0);
   }
 
+  // Upload thẳng lên Vercel Blob (né giới hạn ~4.5MB thân request) — file CHỈ dùng để đính
+  // link vào tin nhắn Teams, server tự xoá ngay sau khi gửi (không lưu lại trong app).
+  async function handleFilesSelected(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    setAttachError("");
+    const list = Array.from(files);
+    if (pendingFiles.length + list.length > MAX_ATTACHMENTS) {
+      setAttachError(t("desc.tooManyAttachments"));
+      return;
+    }
+    const tooBig = list.find((f) => f.size > MAX_ATTACHMENT_BYTES);
+    if (tooBig) {
+      setAttachError(t("desc.attachmentTooLarge"));
+      return;
+    }
+    setUploading(true);
+    try {
+      const uploaded = await Promise.all(
+        list.map(async (file) => {
+          const blob = await upload(file.name, file, {
+            access: "public",
+            handleUploadUrl: `/api/cases/${caseId}/description-attachment-upload`,
+          });
+          return { name: file.name, url: blob.url };
+        })
+      );
+      setPendingFiles((prev) => [...prev, ...uploaded]);
+    } catch {
+      setAttachError(t("desc.attachmentUploadError"));
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
   function submitReply() {
     const trimmed = replyDraft.trim();
-    if (!trimmed) return;
-    onReply(trimmed);
+    if (!trimmed && pendingFiles.length === 0) return;
+    onReply(trimmed, pendingFiles.length > 0 ? pendingFiles : undefined);
     setReplyDraft("");
+    setPendingFiles([]);
     setReplyOpen(false);
   }
 
@@ -239,13 +290,48 @@ export function DescriptionCell({
                 rows={3}
                 className="w-full resize-none rounded-md border border-border bg-bg-elevated px-2 py-1.5 text-xs outline-none focus:border-accent"
               />
-              <div className="mt-2 flex items-center justify-end">
+              {pendingFiles.length > 0 && (
+                <div className="mt-1.5 flex flex-col gap-1">
+                  {pendingFiles.map((f, i) => (
+                    <div
+                      key={`${f.url}:${i}`}
+                      className="flex items-center justify-between gap-1.5 rounded-md bg-surface px-1.5 py-1 text-[11px] text-text-dim"
+                    >
+                      <span className="min-w-0 flex-1 truncate">{f.name}</span>
+                      <button
+                        onClick={() => setPendingFiles((prev) => prev.filter((_, idx) => idx !== i))}
+                        className="shrink-0 text-text-faint hover:text-text"
+                      >
+                        <X size={11} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {attachError && <p className="mt-1.5 text-[11px] text-red-400">{attachError}</p>}
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                className="hidden"
+                onChange={(e) => handleFilesSelected(e.target.files)}
+              />
+              <div className="mt-2 flex items-center justify-between">
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                  title={t("desc.attachFile")}
+                  aria-label={t("desc.attachFile")}
+                  className="flex h-7 w-7 items-center justify-center rounded-md text-text-faint transition hover:bg-surface-hover hover:text-text disabled:opacity-40"
+                >
+                  <Paperclip size={13} />
+                </button>
                 <button
                   onClick={submitReply}
-                  disabled={!replyDraft.trim()}
+                  disabled={(!replyDraft.trim() && pendingFiles.length === 0) || uploading}
                   className="gradient-btn rounded-md px-2.5 py-1 text-xs font-medium text-white disabled:opacity-40"
                 >
-                  {t("desc.send")}
+                  {uploading ? t("desc.uploading") : t("desc.send")}
                 </button>
               </div>
             </div>

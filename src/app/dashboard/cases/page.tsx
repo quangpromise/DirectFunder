@@ -1544,7 +1544,12 @@ function RowCells({
   updateRefundYearStatus: (caseId: string, year: string, status: RefundYearStatus) => void;
   updateRefundYearPendingReason: (caseId: string, year: string, reason: string) => void;
   updateClientProfile: (caseId: string, payload: ClientProfilePayload) => Promise<{ ok: true } | { ok: false; error: string }>;
-  addDescriptionReply: (caseId: string, authorId: string, text: string) => void;
+  addDescriptionReply: (
+    caseId: string,
+    authorId: string,
+    text: string,
+    teamsAttachments?: { name: string; url: string }[]
+  ) => void;
   markDescriptionRead: (caseId: string, userId: string) => void;
   canAssignFeature: boolean;
   canDeleteRowFeature: boolean;
@@ -1836,12 +1841,13 @@ function RowCells({
             className="flex h-full items-center justify-center border-b border-r border-border bg-[var(--row-bg)] transition-colors group-hover:bg-surface-hover"
           >
             <DescriptionCell
+              caseId={row.id}
               description={row.description}
               replies={row.descriptionReplies}
               unread={row.descriptionReplies.length > 0 && !row.descriptionReadBy.includes(user.id)}
               users={users}
               editable={canEditColumn(user.role, col) && canEditRow}
-              onReply={(text) => addDescriptionReply(row.id, user.id, text)}
+              onReply={(text, teamsAttachments) => addDescriptionReply(row.id, user.id, text, teamsAttachments)}
               onMarkRead={() => markDescriptionRead(row.id, user.id)}
             />
           </div>
