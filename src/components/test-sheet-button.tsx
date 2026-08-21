@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import Image from "next/image";
 import { Search, X } from "lucide-react";
 import { useT } from "@/lib/i18n";
 import { REFUND_YEARS } from "@/lib/refund";
@@ -219,7 +220,7 @@ export function TestSheetButton({
             orange-100, icon đen đã đủ rõ) — lúc đã gửi (nền xanh lá đậm bg-green-600 kể cả
             Light Mode) vẫn cần trắng để khớp màu chữ trắng của 3 icon lucide còn lại. Thêm
             2026-08-16, sửa lỗi icon gần như vô hình trên nền cam đậm ở Dark Mode. */}
-        <img
+        <Image
           src="/google-sheets-icon.png"
           alt=""
           width={11}

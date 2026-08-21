@@ -1,6 +1,6 @@
 ---
 name: agentc3-crm-import
-description: How the "Nhập từ CRM" toolbar button (bảng Hồ sơ) reads a customer profile from the external CRM tax.agentc3.com and creates/fills a Direct Funder case. Read this before touching src/lib/agentc3-client.ts, src/app/api/agentc3-import/fetch/route.ts, src/components/agentc3-import-dialog.tsx, or the importCaseFromAgentC3 store action — or before adding a similar "import from an external system" feature.
+description: How Direct Funder talks to the external CRM tax.agentc3.com — reading a customer profile into a new/existing case ("Nhập từ CRM") and writing Status/CPA Review/Conversation Log/documents back to it ("Update to CRM"). Read this before touching src/lib/agentc3-client.ts, any file under src/app/api/agentc3-import/, src/components/agentc3-import-dialog.tsx, src/components/agentc3-update-to-crm-dialog.tsx, or the importCaseFromAgentC3 store action — or before adding a similar "sync with an external system" feature.
 ---
 
 # Nhập hồ sơ từ CRM ngoài (tax.agentc3.com)
@@ -161,3 +161,48 @@ Turbopack cold-compile + nhiều browser Playwright chạy song song).
 501 "Chưa cấu hình..." (`AgentC3ConfigError`), không crash app. **Production**: cần thêm 2
 biến này vào Vercel Environment Variables — không đổi schema/không cần `prisma migrate deploy`
 (tính năng không đụng `DEFAULT_COLUMNS`/`DEFAULT_FEATURE_PERMISSIONS`/DB schema nào cả).
+
+## Chiều NGƯỢC LẠI: "Update to CRM" (ghi từ Direct Funder LÊN CRM, thêm 2026-08-21)
+
+Popup theo hồ sơ (icon `RefreshCw` trong "Gửi dữ liệu"/`SendActionsMenuButton`) — set CPA
+Review, đổi Status (CỦA CRM, khác Status Direct Funder), thêm 1 dòng Conversation Log, upload
+file vào tab Documentation. Dùng CHUNG `agentc3-client.ts`/session cookie/cheerio parsing với
+chiều đọc ở trên nhưng thêm 1 lớp mới: **snapshot-and-resubmit toàn bộ form Lead** (CRM dùng 1
+`<form>` duy nhất cho cả Lead lẫn Conversation, submit qua tên nút bấm khác nhau —
+`btnChangeLeadinfo`/`btnChangeConv` — nhưng field nào cũng được gửi kèm bất kể bấm nút nào,
+đúng hành vi HTML form gốc).
+
+**Bẫy nghiêm trọng đã tự gặp + vá (đọc kỹ trước khi sửa `extractLeadFormFields()`)**: trình
+duyệt thật KHÔNG BAO GIỜ submit field có thuộc tính `disabled`. 1 số field CRM (vd `processor`)
+có CẢ `<input type="hidden" name="processor" value="...">` THẬT lẫn 1 `<select name="processor"
+disabled>` cùng tên — nếu đọc snapshot không lọc `disabled`, sẽ đọc nhầm select rỗng rồi gửi
+`processor=<value thật>&processor=` (2 giá trị cùng tên, PHP lấy giá trị CUỐI) → xoá mất dữ liệu
+thật. `extractLeadFormFields()` PHẢI bỏ qua mọi phần tử có `disabled` — đã fix, đừng revert.
+
+**Rủi ro còn tồn tại (chưa vá, chỉ ghi nhận)**: 1 số field (vd `refund_2023`) có thể được CRM
+server-render TEXT trạng thái tính toán (vd "Can not process") thẳng vào `value` của input vốn
+để nhập số — resubmit nguyên trạng có thể vô tình "đóng băng" giá trị đó thành text thay vì số.
+Chưa có ca thật nào do code gây ra (1 lần điều tra ra là do người dùng tự sửa tay trên CRM), nhưng
+nếu gặp lại, đây là hướng điều tra đầu tiên.
+
+**Status/Processing Date rỗng = XOÁ, không phải "bỏ qua"**: route `update-to-crm` chấp nhận
+chuỗi rỗng tường minh cho 2 field này (khác hầu hết chỗ khác trong app coi rỗng = "chưa nhập
+gì") — vì popup luôn điền sẵn giá trị THẬT đang có trên CRM lúc mở, nên người dùng xoá trắng
+nghĩa là chủ động muốn xoá trên CRM. Test bằng `payload.status !== undefined` (không phải
+`payload.status || undefined`) xuyên suốt: dialog → `api-client.ts` → route.
+
+Không đổi schema/feature-permission — dùng lại `canViewCase`/`canEditCase` sẵn có.
+
+## Đã thử và bỏ: tự động kéo Conversation Log vào Description (2026-08-21)
+
+Từng xây xong + tự test end-to-end (cron piggyback `ringcentral-renew`, cột mới
+`Case.crmConversationLogSyncedAt`, `authorId` hệ thống `system:agentc3-crm-sync`) nhưng **đã
+GỠ BỎ HOÀN TOÀN** theo yêu cầu người dùng cùng ngày — lý do: gói Vercel Hobby chỉ cho Cron Job
+chạy tối đa 1 lần/ngày nên độ trễ đồng bộ tới ~24h, người dùng muốn nhanh hơn (~3 tiếng/lần)
+nhưng không sẵn sàng nâng lên gói Pro, nên quyết định không dùng tính năng này nữa thay vì
+chấp nhận độ trễ 24h. Đã revert sạch: xoá `agentc3-conversation-sync.ts`,
+`agentc3-conversation-constants.ts`, route `cron/crm-conversation-sync-check`, migration cột
+`crmConversationLogSyncedAt` (cả schema lẫn DB dev local), và mọi thay đổi liên quan ở
+`agentc3-client.ts`/`description-cell.tsx`/`cron/ringcentral-renew`. Nếu sau này cần lại tính
+năng tương tự, cân nhắc trigger "on-demand khi mở hồ sơ/popup" thay vì cron định kỳ — không bị
+giới hạn bởi số lần chạy Cron Job của Hobby.

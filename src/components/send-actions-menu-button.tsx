@@ -2,6 +2,7 @@
 
 import { ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import Image from "next/image";
 import { useT } from "@/lib/i18n";
 
 const MENU_MARGIN = 8;
@@ -72,7 +73,7 @@ export function SendActionsMenuButton({ children, allSent }: { children: ReactNo
             : "border-border bg-transparent hover:bg-surface-hover"
         }`}
       >
-        <img src="/send-data-icon.png" alt="" width={18} height={18} className="object-contain" />
+        <Image src="/send-data-icon.png" alt="" width={18} height={18} className="object-contain" />
       </button>
 
       {open &&

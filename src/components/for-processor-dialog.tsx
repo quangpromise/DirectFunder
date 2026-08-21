@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import dynamic from "next/dynamic";
 import {
   X,
   ClipboardList,
@@ -24,8 +25,17 @@ import { api } from "@/lib/api-client";
 import { CpaReviewMonthPicker } from "@/components/cpa-review-month-picker";
 import { monthKeyLabel } from "@/lib/cpa-review-month";
 import { useConfirm } from "@/components/confirm-dialog";
-import { NoticeSplitterPanel } from "@/components/notice-splitter-panel";
 import type { ProcessorReportTaskDef } from "@/lib/types";
+
+/** `NoticeSplitterPanel` kéo theo `pdf-lib` (nặng, xem comment trong split-pdf.ts) — trước
+ * đây import tĩnh khiến `pdf-lib` bị cộng dồn vào bundle của TRANG HỒ SƠ (nơi popup "For
+ * Processor" được render), dù tab "Notice Splitter" không phải ai cũng bấm tới. `next/dynamic`
+ * (`ssr: false` vì panel chỉ chạy trong trình duyệt — xử lý PDF client-side, không có gì để
+ * render phía server) tách hẳn thành 1 chunk riêng, chỉ tải khi tab này thực sự được chọn. */
+const NoticeSplitterPanel = dynamic(
+  () => import("@/components/notice-splitter-panel").then((m) => m.NoticeSplitterPanel),
+  { ssr: false }
+);
 
 /** Danh sách ngày "YYYY-MM-DD" của 1 tháng, kèm chỉ số tuần (W1, W2...) tính theo tuần lịch
  * Chủ nhật-Thứ 7 (khớp cách bố cục W1/W2 trong bảng Excel gốc user cung cấp). */

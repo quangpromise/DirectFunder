@@ -1,10 +1,21 @@
-import * as XLSX from "xlsx";
+/** `xlsx` (SheetJS) nặng (~1MB chưa nén) nhưng chỉ dùng cho vài hành động bấm thỉnh thoảng
+ * (tải mẫu/nhập Excel) — lazy-import thay vì `import * as XLSX from "xlsx"` ở top-level để
+ * KHÔNG cộng dồn vào bundle ban đầu của trang Hồ sơ/Order (đã xác nhận qua `next build` thật:
+ * trước khi sửa, chunk chứa `xlsx` bị 2 trang này tải ngay cả khi không ai bấm Excel). Cache
+ * lại module đã tải (giống pattern `extract-text-browser.ts`) để các lần gọi sau trong cùng
+ * phiên không tải lại. */
+let xlsxPromise: Promise<typeof import("xlsx")> | null = null;
+function loadXlsx(): Promise<typeof import("xlsx")> {
+  if (!xlsxPromise) xlsxPromise = import("xlsx");
+  return xlsxPromise;
+}
 
 /** Thứ tự cột cố định cho cả file mẫu tải xuống lẫn file Excel người dùng tải lên —
  * đổi thứ tự/tên ở đây thì cả 2 chiều (export/import) tự khớp theo nhau. */
 export const CASE_TEMPLATE_HEADERS = ["Client Name", "SSN", "Phone", "ZIP"] as const;
 
-export function downloadCaseTemplate(): void {
+export async function downloadCaseTemplate(): Promise<void> {
+  const XLSX = await loadXlsx();
   const ws = XLSX.utils.aoa_to_sheet([[...CASE_TEMPLATE_HEADERS]]);
   ws["!cols"] = CASE_TEMPLATE_HEADERS.map(() => ({ wch: 20 }));
   const wb = XLSX.utils.book_new();
@@ -18,7 +29,8 @@ export function downloadCaseTemplate(): void {
  * hiển thị) — bị bỏ qua khi import, không cần điền. */
 export const ORDER_TEMPLATE_HEADERS = ["Client Name", "Phone", "SSN", "Format Name", "Address"] as const;
 
-export function downloadOrderCaseTemplate(): void {
+export async function downloadOrderCaseTemplate(): Promise<void> {
+  const XLSX = await loadXlsx();
   const ws = XLSX.utils.aoa_to_sheet([[...ORDER_TEMPLATE_HEADERS]]);
   ws["!cols"] = ORDER_TEMPLATE_HEADERS.map(() => ({ wch: 20 }));
   const wb = XLSX.utils.book_new();
@@ -83,6 +95,7 @@ export function formatDuplicateSsnLines(
  * trị hiển thị vừa lấy được hyperlink gắn trên ô "Client Name" (cell.l.Target) — sheet_to_json
  * chỉ trả về giá trị text, không giữ lại hyperlink. */
 export async function parseCaseExcelFile(file: File): Promise<ParsedCaseRow[]> {
+  const XLSX = await loadXlsx();
   const buf = await file.arrayBuffer();
   const wb = XLSX.read(buf, { type: "array" });
   const sheet = wb.Sheets[wb.SheetNames[0]];

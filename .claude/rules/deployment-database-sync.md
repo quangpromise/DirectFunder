@@ -527,6 +527,79 @@ KHÔNG đổi `DEFAULT_COLUMNS`/`DEFAULT_FEATURE_PERMISSIONS`/`AppConfig`** (dù
 4. Dán lại ĐÚNG link đó lần 2 → xác nhận preview hiện banner "Đã tìm thấy hồ sơ có sẵn", các ô đã có dữ liệu bị khoá xám, bấm "Cập nhật hồ sơ" (nếu còn ô trống) hoặc thấy báo "không có gì để cập nhật" (nếu mọi field CRM tương ứng đã đầy đủ) — không tạo hồ sơ trùng.
 5. Đăng nhập bằng tài khoản KHÔNG có quyền `addRow` → xác nhận không thấy nút "Nhập từ CRM" trên toolbar.
 
+### 4.36 [CHỜ XỬ LÝ] Nút "Update to CRM" — ghi ngược Status/CPA Review/Conversation Log/tài liệu 1040X LÊN CRM agentc3 (thêm 2026-08-21)
+
+Chiều NGƯỢC LẠI của mục 4.35 (nhập TỪ CRM) — nút icon `RefreshCw` trong popup "Gửi dữ liệu"
+(`SendActionsMenuButton`, cạnh Send to Sheet/CPA Email/Test Sheet/Client Email), chỉ hiện nếu
+hồ sơ đã có `clientLink` trỏ về `tax.agentc3.com`. Popup chọn năm → set CPA Review = ngày hệ
+thống cho từng năm đã chọn, đổi Status theo đúng danh sách Status CỦA CRM (không phải Status
+Direct Funder), tự soạn 1 dòng Conversation Log theo refund/Tax on INT từng năm (sửa tay được
+trước khi gửi), và/hoặc upload file vào đúng ô "{năm} 1040X - Submitted" trong tab Documentation
+của CRM. Cơ chế ghi: đọc lại TOÀN BỘ field ẩn của form Lead CRM ngay trước khi gửi (tránh dùng
+snapshot cũ), CHỈ đổi field người dùng chọn, resubmit — có bẫy quan trọng đã tự phát hiện+vá:
+bỏ qua mọi `<input>/<select>` có thuộc tính `disabled` khi đọc snapshot (trình duyệt thật
+không submit field disabled — đọc nhầm sẽ ghi đè mất dữ liệu thật, xem comment trong
+`src/lib/agentc3-client.ts`).
+
+**Đây CHỈ là thêm code (2 route mới `crm-context`/`update-to-crm`, 1 dialog mới) — KHÔNG đổi
+schema, KHÔNG đổi `DEFAULT_COLUMNS`/`DEFAULT_FEATURE_PERMISSIONS`/`AppConfig`** (dùng lại đúng
+`canViewCase`/`canEditCase` sẵn có, không có feature key riêng) nên **không cần**
+`prisma migrate deploy`, **không cần** script merge `AppConfig`. Dùng CHUNG
+`AGENTC3_USERNAME`/`AGENTC3_PASSWORD` đã cấu hình từ mục 4.35 — không cần thêm biến môi
+trường nào khác.
+
+**Sau khi deploy code này lên production PHẢI làm đủ các bước sau** (xoá mục này khỏi file khi đã làm xong):
+1. Đăng nhập production bằng tài khoản có quyền xem/sửa hồ sơ, mở 1 hồ sơ đã liên kết
+   `tax.agentc3.com` → bấm nút "Gửi dữ liệu" → xác nhận thấy dòng "Update to CRM" trong popup,
+   bấm vào mở đúng dialog chọn năm, Status/Performed By đọc đúng danh sách hiện có trên CRM.
+2. Chọn 1 năm, để CPA Review mặc định (ngày hệ thống), gõ thử Conversation Log → bấm gửi →
+   xác nhận trên CRM thật: CPA Review năm đó = hôm nay, Conversation Log có dòng mới đúng nội
+   dung, KHÔNG có field nào khác bị đổi ngoài dự kiến (so sánh trước/sau nếu nghi ngờ).
+3. Thử xoá Processing Date trong popup rồi gửi → xác nhận Processing Date trên CRM cũng bị
+   xoá theo (không chỉ ở local).
+4. Thử upload 1 file vào ô "{năm} 1040X - Submitted" → xác nhận file xuất hiện đúng slot trong
+   tab Documentation của CRM.
+
+### 4.37 Tối ưu tải trang Hồ sơ + tự xoá lịch sử sửa/xoá quá 30 ngày (thêm 2026-08-21)
+
+Rà soát hiệu năng phát hiện qua `next build` thật: bundle của `/dashboard/cases` cõng theo
+toàn bộ thư viện `xlsx` (SheetJS) + `pdf-lib` dù 2 thư viện này chỉ dùng cho hành động bấm
+thỉnh thoảng (Nhập/Tải Excel mẫu; tab "Notice Splitter" trong popup "For Processor") — xác
+nhận qua `page_client-reference-manifest.js`: trước khi sửa, 1 chunk 680 KB raw/~226 KB gzip
+chỉ bị `/dashboard/cases` tham chiếu (không trang dashboard nào khác đụng tới). Đã sửa:
+- `src/lib/excel.ts`: `xlsx` đổi từ `import * as XLSX from "xlsx"` (top-level) sang lazy-import
+  qua `loadXlsx()` (cache module promise), gọi bên trong `downloadCaseTemplate`/
+  `downloadOrderCaseTemplate`/`parseCaseExcelFile` — cả 3 hàm đổi thành `async`.
+- `src/components/for-processor-dialog.tsx`: `NoticeSplitterPanel` đổi từ import tĩnh sang
+  `next/dynamic(..., { ssr: false })` — component đầu tiên trong repo dùng `next/dynamic` (chưa
+  có tiền lệ trước đó), chỉ tải chunk chứa `pdf-lib` khi tab "Notice Splitter" thực sự được mở.
+- `send-actions-menu-button.tsx`/`test-sheet-button.tsx`: đổi 2 chỗ `<img>` thô sang
+  `next/image` (ESLint `@next/next/no-img-element` đã cảnh báo sẵn từ trước, giờ mới sửa).
+
+Đã tự kiểm tra: `next build` thật sau khi sửa xác nhận chunk chứa chuỗi `"SheetJS"` (472 KB) và
+chunk chứa `PDFDocument` (388 KB) KHÔNG còn nằm trong danh sách chunk mà
+`page_client-reference-manifest.js` của `/dashboard/cases` tham chiếu nữa (trước đó có). Test
+qua Playwright thật: bấm "Tải Excel mẫu" vẫn tải đúng file `.xlsx`; mở popup "For Processor" →
+tab "Notice Splitter" vẫn hiển thị đúng (thấy Turbopack tự "Compiling..." chunk riêng lúc mở
+tab lần đầu — đúng hành vi lazy); không có lỗi console nào. `tsc --noEmit`/`eslint` sạch.
+
+**Thêm `src/lib/history-cleanup.ts`** (`cleanupOldHistory()`) — xoá mọi dòng
+`EditHistoryEntry`/`DeletedRowEntry` cũ hơn 30 ngày (`RETENTION_DAYS`), piggyback trên cron
+`blob-cleanup` có sẵn (chạy 1 lần/ngày, xem comment trong route đó — cùng lý do các piggyback
+khác trong repo, không đăng ký thêm Cron Job vì giới hạn gói Hobby). Lý do: `GET
+/api/history/edits` KHÔNG phân trang, tải TOÀN BỘ bảng mỗi lần BẤT KỲ ai vào dashboard (xem
+`hydrateFromServer` trong `app-store.ts`) — bảng này trước đây chỉ tăng, không bao giờ xoá.
+Đã tự test bằng script trực tiếp trên DB dev: chèn 1 dòng `EditHistoryEntry` giả với
+`editedAt` cách đây 40 ngày, chạy `deleteMany({ editedAt: { lt: cutoff } })` → xác nhận đúng
+1 dòng đó bị xoá, các dòng gần đây (trong 180 dòng thật của DB dev) vẫn còn nguyên.
+
+**Không đổi schema** (chỉ xoá dữ liệu qua `deleteMany`, không đổi cột nào) — **không cần**
+`prisma migrate deploy`, không cần script merge `AppConfig`. Chỉ cần deploy code — cron
+`blob-cleanup` đã chạy sẵn hằng ngày trên production nên KHÔNG cần thao tác gì thêm, nhưng
+**cần biết trước**: sau khi deploy, lần chạy cron kế tiếp (12:00 UTC) sẽ **xoá vĩnh viễn** mọi
+dòng lịch sử sửa/xoá cũ hơn 30 ngày hiện có trên production — nếu cần giữ lại lịch sử cũ hơn để
+tra cứu/audit lâu dài, hãy tự export trước khi deploy (chưa có sẵn tính năng export lịch sử).
+
 Mục 2–5 bên dưới là kiến trúc/quy trình đề xuất (phần lớn đã áp dụng đúng như mô tả, trừ Auth đã nêu ở trên). Mục 6 là checklist hành động cụ thể để đưa app này lên cloud thật.
 
 ## 2. Kiến trúc đề xuất

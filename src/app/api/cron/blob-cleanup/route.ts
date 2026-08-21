@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { list, del } from "@vercel/blob";
+import { cleanupOldHistory } from "@/lib/history-cleanup";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -27,12 +28,24 @@ const MAX_AGE_MS = 2 * 60 * 60 * 1000;
  *
  * Xác thực bằng CRON_SECRET (cùng cơ chế `cron/ringcentral-renew`) — KHÔNG dùng
  * session/requireUser() vì Vercel Cron không đăng nhập.
+ *
+ * Cũng piggyback dọn lịch sử sửa/xoá hồ sơ quá 30 ngày ở đây (xem
+ * `src/lib/history-cleanup.ts`) — cùng lý do "không đăng ký thêm Cron Job riêng" như các
+ * piggyback khác trong repo, 2 việc độc lập, lỗi bên nào không chặn bên kia.
  */
 export async function GET(request: NextRequest) {
   const expected = process.env.CRON_SECRET;
   const authHeader = request.headers.get("authorization");
   if (!expected || authHeader !== `Bearer ${expected}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  let historyCleanup: { deletedEdits: number; deletedDeletions: number } | { error: string };
+  try {
+    historyCleanup = await cleanupOldHistory();
+  } catch (err) {
+    console.error("[cron blob-cleanup] dọn lịch sử thất bại:", err);
+    historyCleanup = { error: "Dọn lịch sử quá 30 ngày thất bại." };
   }
 
   const cutoff = Date.now() - MAX_AGE_MS;
@@ -54,9 +67,9 @@ export async function GET(request: NextRequest) {
       cursor = page.cursor;
     }
 
-    return NextResponse.json({ ok: true, scannedCount, deletedCount });
+    return NextResponse.json({ ok: true, scannedCount, deletedCount, historyCleanup });
   } catch (err) {
     console.error("[cron blob-cleanup]", err);
-    return NextResponse.json({ ok: false, error: "Dọn dẹp Blob thất bại." }, { status: 502 });
+    return NextResponse.json({ ok: false, error: "Dọn dẹp Blob thất bại.", historyCleanup }, { status: 502 });
   }
 }
