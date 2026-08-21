@@ -4,6 +4,7 @@ import { todayIsoDate } from "@/lib/date-format";
 import { broadcastNotification } from "@/lib/pusher-server";
 import { toNotificationRecord } from "@/app/api/notifications/route";
 import type { ClientNameEntry, RefundYearAlarm } from "@/lib/types";
+import type { Prisma } from "@prisma/client";
 
 function caseRefLabel(c: { clients: [ClientNameEntry, ClientNameEntry]; ssn: [string | null, string | null] }): string {
   const name = getFullName(c);
@@ -58,7 +59,10 @@ export async function checkAndFireRefundYearAlarms(): Promise<{ checked: number;
     }
 
     if (changed) {
-      await prisma.case.update({ where: { id: kase.id }, data: { refundYearAlarm: nextAlarms } });
+      await prisma.case.update({
+        where: { id: kase.id },
+        data: { refundYearAlarm: nextAlarms as unknown as Prisma.InputJsonValue },
+      });
     }
   }
 
