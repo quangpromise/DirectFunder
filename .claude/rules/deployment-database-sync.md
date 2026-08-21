@@ -487,22 +487,6 @@ Vì tính năng Notice Splitter xử lý 100% trên trình duyệt (không còn 
 4. Đăng nhập bằng tài khoản KHÔNG phải manager (vd Processor/Kế toán) → mở tab Notice Splitter → xác nhận KHÔNG thấy nút bánh răng (chỉ xem/dùng danh sách hiện có, không sửa được).
 5. Reload trang (F5) sau khi đổi danh sách ở bước 3 → xác nhận danh sách vẫn giữ đúng thay đổi (đã lưu server, không chỉ local state).
 
-### 4.34 [CHỜ XỬ LÝ] Processor reply Description → tự động gửi tin sang Teams của Agent 1 (thêm 2026-08-21)
-
-Khi 1 tài khoản role CHÍNH XÁC "processor" (không tính processor_leader) thêm reply mới vào Description của 1 hồ sơ, server (`PATCH /api/cases/[id]`) tự động POST 1 tin nhắn text (tên Taxpayer + SSN + SĐT + nội dung reply + hyperlink `?highlight=<id>` trỏ thẳng vào hồ sơ đó, kèm link file đính kèm nếu có) tới webhook Teams riêng của Agent 1 (`Case.assignedTo` — KHÔNG áp dụng Agent 2/`assignedTo2`) — 1 CHIỀU (Processor → Teams), KHÔNG có đường ngược lại (không dùng Bot Framework/Azure Bot, tổ chức này trước đó không xin được quyền Admin Azure AD cho Microsoft Graph OAuth tương tự, xem mục lịch sử `webmailUsername` ở trên). Admin cấu hình webhook URL của từng Agent qua nút mới (icon Webhook, chỉ hiện với tài khoản role "agent") trong trang Quản lý tài khoản. File đính kèm (nếu Processor chọn khi reply) upload thẳng lên Vercel Blob (`src/app/api/cases/[id]/description-attachment-upload/route.ts`, cùng pattern `.claude/skills/vercel-blob-large-upload/SKILL.md`) — **KHÔNG lưu lại trong app** (không có field nào trong `DescriptionReply`/DB tham chiếu tới), server tự `del()` blob NGAY sau khi gửi Teams xong.
-
-Gồm ĐÚNG 1 thay đổi schema (cột mới nullable `User.teamsWebhookUrl`, migration `20260821020317_add_user_teams_webhook_url`) — KHÔNG đụng `DEFAULT_COLUMNS`/`DEFAULT_FEATURE_PERMISSIONS` (gate "ai kích hoạt gửi Teams" hard-code `role === "processor"`, không phải quyền cấp phát qua trang Phân quyền) nên **không cần script merge `AppConfig`**, chỉ cần `prisma migrate deploy`.
-
-**Sau khi deploy code này lên production PHẢI làm đủ các bước sau** (xoá mục này khỏi file khi đã làm xong):
-1. `prisma migrate deploy` nhắm production (thêm cột `teamsWebhookUrl` trên `users`, an toàn/additive/nullable).
-2. Đăng nhập production bằng tài khoản **manager** thật, vào Quản lý tài khoản, mở 1 tài khoản role **agent** thật, bấm icon Webhook mới, dán 1 URL test (vd `https://webhook.site/...`) → xác nhận lưu thành công, reload trang xác nhận vẫn còn giá trị vừa lưu.
-3. Đăng nhập bằng tài khoản **processor** thật, mở 1 hồ sơ đang gán đúng Agent vừa cấu hình ở bước 2 (slot Agent 1), thêm 1 reply Description mới (thử cả kèm 1 file đính kèm) → xác nhận webhook.site nhận đúng 1 POST với nội dung đúng tên Taxpayer + SSN + SĐT + nội dung reply + link file đính kèm + hyperlink `?highlight=<id>` (bấm thử link, xác nhận app cuộn tới đúng dòng và nhấp nháy).
-4. Xác nhận blob file test đã bị xoá khỏi Vercel Blob Dashboard SAU KHI gửi xong.
-5. Xác nhận reply vẫn hoạt động bình thường phía UI (row nhảy lên đầu bảng) kể cả khi thử với 1 URL webhook sai/không tồn tại — PATCH vẫn trả 200, lỗi chỉ lộ qua Vercel Logs (filter "teams-webhook"), không chặn người dùng.
-6. Đăng nhập bằng tài khoản **processor_leader** (không phải processor), thêm reply Description ở cùng hồ sơ → xác nhận KHÔNG có POST nào bắn tới Teams.
-7. Hồ sơ có cả Agent 1 và Agent 2 đều cấu hình webhook → xác nhận CHỈ webhook của Agent 1 nhận POST, Agent 2 KHÔNG nhận gì.
-8. Xoá URL test khỏi tài khoản Agent đó sau khi test xong, hướng dẫn Admin tự lấy webhook URL thật từ kênh Teams của từng Agent (Incoming Webhook connector hoặc Power Automate "Workflows" trigger) khi sẵn sàng dùng thật.
-
 Mục 2–5 bên dưới là kiến trúc/quy trình đề xuất (phần lớn đã áp dụng đúng như mô tả, trừ Auth đã nêu ở trên). Mục 6 là checklist hành động cụ thể để đưa app này lên cloud thật.
 
 ## 2. Kiến trúc đề xuất

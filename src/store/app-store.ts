@@ -308,15 +308,7 @@ interface AppState {
   updateOrderStatus: (caseId: string, orderId: string, status: string | null) => void;
   updateOrderMilestoneDate: (caseId: string, orderId: string, value: string | null) => void;
   assignOrderSupport: (caseId: string, orderId: string, toUserId: string | null) => void;
-  /** `teamsAttachments` — file đính kèm CHỈ dùng để đẩy link vào tin nhắn Teams khi
-   * Processor reply Description (server tự xoá blob ngay sau khi gửi) — KHÔNG lưu vào
-   * object reply/DB, xem src/lib/teams-webhook.ts. */
-  addDescriptionReply: (
-    caseId: string,
-    authorId: string,
-    text: string,
-    teamsAttachments?: { name: string; url: string }[]
-  ) => void;
+  addDescriptionReply: (caseId: string, authorId: string, text: string) => void;
   markDescriptionRead: (caseId: string, userId: string) => void;
 
   addColumn: (label: string, type: ColumnType, options?: Omit<SelectOption, "id">[]) => void;
@@ -395,11 +387,6 @@ interface AppState {
    * vì email unique, server có thể trả lỗi trùng (409), phải đợi kết quả thật trước khi cập
    * nhật state, tránh hiện email mới trên UI dù server đã từ chối. */
   updateUserEmail: (userId: string, email: string) => Promise<{ ok: true } | { ok: false; error: string }>;
-  /** Admin cấu hình/gỡ webhook Teams của Agent 1 — KHÔNG optimistic, đợi kết quả thật. */
-  updateUserTeamsWebhook: (
-    userId: string,
-    teamsWebhookUrl: string | null
-  ) => Promise<{ ok: true } | { ok: false; error: string }>;
 
   setFeaturePermission: (feature: FeatureKey, role: Role, allowed: boolean) => void;
   setCpaEmailDefaults: (defaults: CpaEmailDefaults) => void;
@@ -1348,7 +1335,7 @@ export const useAppStore = create<AppState>()(
         }
       },
 
-      addDescriptionReply: (caseId, authorId, text, teamsAttachments) => {
+      addDescriptionReply: (caseId, authorId, text) => {
         // Có description mới thì đẩy hẳn row của hồ sơ đó lên đầu bảng, giống thứ tự hội
         // thoại có tin nhắn mới nhất — phải gán sortOrder mới (giống addRow: -Date.now() luôn
         // nhỏ hơn mọi sortOrder hiện có) và lưu server, nếu không GET /api/cases (sắp xếp
@@ -1389,7 +1376,6 @@ export const useAppStore = create<AppState>()(
               descriptionReplies: kase.descriptionReplies,
               descriptionReadBy: kase.descriptionReadBy,
               sortOrder: newSortOrder,
-              teamsAttachments,
             })
           );
         }
@@ -1956,18 +1942,6 @@ export const useAppStore = create<AppState>()(
           return { ok: true };
         } catch (err) {
           return { ok: false, error: err instanceof Error ? err.message : "Đổi email thất bại" };
-        }
-      },
-
-      updateUserTeamsWebhook: async (userId, teamsWebhookUrl) => {
-        try {
-          const updated = await api.updateUserTeamsWebhook(userId, teamsWebhookUrl);
-          set((state) => ({
-            users: state.users.map((u) => (u.id === userId ? { ...u, teamsWebhookUrl: updated.teamsWebhookUrl } : u)),
-          }));
-          return { ok: true };
-        } catch (err) {
-          return { ok: false, error: err instanceof Error ? err.message : "Cấu hình Teams webhook thất bại" };
         }
       },
 

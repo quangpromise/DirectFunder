@@ -6,9 +6,7 @@ import { getFullName, primarySsn } from "@/lib/client-name";
 import { todayIsoDate } from "@/lib/date-format";
 import { broadcastCaseChanged, broadcastNotification } from "@/lib/pusher-server";
 import { toNotificationRecord } from "@/app/api/notifications/route";
-import { postTeamsMessage } from "@/lib/teams-webhook";
-import { del } from "@vercel/blob";
-import type { ClientNameEntry, ColumnDef, DescriptionReply, FeaturePermissions, OrderRecord } from "@/lib/types";
+import type { ClientNameEntry, ColumnDef, FeaturePermissions, OrderRecord } from "@/lib/types";
 import type { Prisma } from "@prisma/client";
 
 /** Nhãn vai trò hiện trong nội dung thông báo — khớp đúng chữ dùng ở assignCase cũ trong
@@ -117,18 +115,6 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/cases/
         },
       })
     : null;
-
-  // Processor thêm reply mới vào Description -> tự động đăng tin sang kênh Teams của Agent 1
-  // (Case.assignedTo, KHÔNG áp dụng Agent 2) — pre-fetch RIÊNG (không gộp vào `before` ở
-  // trên, shape khác nhau), CHỈ khi thật sự cần: đúng field "descriptionReplies" VÀ đúng
-  // role "processor" (không tính "processor_leader" dù role đó cũng sửa được Description).
-  const descriptionRepliesBefore =
-    "descriptionReplies" in body && Array.isArray(body.descriptionReplies) && me.role === "processor"
-      ? await prisma.case.findUnique({
-          where: { id },
-          select: { descriptionReplies: true, assignedTo: true, clients: true, ssn: true, phone: true },
-        })
-      : null;
 
   const data: Prisma.CaseUpdateInput = {};
   for (const [field, value] of Object.entries(body)) {
@@ -258,53 +244,6 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/cases/
             },
           });
           await broadcastNotification(newOrder.placedBy, toNotificationRecord(notif), socketId);
-        }
-      }
-    }
-  }
-
-  if (descriptionRepliesBefore) {
-    const oldReplies = (descriptionRepliesBefore.descriptionReplies as unknown as DescriptionReply[]) ?? [];
-    const newReplies = row.descriptionReplies as unknown as DescriptionReply[];
-    // CHỈ tính là "có reply mới" khi mảng dài hơn thật sự (không suy đoán qua nội dung) —
-    // tránh false-positive nếu sau này có tính năng sửa/xoá reply dùng chung field này.
-    if (newReplies.length > oldReplies.length) {
-      const newlyAdded = newReplies.slice(oldReplies.length);
-      const agentId = descriptionRepliesBefore.assignedTo;
-      const agent = agentId ? await prisma.user.findUnique({ where: { id: agentId }, select: { teamsWebhookUrl: true } }) : null;
-      if (agent?.teamsWebhookUrl) {
-        const refName = getFullName({ clients: descriptionRepliesBefore.clients as unknown as [ClientNameEntry, ClientNameEntry] });
-        const ssn = primarySsn({ ssn: descriptionRepliesBefore.ssn as unknown as [string | null, string | null] });
-        const phone = descriptionRepliesBefore.phone || "—";
-        const origin = new URL(request.url).origin;
-        const link = `${origin}/dashboard/cases?highlight=${id}`;
-        const teamsAttachments = Array.isArray(body.teamsAttachments)
-          ? (body.teamsAttachments as { name?: unknown; url?: unknown }[]).filter(
-              (a): a is { name: string; url: string } => typeof a.name === "string" && typeof a.url === "string"
-            )
-          : [];
-
-        for (const reply of newlyAdded) {
-          const lines = [
-            `📌 Processor ${me.name} vừa thêm ghi chú mới cho hồ sơ ${refName} (SSN: ${ssn ?? "—"}, SĐT: ${phone}):`,
-            "",
-            `"${reply.text}"`,
-          ];
-          if (teamsAttachments.length > 0) {
-            lines.push("", "📎 Tệp đính kèm:", ...teamsAttachments.map((a) => `- ${a.name}: ${a.url}`));
-          }
-          lines.push("", `🔗 Xem hồ sơ: ${link}`);
-          await postTeamsMessage(agent.teamsWebhookUrl, lines.join("\n"));
-        }
-
-        // Xoá blob NGAY sau khi gửi xong — file đính kèm KHÔNG lưu lại trong app (best-effort,
-        // không chặn response chính nếu xoá lỗi).
-        if (teamsAttachments.length > 0) {
-          try {
-            await del(teamsAttachments.map((a) => a.url));
-          } catch (err) {
-            console.error("[teams-webhook] Xoá blob tạm thất bại:", err);
-          }
         }
       }
     }

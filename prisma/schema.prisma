@@ -40,17 +40,6 @@ model User {
   /// (AES-256-GCM) — KHÔNG lưu plain text vì đây là mật khẩu thật không thể thu hồi từ xa
   /// như OAuth refresh token (khác googleRefreshToken ở trên).
   webmailPasswordEncrypted String?
-  /// Webhook URL (Incoming Webhook cổ điển hoặc Power Automate "Workflows") của kênh Teams
-  /// riêng của Agent này — Admin cấu hình qua trang Quản lý tài khoản, dùng để tự động đăng
-  /// tin khi Processor thêm reply mới vào Description của hồ sơ đang gán Agent này ở slot 1
-  /// (Case.assignedTo, KHÔNG áp dụng slot 2 assignedTo2), xem src/lib/teams-webhook.ts. Lưu
-  /// PLAINTEXT (khác webmailPasswordEncrypted) — cùng tiền lệ googleRefreshToken: 1 webhook
-  /// URL chỉ cho phép "đăng tin vào đúng 1 kênh", blast radius thấp hơn nhiều mật khẩu tài
-  /// khoản thật. 1 CHIỀU (Processor -> Teams) — không có đường nào đẩy ngược lại reply của
-  /// Agent trên Teams vào app (cần Bot Framework/Azure Bot registration để định danh thread
-  /// đáng tin cậy — tổ chức này trước đó không xin được quyền Admin Azure AD cho tích hợp
-  /// Microsoft Graph tương tự, xem .claude/rules/deployment-database-sync.md).
-  teamsWebhookUrl String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

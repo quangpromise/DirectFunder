@@ -238,10 +238,6 @@ export interface User {
    * chưa kết nối. Hiển thị ở dropdown tài khoản (top-nav.tsx) để biết đã kết nối chưa,
    * KHÔNG bao giờ trả về mật khẩu (chỉ server mới đọc webmailPasswordEncrypted). */
   webmailUsername?: string | null;
-  /** Webhook URL kênh Teams riêng của Agent này — null/undefined = chưa cấu hình. Admin gán
-   * qua trang Quản lý tài khoản. Chỉ có ý nghĩa với role "agent" (dùng ở Case.assignedTo,
-   * slot Agent 1) — xem src/lib/teams-webhook.ts. 1 chiều Processor -> Teams. */
-  teamsWebhookUrl?: string | null;
 }
 
 export type ColumnType =
