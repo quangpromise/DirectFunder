@@ -31,10 +31,14 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   // Gắn socket_id Pusher hiện tại (nếu có) — server đọc header này để loại trừ, không bắn
   // lại tín hiệu/thông báo realtime cho chính người vừa thao tác (xem pusher-server.ts).
   const socketId = getSocketId();
+  // Body là FormData (upload file) -> KHÔNG tự set Content-Type: application/json — trình
+  // duyệt cần tự thêm đúng "multipart/form-data; boundary=..." khi gửi FormData, set tay sẽ
+  // làm mất boundary khiến server không parse được file đính kèm.
+  const isFormData = typeof FormData !== "undefined" && init?.body instanceof FormData;
   const res = await fetch(url, {
     ...init,
     headers: {
-      "Content-Type": "application/json",
+      ...(isFormData ? {} : { "Content-Type": "application/json" }),
       ...(socketId ? { "X-Pusher-Socket-Id": socketId } : {}),
       ...init?.headers,
     },
@@ -336,6 +340,49 @@ export const api = {
    * Xem `AgentC3ImportPreview` bên dưới cho hình dạng dữ liệu trả về. */
   fetchAgentC3Preview: (link: string) =>
     request<AgentC3ImportPreview>("/api/agentc3-import/fetch", { method: "POST", body: JSON.stringify({ link }) }),
+
+  /** Danh sách Status + Performed By hiện có trên CRM agentc3, cùng giá trị Status/Processing
+   * Date ĐANG có trên CRM ngay lúc gọi (đọc trực tiếp từ hồ sơ liên kết qua `Case.clientLink`)
+   * — cho popup "Update to CRM" hiện sẵn đúng trạng thái hiện tại. */
+  fetchAgentC3CrmContext: (caseId: string) =>
+    request<{
+      statusOptions: { value: string; label: string }[];
+      performerOptions: { value: string; label: string }[];
+      currentStatus: string;
+      currentProcessingDate: string;
+    }>(`/api/agentc3-import/crm-context?caseId=${encodeURIComponent(caseId)}`),
+
+  /** Ghi ngược lên CRM agentc3 (nút "Update to CRM") — set CPA Review theo ngày đã chọn cho
+   * từng năm, đổi Status (theo danh sách Status của CRM), thêm dòng Conversation Log, và/hoặc
+   * upload file vào ô "{năm} 1040X - Submitted". Mỗi phần chạy độc lập, xem `results` để biết
+   * phần nào thành công/lỗi. */
+  updateAgentC3Crm: (payload: {
+    caseId: string;
+    years: string[];
+    cpaReviewDates?: Record<string, string>;
+    status?: string;
+    processingDate?: string;
+    note?: string;
+    performedBy?: string;
+    files?: Record<string, File>;
+  }) => {
+    const body = new FormData();
+    body.append("caseId", payload.caseId);
+    body.append("years", JSON.stringify(payload.years));
+    body.append("cpaReviewDates", JSON.stringify(payload.cpaReviewDates ?? {}));
+    // status/processingDate LUÔN gửi (kể cả chuỗi rỗng) — cả 2 đều được popup tự điền sẵn từ
+    // giá trị THẬT đang có trên CRM lúc mở, nên rỗng ở đây nghĩa là người dùng chủ động XOÁ,
+    // không phải "chưa đổi gì" — bỏ qua khi rỗng sẽ khiến CRM không xoá được field này.
+    if (payload.status !== undefined) body.append("status", payload.status);
+    if (payload.processingDate !== undefined) body.append("processingDate", payload.processingDate);
+    if (payload.note) body.append("note", payload.note);
+    if (payload.performedBy) body.append("performedBy", payload.performedBy);
+    for (const [year, file] of Object.entries(payload.files ?? {})) body.append(`file_${year}`, file);
+    return request<{ ok: boolean; results: { step: string; ok: boolean; error?: string }[] }>(
+      "/api/agentc3-import/update-to-crm",
+      { method: "POST", body }
+    );
+  },
 
   listNotifications: () => request<AppNotification[]>("/api/notifications"),
   markNotificationRead: (id: string) => request<{ ok: true }>(`/api/notifications/${id}`, { method: "PATCH" }),

@@ -41,6 +41,7 @@ import { canShowSendButtonsForStatusLabel } from "@/lib/send-buttons-status";
 import { SendActionsMenuButton } from "@/components/send-actions-menu-button";
 import { SendClientEmailButton } from "@/components/send-client-email-button";
 import { CaseSmsButton } from "@/components/case-sms-button";
+import { AgentC3UpdateToCrmDialog } from "@/components/agentc3-update-to-crm-dialog";
 import { ForProcessorButton } from "@/components/for-processor-dialog";
 import { HistoryDialog } from "@/components/history-dialog";
 import { useConfirm } from "@/components/confirm-dialog";
@@ -1663,6 +1664,7 @@ function RowCells({
   const showCpaEmailAction = sendButtonsStatusIds.has(row.status) && canSendCpaEmailFeature;
   const showTestSheetAction = sendButtonsStatusIds.has(row.status) && (canSendToSheetFeature || canSendCpaEmailFeature);
   const showClientEmailAction = canSendClientEmailFeature && Boolean(row.email.trim());
+  const showUpdateToCrmAction = Boolean(row.clientLink?.includes("tax.agentc3.com"));
   const sendActionSentFlags = [
     showSendToSheetAction ? Boolean(row.sheetSentAt) : null,
     showCpaEmailAction ? Boolean(row.cpaEmailSentAt) : null,
@@ -1710,6 +1712,7 @@ function RowCells({
           showCpaEmailAction ||
           showTestSheetAction ||
           showClientEmailAction ||
+          showUpdateToCrmAction ||
           canSendSmsFeature) && (
           // -translate-x-1 — dịch sang trái 1 chút, tránh nằm sát nút Edit Hồ sơ ở cột
           // Client Name ngay bên phải, dễ bấm nhầm. Gộp 4 nút gửi thành 1 nút (icon
@@ -1718,7 +1721,7 @@ function RowCells({
           // Data trong cùng 1 cột dọc — luôn hiện nếu có quyền sendSms, KHÔNG phụ thuộc
           // status/showXxxAction như 4 nút kia (nhắn tin không gắn với trạng thái hồ sơ).
           <div className="-translate-x-1 flex flex-col items-center gap-1">
-            {(showSendToSheetAction || showCpaEmailAction || showTestSheetAction || showClientEmailAction) && (
+            {(showSendToSheetAction || showCpaEmailAction || showTestSheetAction || showClientEmailAction || showUpdateToCrmAction) && (
             <SendActionsMenuButton allSent={allSendActionsSent}>
               {showSendToSheetAction && (
                 <div className="flex items-center justify-between gap-2">
@@ -1781,6 +1784,12 @@ function RowCells({
                     markClientEmailSent={markClientEmailSent}
                     connectWebmailAccount={connectWebmailAccount}
                   />
+                </div>
+              )}
+              {showUpdateToCrmAction && (
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs text-text-dim">{t("agentc3UpdateCrm.button")}</span>
+                  <AgentC3UpdateToCrmDialog caseId={row.id} refunds={row.refunds} />
                 </div>
               )}
             </SendActionsMenuButton>
