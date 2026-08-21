@@ -40,6 +40,7 @@ export function toCaseRecord(row: {
   refundYearStatus: Prisma.JsonValue;
   refundYearPendingReason: Prisma.JsonValue;
   refundYearEfileDate: Prisma.JsonValue;
+  refundYearAlarm: Prisma.JsonValue;
   fcDate: string | null;
   processingDate: string | null;
   elDate: string | null;
@@ -86,6 +87,7 @@ export function toCaseRecord(row: {
     refundYearStatus: (row.refundYearStatus as unknown as CaseRecord["refundYearStatus"]) ?? {},
     refundYearPendingReason: (row.refundYearPendingReason as unknown as CaseRecord["refundYearPendingReason"]) ?? {},
     refundYearEfileDate: (row.refundYearEfileDate as unknown as CaseRecord["refundYearEfileDate"]) ?? {},
+    refundYearAlarm: (row.refundYearAlarm as unknown as CaseRecord["refundYearAlarm"]) ?? {},
     fcDate: row.fcDate,
     processingDate: row.processingDate,
     elDate: row.elDate,
@@ -205,6 +207,7 @@ export async function POST(request: NextRequest) {
       refundYearStatus: (body.refundYearStatus ?? {}) as unknown as Prisma.InputJsonValue,
       refundYearPendingReason: (body.refundYearPendingReason ?? {}) as unknown as Prisma.InputJsonValue,
       refundYearEfileDate: (body.refundYearEfileDate ?? {}) as unknown as Prisma.InputJsonValue,
+      refundYearAlarm: (body.refundYearAlarm ?? {}) as unknown as Prisma.InputJsonValue,
       fcDate: body.fcDate ?? null,
       processingDate: body.processingDate ?? null,
       elDate: body.elDate ?? null,
@@ -247,6 +250,7 @@ export async function POST(request: NextRequest) {
       refundYearStatus: {},
       refundYearPendingReason: {},
       refundYearEfileDate: {},
+      refundYearAlarm: {},
       fcDate: null,
       processingDate: null,
       elDate: null,

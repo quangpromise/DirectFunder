@@ -279,6 +279,18 @@ export interface CheckInitialValue {
  * KHÔNG còn là union cố định, chỉ còn alias của string để phân biệt ý nghĩa tham số. */
 export type RefundYearStatus = string;
 
+/** 1 lịch nhắc kiểm tra TTS & WIT cho 1 năm refund cụ thể (xem
+ * Case.refundYearAlarm/src/lib/refund-alarm.ts). */
+export interface RefundYearAlarm {
+  /** Ngày hẹn ISO "YYYY-MM-DD" (giờ Phoenix). */
+  date: string;
+  /** Người sẽ nhận Notification khi đến hạn — mặc định là người đặt lịch. */
+  userId: string;
+  /** ISO datetime lần gần nhất cron đã bắn thông báo cho lịch hẹn hiện tại, null = chưa
+   * bắn. Đổi `date` (đặt lại lịch) luôn kèm reset về null. */
+  notifiedAt: string | null;
+}
+
 export interface SelectOption {
   id: string;
   label: string;
@@ -441,6 +453,11 @@ export interface CaseRecord {
    * bộ 2 chiều "CPA Review" với Google Sheet, sửa qua popup "Refund by years" cạnh
    * Status/Số tiền của mỗi năm. */
   refundYearEfileDate: Record<string, string | null>;
+  /** Lịch nhắc kiểm tra TTS & WIT riêng từng năm (key = năm) — đặt qua icon đồng hồ cạnh
+   * Status trong popup "Refund by years". null/thiếu = chưa đặt lịch năm đó. `notifiedAt`
+   * null nghĩa là cron chưa bắn thông báo cho lần hẹn hiện tại — đổi `date` luôn reset
+   * `notifiedAt` về null để bắn lại được. Xem src/lib/refund-alarm.ts. */
+  refundYearAlarm: Record<string, RefundYearAlarm | null>;
   /** 3 ô ngày ISO "YYYY-MM-DD" (hiển thị mm/dd/yy) đặt ngang hàng ngay dưới khối Refund
    * trong popup "Edit Hồ sơ" — chỉ sửa được ở đó, không hiển thị như cột riêng trong bảng
    * chính (giống phone2/email). null = chưa nhập. Thêm 2026-08-14. */

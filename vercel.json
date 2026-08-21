@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/cron/ringcentral-renew",
-      "schedule": "0 0 * * *"
+      "schedule": "0 13 * * *"
     },
     {
       "path": "/api/cron/blob-cleanup",

@@ -609,6 +609,11 @@ const dict: Record<Language, Record<string, string>> = {
     "refundStatus.manageTitle": "Quản lý trạng thái",
     "refundStatus.protectedOption": "Trạng thái hệ thống — không thể xoá (vẫn đổi tên/màu được)",
     "refundStatus.efileDate": "Ngày E-file",
+    "refundStatus.alarmTitle": "Lịch nhắc kiểm tra TTS & WIT",
+    "refundStatus.alarmSetNew": "Đặt lịch nhắc kiểm tra TTS & WIT",
+    "refundStatus.alarmSetTitle": "Sẽ nhắc kiểm tra TTS & WIT vào {date}",
+    "refundStatus.alarmNone": "Chưa đặt lịch nhắc",
+    "refundStatus.alarmClear": "Xoá lịch nhắc",
 
     // CPA Review month picker
     "cpaReviewMonth.prev": "Tháng trước",
@@ -1368,6 +1373,11 @@ const dict: Record<Language, Record<string, string>> = {
     "refundStatus.manageTitle": "Manage statuses",
     "refundStatus.protectedOption": "System status — can't be removed (name/color still editable)",
     "refundStatus.efileDate": "E-file date",
+    "refundStatus.alarmTitle": "TTS & WIT check reminder",
+    "refundStatus.alarmSetNew": "Set a TTS & WIT check reminder",
+    "refundStatus.alarmSetTitle": "Will remind to check TTS & WIT on {date}",
+    "refundStatus.alarmNone": "No reminder set",
+    "refundStatus.alarmClear": "Clear reminder",
 
     // CPA Review month picker
     "cpaReviewMonth.prev": "Previous month",

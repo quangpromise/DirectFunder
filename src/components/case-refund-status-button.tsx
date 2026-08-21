@@ -2,14 +2,15 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Eye, ChevronDown, Settings, X, Trash2, Plus, Send } from "lucide-react";
-import { CollectingReportManualFields, RefundYearStatus, SelectOption } from "@/lib/types";
+import { Eye, ChevronDown, Settings, X, Trash2, Plus, Send, AlarmClock } from "lucide-react";
+import { CollectingReportManualFields, RefundYearAlarm, RefundYearStatus, SelectOption } from "@/lib/types";
 import { findRefundStatusOption, hasPendingRefundYear, refundYearRows } from "@/lib/refund-status";
 import { useConfirm } from "@/components/confirm-dialog";
 import { useAppStore } from "@/store/app-store";
 import { useT } from "@/lib/i18n";
 import { darkenHex, withAlpha, hexToRgba15, rgbaToHex } from "@/lib/color";
 import { ColorSwatchPicker } from "@/components/color-swatch-picker";
+import { todayIsoDate } from "@/lib/date-format";
 
 const MENU_MARGIN = 8;
 const MENU_WIDTH = 306;
@@ -211,6 +212,91 @@ function PendingReasonInput({
       className="w-full resize-none rounded-md border border-border bg-bg-elevated px-2 py-1 text-[11px] leading-snug text-text outline-none focus:border-accent"
       aria-label={`${t("refundStatus.reasonPlaceholder")} ${year}`}
     />
+  );
+}
+
+/** Icon đồng hồ đặt trước dropdown Status mỗi năm — bấm mở 1 ô `<input type="date">` inline
+ * (không dùng popover nổi riêng vì popup cha đã là fixed/portal, lồng thêm 1 lớp portal nữa
+ * chỉ để định vị 1 ô ngày là quá mức cần thiết). Icon xám khi chưa đặt lịch, xanh dương khi
+ * đã đặt (còn hạn), đỏ nhấp nháy (`.refund-eye-pending`, tái dùng animation có sẵn) khi đã
+ * QUÁ HẠN mà cron vẫn chưa kịp bắn thông báo (rất hiếm, chỉ lộ ra trong khung giờ giữa lúc
+ * quá hạn và lần cron chạy tiếp theo). KHÔNG giới hạn theo `editable` (quyền cột "refunds")
+ * — giống PendingReasonInput, đây chỉ là tiện ích nhắc việc cá nhân, mọi user mở popup bằng
+ * click đều đặt được. */
+function AlarmClockButton({
+  year,
+  alarm,
+  canEdit,
+  onSetDate,
+}: {
+  year: string;
+  alarm: RefundYearAlarm | null | undefined;
+  canEdit: boolean;
+  onSetDate: (date: string | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const t = useT();
+  const hasAlarm = Boolean(alarm?.date);
+  const overdue = Boolean(alarm?.date && !alarm.notifiedAt && alarm.date <= todayIsoDate());
+
+  return (
+    <div className="relative shrink-0">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          if (canEdit) setOpen((o) => !o);
+        }}
+        title={
+          hasAlarm
+            ? t("refundStatus.alarmSetTitle", { date: alarm!.date })
+            : canEdit
+              ? t("refundStatus.alarmSetNew")
+              : t("refundStatus.alarmNone")
+        }
+        aria-label={t("refundStatus.alarmTitle")}
+        className={`flex h-5 w-5 items-center justify-center rounded-full transition ${
+          canEdit ? "hover:bg-surface-hover" : "cursor-default"
+        }`}
+      >
+        <AlarmClock
+          size={12}
+          className={overdue ? "refund-eye-pending text-red-500" : hasAlarm ? "text-accent-from" : "text-text-faint"}
+        />
+      </button>
+      {open && (
+        <div
+          className="popover absolute left-0 top-6 z-[120] flex items-center gap-1 rounded-lg p-1.5 shadow-2xl shadow-black/60"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <input
+            type="date"
+            value={alarm?.date ?? ""}
+            autoFocus
+            onChange={(e) => {
+              onSetDate(e.target.value || null);
+              setOpen(false);
+            }}
+            aria-label={`${t("refundStatus.alarmTitle")} ${year}`}
+            className="rounded-md border border-border bg-bg-elevated px-1.5 py-1 text-[11px] text-text outline-none focus:border-accent"
+          />
+          {hasAlarm && (
+            <button
+              type="button"
+              onClick={() => {
+                onSetDate(null);
+                setOpen(false);
+              }}
+              title={t("refundStatus.alarmClear")}
+              aria-label={t("refundStatus.alarmClear")}
+              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-text-faint transition hover:bg-surface-hover hover:text-red-400"
+            >
+              <X size={12} />
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -510,11 +596,13 @@ export function CaseRefundStatusButton({
   refunds,
   refundYearStatus,
   refundYearPendingReason,
+  refundYearAlarm,
   statusOptions,
   editable,
   canManageOptions,
   onChangeStatus,
   onChangeReason,
+  onSetAlarm,
   onAddOption,
   onUpdateOption,
   onRemoveOption,
@@ -524,12 +612,15 @@ export function CaseRefundStatusButton({
   refunds: Record<string, number>;
   refundYearStatus: Record<string, RefundYearStatus>;
   refundYearPendingReason: Record<string, string>;
+  refundYearAlarm: Record<string, RefundYearAlarm | null>;
   statusOptions: SelectOption[];
   editable: boolean;
   /** Admin (manager) — thêm/sửa/xoá trạng thái trong danh sách qua nút bánh răng. */
   canManageOptions: boolean;
   onChangeStatus: (year: string, status: RefundYearStatus) => void;
   onChangeReason: (year: string, reason: string) => void;
+  /** Đặt/xoá lịch nhắc TTS & WIT cho 1 năm — date = null để xoá. */
+  onSetAlarm: (year: string, date: string | null) => void;
   onAddOption: (option: Omit<SelectOption, "id">) => void;
   onUpdateOption: (optionId: string, patch: Partial<Omit<SelectOption, "id">>) => void;
   onRemoveOption: (optionId: string) => void;
@@ -663,7 +754,7 @@ export function CaseRefundStatusButton({
                     <div className="flex flex-col gap-1.5">
                       {rows.map((r) => (
                         <div key={r.year} className="flex flex-col gap-1 rounded-lg px-1.5 py-1">
-                          <div className="grid grid-cols-[20px_36px_1fr_100px] items-center gap-2">
+                          <div className="grid grid-cols-[20px_36px_1fr_20px_100px] items-center gap-2">
                             {clickOpen && canSendCollectingReport ? (
                               <button
                                 type="button"
@@ -679,6 +770,12 @@ export function CaseRefundStatusButton({
                             )}
                             <span className="text-xs font-medium text-text-dim">{r.year}</span>
                             <span className="truncate text-xs font-semibold text-text">{formatMoney(r.amount)}</span>
+                            <AlarmClockButton
+                              year={r.year}
+                              alarm={refundYearAlarm[r.year]}
+                              canEdit={clickOpen}
+                              onSetDate={(date) => onSetAlarm(r.year, date)}
+                            />
                             <div className="flex justify-center">
                               <YearStatusDropdown
                                 status={r.status}

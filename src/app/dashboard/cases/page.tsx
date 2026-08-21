@@ -286,6 +286,7 @@ export default function CasesPage() {
   const updateSsn = useAppStore((s) => s.updateSsn);
   const updateRefundYearStatus = useAppStore((s) => s.updateRefundYearStatus);
   const updateRefundYearPendingReason = useAppStore((s) => s.updateRefundYearPendingReason);
+  const updateRefundYearAlarm = useAppStore((s) => s.updateRefundYearAlarm);
   const updateClientProfile = useAppStore((s) => s.updateClientProfile);
   const addDescriptionReply = useAppStore((s) => s.addDescriptionReply);
   const markDescriptionRead = useAppStore((s) => s.markDescriptionRead);
@@ -1264,6 +1265,7 @@ export default function CasesPage() {
               updateSsn={updateSsn}
               updateRefundYearStatus={updateRefundYearStatus}
               updateRefundYearPendingReason={updateRefundYearPendingReason}
+              updateRefundYearAlarm={updateRefundYearAlarm}
               updateClientProfile={updateClientProfile}
               addDescriptionReply={addDescriptionReply}
               markDescriptionRead={markDescriptionRead}
@@ -1471,6 +1473,7 @@ function RowCells({
   updateSsn,
   updateRefundYearStatus,
   updateRefundYearPendingReason,
+  updateRefundYearAlarm,
   updateClientProfile,
   addDescriptionReply,
   markDescriptionRead,
@@ -1543,6 +1546,7 @@ function RowCells({
   updateSsn: (caseId: string, slot: 0 | 1, value: string | null) => void;
   updateRefundYearStatus: (caseId: string, year: string, status: RefundYearStatus) => void;
   updateRefundYearPendingReason: (caseId: string, year: string, reason: string) => void;
+  updateRefundYearAlarm: (caseId: string, year: string, date: string | null) => void;
   updateClientProfile: (caseId: string, payload: ClientProfilePayload) => Promise<{ ok: true } | { ok: false; error: string }>;
   addDescriptionReply: (caseId: string, authorId: string, text: string) => void;
   markDescriptionRead: (caseId: string, userId: string) => void;
@@ -1903,11 +1907,13 @@ function RowCells({
               refunds={row.refunds ?? {}}
               refundYearStatus={row.refundYearStatus ?? {}}
               refundYearPendingReason={row.refundYearPendingReason ?? {}}
+              refundYearAlarm={row.refundYearAlarm ?? {}}
               statusOptions={refundYearStatusOptions}
               editable={canEditRefundStatus}
               canManageOptions={canManageRefundYearStatusOptions}
               onChangeStatus={(year, status) => updateRefundYearStatus(row.id, year, status)}
               onChangeReason={(year, reason) => updateRefundYearPendingReason(row.id, year, reason)}
+              onSetAlarm={(year, date) => updateRefundYearAlarm(row.id, year, date)}
               onAddOption={addRefundYearStatusOption}
               onUpdateOption={updateRefundYearStatusOption}
               onRemoveOption={removeRefundYearStatusOption}

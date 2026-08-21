@@ -43,6 +43,7 @@ import {
   ProcessorReportEntry,
   ProcessorReportMonthlySummaryEntry,
   ProcessorReportTaskDef,
+  RefundYearAlarm,
   RefundYearStatus,
   Role,
   RuleRecord,
@@ -269,6 +270,10 @@ interface AppState {
   updateSsn: (caseId: string, slot: 0 | 1, value: string | null) => void;
   updateRefundYearStatus: (caseId: string, year: string, status: RefundYearStatus) => void;
   updateRefundYearPendingReason: (caseId: string, year: string, reason: string) => void;
+  /** Đặt/xoá lịch nhắc TTS & WIT cho 1 năm — date = null để xoá lịch. Luôn gán userId =
+   * người đang đăng nhập (người nhận Notification khi đến hạn) + reset notifiedAt về null
+   * để cron có thể bắn lại. */
+  updateRefundYearAlarm: (caseId: string, year: string, date: string | null) => void;
   updateRefundYearEfileDate: (caseId: string, year: string, date: string | null) => void;
   /** Thêm/sửa/xoá trạng thái trong AppConfig.refundYearStatusOptions — chỉ Admin (manager)
    * dùng qua nút bánh răng trong CaseRefundStatusButton (xem canManageOptions ở cases/page.tsx).
@@ -1019,6 +1024,7 @@ export const useAppStore = create<AppState>()(
           refundYearStatus: {},
           refundYearPendingReason: {},
           refundYearEfileDate: {},
+          refundYearAlarm: {},
           fcDate: null,
           processingDate: null,
           elDate: null,
@@ -1169,6 +1175,7 @@ export const useAppStore = create<AppState>()(
               refundYearStatus: {},
               refundYearPendingReason: {},
               refundYearEfileDate: {},
+              refundYearAlarm: {},
               fcDate: null,
               processingDate: null,
               elDate: null,
@@ -1307,6 +1314,27 @@ export const useAppStore = create<AppState>()(
           ),
         }));
         syncInBackground("refundYearEfileDate", api.patchCase(caseId, { refundYearEfileDate: { [year]: date } }));
+      },
+
+      // Lịch nhắc TTS & WIT — mở qua icon đồng hồ cạnh Status trong popup "Refund by
+      // years", không giới hạn quyền theo cột "refunds" (cùng tinh thần
+      // updateRefundYearPendingReason) — chỉ là tiện ích nhắc việc cá nhân, ai mở popup
+      // bằng click cũng đặt được. Cron hằng ngày đọc `date`/`notifiedAt` để bắn Notification
+      // (xem src/lib/refund-alarm.ts).
+      updateRefundYearAlarm: (caseId, year, date) => {
+        const state0 = get();
+        const kase = state0.cases.find((c) => c.id === caseId);
+        const oldDate = kase?.refundYearAlarm?.[year]?.date ?? "";
+        if (kase && oldDate !== (date ?? "")) logEdit(caseId, `Lịch nhắc TTS & WIT ${year}`, oldDate, date ?? "");
+        const nextAlarm: RefundYearAlarm | null = date ? { date, userId: state0.currentUserId ?? "", notifiedAt: null } : null;
+        set((state) => ({
+          cases: state.cases.map((c) =>
+            c.id === caseId
+              ? { ...c, refundYearAlarm: { ...c.refundYearAlarm, [year]: nextAlarm }, updatedAt: new Date().toISOString() }
+              : c
+          ),
+        }));
+        syncInBackground("refundYearAlarm", api.patchCase(caseId, { refundYearAlarm: { [year]: nextAlarm } }));
       },
 
       // Foreground (giống sendCpaEmail/sendCaseRowToSheet) — server tự tính money/
@@ -2373,7 +2401,7 @@ export const useAppStore = create<AppState>()(
     },
     {
       name: "direct-funder-store-v10",
-      version: 28,
+      version: 29,
       migrate: (persisted, version) => {
         const state = persisted as PersistedShape;
         if (!state) return state as unknown as AppState;
@@ -2905,6 +2933,21 @@ export const useAppStore = create<AppState>()(
                 ...rec,
                 refundYearEfileDate:
                   rec.refundYearEfileDate && typeof rec.refundYearEfileDate === "object" ? rec.refundYearEfileDate : {},
+              };
+            });
+          }
+        }
+
+        if (version < 29) {
+          // Cùng lỗi đã gặp ở version 27/28 nhưng cho refundYearAlarm (thêm 2026-08-21,
+          // lịch nhắc TTS & WIT) — case cache cũ thiếu field này khiến
+          // refundYearAlarm[year] đọc trên `undefined` khi popup "Refund by years" mở.
+          if (Array.isArray(state.cases)) {
+            state.cases = state.cases.map((c) => {
+              const rec = c as Record<string, unknown>;
+              return {
+                ...rec,
+                refundYearAlarm: rec.refundYearAlarm && typeof rec.refundYearAlarm === "object" ? rec.refundYearAlarm : {},
               };
             });
           }

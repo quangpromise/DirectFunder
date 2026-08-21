@@ -1,10 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { renewRingCentralSubscriptionAndSave, isRingCentralConfigured, RingCentralApiError } from "@/lib/ringcentral";
+import { checkAndFireRefundYearAlarms } from "@/lib/refund-alarm";
 
 /**
  * Vercel Cron (xem vercel.json, chạy mỗi ngày) — tự gia hạn subscription webhook nhận SMS
  * đến trước khi hết hạn (~7 ngày kể từ lần tạo/gia hạn gần nhất). Gọi mỗi ngày nên KHÔNG
  * bao giờ tới gần ngưỡng 7 ngày, an toàn nếu 1-2 lần cron bị lỡ.
+ *
+ * Cũng "piggyback" luôn việc quét lịch nhắc TTS & WIT (checkAndFireRefundYearAlarms, xem
+ * src/lib/refund-alarm.ts) ở CUỐI route này — KHÔNG đăng ký thêm 1 Cron Job riêng trong
+ * vercel.json vì gói Vercel Hobby giới hạn số Cron Job (đã gặp thật khi thêm cron thứ 2
+ * "blob-cleanup", xem comment trong route đó); route riêng
+ * `/api/cron/refund-alarm-check` vẫn tồn tại để test tay qua curl nhưng không nằm trong
+ * lịch tự động. 2 việc độc lập, lỗi bên nào không chặn bên kia.
  *
  * Xác thực bằng CRON_SECRET (Vercel tự đính kèm header `Authorization: Bearer $CRON_SECRET`
  * cho request cron thật — xem https://vercel.com/docs/cron-jobs/manage-cron-jobs#securing-cron-jobs)
@@ -18,17 +26,30 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  let refundAlarm: { checked: number; fired: number } | { error: string };
+  try {
+    refundAlarm = await checkAndFireRefundYearAlarms();
+  } catch (err) {
+    console.error("[cron ringcentral-renew] refund alarm check thất bại:", err);
+    refundAlarm = { error: "Quét lịch nhắc TTS & WIT thất bại." };
+  }
+
   if (!isRingCentralConfigured()) {
-    return NextResponse.json({ ok: true, skipped: "not_configured" });
+    return NextResponse.json({ ok: true, skipped: "not_configured", refundAlarm });
   }
 
   const webhookUrl = new URL("/api/ringcentral/webhook", request.url).toString();
   try {
     const result = await renewRingCentralSubscriptionAndSave(webhookUrl);
-    return NextResponse.json({ ok: true, subscriptionId: result.id, subscriptionExpiresAt: result.expiresAt });
+    return NextResponse.json({
+      ok: true,
+      subscriptionId: result.id,
+      subscriptionExpiresAt: result.expiresAt,
+      refundAlarm,
+    });
   } catch (err) {
     const message = err instanceof RingCentralApiError ? err.message : "Gia hạn subscription thất bại.";
     console.error("[cron ringcentral-renew]", message);
-    return NextResponse.json({ ok: false, error: message }, { status: 502 });
+    return NextResponse.json({ ok: false, error: message, refundAlarm }, { status: 502 });
   }
 }

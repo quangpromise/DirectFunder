@@ -66,6 +66,7 @@ const ALLOWED_FIELDS = new Set([
   "refundYearStatus",
   "refundYearPendingReason",
   "refundYearEfileDate",
+  "refundYearAlarm",
 ]);
 
 export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/cases/[id]">) {
@@ -163,6 +164,17 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/cases/
         ...(value as Record<string, unknown>),
       };
       data.refundYearEfileDate = merged as Prisma.InputJsonValue;
+      continue;
+    }
+    // Không map qua FIELD_TO_COLUMN_KEY (giống refundYearPendingReason) — mọi user đăng
+    // nhập đều đặt/xoá lịch nhắc TTS & WIT được, đây chỉ là tiện ích nhắc việc cá nhân.
+    if (field === "refundYearAlarm" && value && typeof value === "object") {
+      const existing = await prisma.case.findUnique({ where: { id }, select: { refundYearAlarm: true } });
+      const merged = {
+        ...((existing?.refundYearAlarm as Record<string, unknown>) ?? {}),
+        ...(value as Record<string, unknown>),
+      };
+      data.refundYearAlarm = merged as Prisma.InputJsonValue;
       continue;
     }
     (data as Record<string, unknown>)[field] = value;

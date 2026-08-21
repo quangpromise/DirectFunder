@@ -108,6 +108,16 @@ model Case {
   /// deployment-database-sync.md mục 4.22), sửa qua popup "Refund by years" giống
   /// refundYearStatus.
   refundYearEfileDate Json @default("{}")
+  /// Record<năm, { date: string "YYYY-MM-DD"; userId: string; notifiedAt: string | null }> —
+  /// lịch nhắc kiểm tra TTS & WIT riêng từng năm, đặt qua icon đồng hồ cạnh Status trong
+  /// popup "Refund by years" (CaseRefundStatusButton). Cron hằng ngày (xem
+  /// src/lib/refund-alarm.ts, piggyback trên cron/ringcentral-renew để không vượt giới hạn
+  /// số Cron Job của gói Hobby) quét mọi hồ sơ, tạo Notification cho `userId` khi `date` <=
+  /// hôm nay (giờ Phoenix) và `notifiedAt` còn null, rồi set notifiedAt để không lặp lại.
+  /// Đặt lại `date` (sửa lịch) luôn kèm notifiedAt: null để có thể bắn lại. Không giới hạn
+  /// quyền sửa theo role (giống refundYearPendingReason) — field này không map qua
+  /// FIELD_TO_COLUMN_KEY trong PATCH /api/cases/[id].
+  refundYearAlarm Json @default("{}")
   /// Ngày ISO "YYYY-MM-DD" (hiển thị mm/dd/yy) — 3 field mới, chỉ sửa qua popup "Edit Hồ
   /// sơ" (client-profile-dialog), đặt ngang hàng ngay dưới khối Refund. null = chưa nhập.
   fcDate             String?

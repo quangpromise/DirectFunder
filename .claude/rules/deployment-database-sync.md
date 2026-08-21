@@ -487,6 +487,21 @@ Vì tính năng Notice Splitter xử lý 100% trên trình duyệt (không còn 
 4. Đăng nhập bằng tài khoản KHÔNG phải manager (vd Processor/Kế toán) → mở tab Notice Splitter → xác nhận KHÔNG thấy nút bánh răng (chỉ xem/dùng danh sách hiện có, không sửa được).
 5. Reload trang (F5) sau khi đổi danh sách ở bước 3 → xác nhận danh sách vẫn giữ đúng thay đổi (đã lưu server, không chỉ local state).
 
+### 4.34 [CHỜ XỬ LÝ] Icon đồng hồ "lịch nhắc kiểm tra TTS & WIT" trong popup "Refund by years" (thêm 2026-08-21)
+
+Icon đồng hồ mới (`AlarmClockButton`, `lucide-react` `AlarmClock`) đặt ngay trước dropdown Status của mỗi năm trong popup "Refund by years" (`CaseRefundStatusButton`) — bấm mở 1 ô `<input type="date">` inline để đặt/xoá lịch nhắc riêng cho năm đó. Đến đúng ngày đã chọn (giờ Phoenix), Notification tự tạo cho đúng người đã đặt lịch: "Hồ sơ {Tên (SSN: ...)} đã đến hạn kiểm tra TTS & WIT cho năm {năm}" — bắn qua Pusher như mọi Notification khác (chuông kêu/hiện ngay nếu người đó đang mở app). Không giới hạn theo `editable`/quyền cột "refunds" — giống `refundYearPendingReason`, mọi user mở popup bằng click đều đặt được, đây chỉ là tiện ích nhắc việc cá nhân.
+
+Thêm `Case.refundYearAlarm` (cột mới, `Json @default("{}")`, additive, migration `20260821033146_add_case_refund_year_alarm`) — Record<năm, `{date, userId, notifiedAt}` | null>. **KHÔNG đụng `DEFAULT_COLUMNS`/`DEFAULT_FEATURE_PERMISSIONS`/`AppConfig`** (giống mục 4.13/4.14/4.19/4.24) nên **không cần** script merge `AppConfig`, chỉ cần migration.
+
+**Cơ chế cron đáng chú ý**: KHÔNG đăng ký thêm 1 Cron Job riêng trong `vercel.json` — gói Vercel Hobby giới hạn số Cron Job (đã gặp thật ở mục 4.31/4.32 khi thêm `blob-cleanup`, phải đổi lịch từ mỗi giờ xuống 1 lần/ngày; nếu vượt SỐ LƯỢNG job cho phép nhiều khả năng cũng bị chặn tương tự lúc deploy). Việc quét lịch nhắc (`checkAndFireRefundYearAlarms`, `src/lib/refund-alarm.ts`) được gọi "piggyback" ở CUỐI route `cron/ringcentral-renew` (đã có sẵn, chạy hằng ngày) — lỗi ở phần nào không chặn phần kia. Lịch cron đã đổi từ `0 0 * * *` (00:00 UTC) sang `0 13 * * *` (13:00 UTC = 6h sáng giờ Phoenix, theo yêu cầu 2026-08-21 — Phoenix không đổi giờ DST nên offset UTC-7 cố định quanh năm) — xem `vercel.json`. Route riêng `GET /api/cron/refund-alarm-check` (cùng xác thực `CRON_SECRET`) vẫn tồn tại để test tay qua curl nhưng CỐ Ý không có trong `vercel.json`.
+
+**Sau khi deploy code này lên production PHẢI làm đủ các bước sau** (xoá mục này khỏi file khi đã làm xong):
+1. `prisma migrate deploy` nhắm production (thêm cột `refundYearAlarm` trên `cases`, an toàn/additive).
+2. Đăng nhập production bằng tài khoản bất kỳ (không cần manager), mở popup "Refund by years" (nút mắt cạnh cột Case) ở 1 hồ sơ có refund > 0 → bấm icon đồng hồ trước Status 1 năm → chọn 1 ngày TRONG QUÁ KHỨ (để test không phải chờ) → xác nhận icon chuyển màu xanh dương (đã đặt lịch).
+3. Gọi tay `GET /api/cron/refund-alarm-check` kèm header `Authorization: Bearer $CRON_SECRET` (hoặc đợi cron `ringcentral-renew` chạy tự nhiên lúc 13:00 UTC = 6h sáng giờ Phoenix, xem `vercel.json`) → xác nhận tài khoản vừa đặt lịch nhận được Notification đúng nội dung "đã đến hạn kiểm tra TTS & WIT cho năm ...", bấm vào nhảy đúng tới hồ sơ đó.
+4. Gọi lại route quét lần 2 ngay sau đó → xác nhận KHÔNG có Notification thứ 2 nào được tạo (đã set `notifiedAt`, không lặp lại cho tới khi đổi lại ngày).
+5. Mở lại popup, đổi lại ngày hẹn (bất kỳ, kể cả cùng ngày cũ) → xác nhận `notifiedAt` reset (kiểm tra bằng cách gọi lại route quét, thấy bắn Notification lần nữa nếu ngày mới <= hôm nay). Bấm nút X trong ô đặt lịch để xoá hẳn → xác nhận icon quay về màu xám mặc định.
+
 Mục 2–5 bên dưới là kiến trúc/quy trình đề xuất (phần lớn đã áp dụng đúng như mô tả, trừ Auth đã nêu ở trên). Mục 6 là checklist hành động cụ thể để đưa app này lên cloud thật.
 
 ## 2. Kiến trúc đề xuất
