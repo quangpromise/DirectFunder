@@ -1,11 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Search, Plus, Trash2, FileText, DollarSign, GripVertical, ShieldAlert, Download, Upload, Layers, CheckCircle2, X, BarChart3, Maximize2, Minimize2, SlidersHorizontal } from "lucide-react";
+import { Search, Plus, Trash2, FileText, DollarSign, GripVertical, ShieldAlert, Layers, CheckCircle2, X, BarChart3, Maximize2, Minimize2, SlidersHorizontal } from "lucide-react";
 import { AgentSlot2Toggle } from "@/components/agent-slot2-toggle";
-import { downloadCaseTemplate, parseCaseExcelFile, formatDuplicateSsnLines } from "@/lib/excel";
 import { useAppStore, useCurrentUser } from "@/store/app-store";
 import { canEditCase, canEditColumn, canViewCase, hasFeature } from "@/lib/rbac";
 import {
@@ -271,7 +270,6 @@ export default function CasesPage() {
   const sendSmsMessage = useAppStore((s) => s.sendSmsMessage);
   const markSmsThreadRead = useAppStore((s) => s.markSmsThreadRead);
   const addRow = useAppStore((s) => s.addRow);
-  const importCases = useAppStore((s) => s.importCases);
   const deleteRow = useAppStore((s) => s.deleteRow);
   const deletionHistory = useAppStore((s) => s.deletionHistory);
   const editHistory = useAppStore((s) => s.editHistory);
@@ -319,8 +317,6 @@ export default function CasesPage() {
   const [tab, setTab] = useState<CaseTab>("all");
   const [dragColId, setDragColId] = useState<string | null>(null);
   const [dragRowId, setDragRowId] = useState<string | null>(null);
-  const [importing, setImporting] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [view, setView] = useState<"list" | "dashboard">("list");
   /** Popup danh sách thống kê (Tổng/theo Status/Giá trị) trên di động — thay cho dãy chip
    * nằm ngang vốn tràn màn hình nhỏ, gộp vào 1 nút mở popup thay vì hiện tất cả cùng lúc. */
@@ -413,37 +409,6 @@ export default function CasesPage() {
   }, [highlightId]);
   const t = useT();
   const { language } = useLanguage();
-
-  // Đọc file Excel người dùng chọn (input ẩn, xem nút "Nhập Excel") -> parse -> tạo hàng
-  // loạt hồ sơ qua store.importCases -> báo lại số dòng thành công/thất bại.
-  async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file || !user) return;
-    setImporting(true);
-    try {
-      const rows = await parseCaseExcelFile(file);
-      if (rows.length === 0) {
-        await alertWarn(t("cases.import.emptyFile"), { title: t("cases.import.title") });
-        return;
-      }
-      const { success, failed, duplicateSsn, duplicates } = await importCases(rows, user.id, user.role);
-      const lines = [
-        t("cases.import.result", {
-          success: String(success),
-          failed: String(failed),
-          duplicateSsn: String(duplicateSsn),
-        }),
-        ...formatDuplicateSsnLines(duplicates, t),
-      ];
-      await alertWarn(lines.join("\n"), { title: t("cases.import.title") });
-    } catch (err) {
-      console.error("[import] Đọc file Excel thất bại:", err);
-      await alertWarn(t("cases.import.parseError"), { title: t("cases.import.title") });
-    } finally {
-      setImporting(false);
-    }
-  }
 
   const statusColumn = columns.find((c) => c.id === "status");
   const clientColumn = columns.find((c) => c.id === "clientName");
@@ -894,30 +859,7 @@ export default function CasesPage() {
             {tableFocusMode ? t("cases.focusMode.show") : t("cases.focusMode.hide")}
           </button>
 
-          <button
-            onClick={downloadCaseTemplate}
-            title={t("cases.downloadTemplate")}
-            className="flex h-7 items-center gap-1 rounded-md border border-border bg-surface px-2 text-xs text-text-dim transition hover:bg-surface-hover hover:text-text"
-          >
-            <Download size={12} />
-            {t("cases.downloadTemplate")}
-          </button>
-
-          {canAddRowFeature && (
-            <>
-              <input ref={fileInputRef} type="file" accept=".xlsx,.xls" hidden onChange={handleImportFile} />
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={importing}
-                title={t("cases.uploadExcel")}
-                className="flex h-7 items-center gap-1 rounded-md border border-border bg-surface px-2 text-xs text-text-dim transition hover:bg-surface-hover hover:text-text disabled:cursor-default disabled:opacity-60"
-              >
-                <Upload size={12} />
-                {importing ? t("cases.importing") : t("cases.uploadExcel")}
-              </button>
-              <AgentC3ImportDialog />
-            </>
-          )}
+          {canAddRowFeature && <AgentC3ImportDialog />}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -1093,26 +1035,6 @@ export default function CasesPage() {
                   {tableFocusMode ? t("cases.focusMode.show") : t("cases.focusMode.hide")}
                 </button>
 
-                <button
-                  onClick={downloadCaseTemplate}
-                  title={t("cases.downloadTemplate")}
-                  className="flex h-8 items-center gap-1 rounded-md border border-border bg-surface px-2.5 text-xs text-text-dim transition hover:bg-surface-hover hover:text-text"
-                >
-                  <Download size={12} />
-                  {t("cases.downloadTemplate")}
-                </button>
-
-                {canAddRowFeature && (
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={importing}
-                    title={t("cases.uploadExcel")}
-                    className="flex h-8 items-center gap-1 rounded-md border border-border bg-surface px-2.5 text-xs text-text-dim transition hover:bg-surface-hover hover:text-text disabled:cursor-default disabled:opacity-60"
-                  >
-                    <Upload size={12} />
-                    {importing ? t("cases.importing") : t("cases.uploadExcel")}
-                  </button>
-                )}
                 {canAddRowFeature && <AgentC3ImportDialog />}
               </div>
 
