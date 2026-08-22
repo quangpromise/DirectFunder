@@ -590,23 +590,41 @@ export default function CasesPage() {
           ? "report.vsPrevYear"
           : "report.vsPrevRange";
 
-  // Hồ sơ MỚI TẠO trong khoảng ngày đã chọn + khoảng liền trước (dựa theo createdAt) —
-  // không liên quan tới bộ lọc tab/search/statusFilter đang dùng ở view Danh sách.
+  // Hồ sơ MỚI TẠO trong khoảng ngày đã chọn + khoảng liền trước (dựa theo createdAt), CHỈ tính
+  // đúng status Pre-processing — tách hẳn khỏi DONE_STATUS_IDS/getCaseTab (hệ thống tab lọc
+  // dòng của bảng Hồ sơ chính), không liên quan tới bộ lọc tab/search/statusFilter đang dùng
+  // ở view Danh sách.
   const [newInRange, newInPrevRange] = useMemo(() => {
     const createdIn = (start: string, end: string) =>
       visibleCases.filter((c) => {
+        if (c.status !== "pre_processing") return false;
         const d = toPhoenixDateStr(new Date(c.createdAt));
         return d >= start && d <= end;
       });
     return [createdIn(dashRangeStart, dashRangeEnd), createdIn(prevStart, prevEnd)];
   }, [visibleCases, dashRangeStart, dashRangeEnd, prevStart, prevEnd]);
 
-  // Hồ sơ đã chuyển sang nhóm "Hoàn tất" (CPA Review/Approved) trong khoảng ngày đã chọn
-  // — dùng updatedAt làm mốc gần đúng, vì hệ thống chưa lưu riêng "ngày hoàn tất".
+  // Hồ sơ đang ở status Processing, cập nhật trong khoảng ngày đã chọn — dùng updatedAt làm
+  // mốc gần đúng vì hệ thống chưa lưu riêng "ngày bắt đầu xử lý". Không cần tính khoảng liền
+  // trước (không có thẻ tăng trưởng nào cho "Đang xử lý" ở panel Report).
+  const processingInRange = useMemo(
+    () =>
+      visibleCases.filter((c) => {
+        if (c.status !== "processing") return false;
+        const d = toPhoenixDateStr(new Date(c.updatedAt));
+        return d >= dashRangeStart && d <= dashRangeEnd;
+      }),
+    [visibleCases, dashRangeStart, dashRangeEnd]
+  );
+
+  // Hồ sơ đã chuyển sang status CPA Review trong khoảng ngày đã chọn — dùng updatedAt làm mốc
+  // gần đúng, vì hệ thống chưa lưu riêng "ngày hoàn tất". CHỈ tính đúng status CPA Review (KHÔNG
+  // gồm Approved) — tách hẳn khỏi DONE_STATUS_IDS/getCaseTab (hệ thống tab lọc dòng của bảng Hồ
+  // sơ chính, giữ nguyên hành vi cũ ở đó).
   const [completedInRange, completedInPrevRange] = useMemo(() => {
     const completedIn = (start: string, end: string) =>
       visibleCases.filter((c) => {
-        if (!DONE_STATUS_IDS.has(c.status)) return false;
+        if (c.status !== "cpa_review") return false;
         const d = toPhoenixDateStr(new Date(c.updatedAt));
         return d >= start && d <= end;
       });
@@ -624,13 +642,12 @@ export default function CasesPage() {
     return map;
   }, [newInRange]);
 
-  // Báo cáo theo từng tài khoản Agent/Processor được gán, chia 3 cột: Mới (tạo trong
-  // khoảng đã chọn), Đang xử lý (đang ở nhóm status "active" ngay hiện tại, không phụ
-  // thuộc khoảng ngày — phản ánh khối lượng việc đang ôm), Hoàn tất (chuyển sang nhóm
-  // "done" trong khoảng đã chọn). Phân quyền riêng: tài khoản Agent/Processor CHỈ xem
-  // báo cáo của chính mình, không thấy báo cáo của Agent/Processor khác; Agent Leader/
-  // Processor Leader xem được báo cáo của TẤT CẢ thành viên trong nhóm mình phụ trách —
-  // Manager/Accounting xem được cả 2 nhóm.
+  // Báo cáo theo từng tài khoản Agent/Processor được gán, chia 3 cột: Mới (status
+  // Pre-processing, tạo trong khoảng đã chọn), Đang xử lý (status Processing, cập nhật trong
+  // khoảng đã chọn), Hoàn tất (status CPA Review, cập nhật trong khoảng đã chọn). Phân quyền
+  // riêng: tài khoản Agent/Processor CHỈ xem báo cáo của chính mình, không thấy báo cáo của
+  // Agent/Processor khác; Agent Leader/Processor Leader xem được báo cáo của TẤT CẢ thành viên
+  // trong nhóm mình phụ trách — Manager/Accounting xem được cả 2 nhóm.
   const memberNewStats = useMemo(() => {
     const teamIds = user?.teamMemberIds;
     const staff = users.filter((u) => {
@@ -646,11 +663,11 @@ export default function CasesPage() {
         c.assignedProcessor === u.id ||
         c.assignedProcessor2 === u.id;
       const newCount = sumCaseUnits(newInRange.filter(isMine));
-      const processingCount = sumCaseUnits(visibleCases.filter((c) => isMine(c) && getCaseTab(c.status) === "active"));
+      const processingCount = sumCaseUnits(processingInRange.filter(isMine));
       const completedCount = sumCaseUnits(completedInRange.filter(isMine));
       return { id: u.id, name: u.name, role: u.role, newCount, processingCount, completedCount };
     });
-  }, [users, visibleCases, newInRange, completedInRange, viewerRole, user?.id, user?.teamMemberIds]);
+  }, [users, newInRange, processingInRange, completedInRange, viewerRole, user?.id, user?.teamMemberIds]);
 
   if (!user) return null;
 
