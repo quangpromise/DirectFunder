@@ -631,11 +631,27 @@ Review qua "Test Sheet" (tạo dòng thật, row hiển thị = 123) → bấm "
 qua session thật, xác nhận trả về `{found:true, rowNumber:123}` khớp CHÍNH XÁC với số hiển thị
 trên tab CPA Review. Dữ liệu test đã xoá sau khi kiểm tra xong. `tsc --noEmit`/`eslint` sạch.
 
+**Sửa lại cùng ngày (2026-08-22) — TỰ ĐỘNG điền số row, không bắt Admin sửa template**: bản đầu
+chỉ hỗ trợ qua token `{cpaReviewRow}` — Admin phải tự vào Phân quyền chèn token này vào
+`bodyTemplate` mới thấy số row, nhưng template thật đang dùng (viết tay "Please see line [ô
+trống bôi vàng]...") không có token này nên không hoạt động ngay ("vẫn chưa lấy được row chính
+xác"). Đã thêm `injectCpaReviewRowAfterSeeLine()` (`src/lib/cpa-email-template.ts`) — chạy SAU
+`renderCpaEmailTemplate`, tự tìm cụm "see line" (không phân biệt hoa/thường) và điền số row
+NGAY SAU đó: ưu tiên điền vào bên trong `<span>` rỗng/bôi vàng theo sau nếu có (giữ nguyên style
+— đúng mẫu production hiện tại), không có thì chèn thẳng số row dạng text sau chữ "line". Hoạt
+động ngay với template hiện có, KHÔNG cần Admin sửa gì. Token `{cpaReviewRow}` vẫn giữ lại (dùng
+được nếu Admin viết template mới có nhắc rõ token này) — 2 cơ chế không đụng nhau vì nếu token
+đã điền số vào rồi thì cụm "see line" + span rỗng sẽ không còn khớp mẫu để chèn trùng.
+Cũng đã tiện tay sửa 1 bug run-time không liên quan phát hiện qua trang Phân quyền
+(`src/app/dashboard/permissions/page.tsx`): `checked = isManager || permissions[feature]?.includes(role)`
+có thể ra `undefined` (feature key chưa có trong `AppConfig.featurePermissions`) khiến React báo
+lỗi input checkbox controlled/uncontrolled — đã bọc `Boolean(...)` để luôn là `true`/`false`.
+
 **Sau khi deploy code này lên production**: đăng nhập bằng tài khoản có quyền `sendCpaEmail`
-(mặc định Processor), mở 1 hồ sơ status CPA Review, bấm "Gửi mail CPA" → chọn 1-2 năm → xác
-nhận Subject hiện đúng `[EC ...]` → nếu hồ sơ đã từng gửi sang tab CPA Review, vào trang Phân
-quyền sửa lại `bodyTemplate` để chèn `{cpaReviewRow}` vào đúng chỗ muốn hiện số row, gửi lại
-xác nhận số row điền đúng khớp với tab CPA Review.
+(mặc định Processor), mở 1 hồ sơ status CPA Review đã từng gửi sang tab CPA Review (qua "Test
+Sheet") → bấm "Gửi mail CPA" → chọn 1-2 năm → xác nhận Subject hiện đúng `[EC ...] {tên} - {sđt}`
+VÀ nội dung mail hiện đúng số row ngay sau cụm "Please see line" (không cần sửa gì ở Phân
+quyền) → đối chiếu số row đó với số hiển thị thật trên tab CPA Review.
 
 Mục 2–5 bên dưới là kiến trúc/quy trình đề xuất (phần lớn đã áp dụng đúng như mô tả, trừ Auth đã nêu ở trên). Mục 6 là checklist hành động cụ thể để đưa app này lên cloud thật.
 

@@ -91,6 +91,29 @@ export function renderCpaEmailTemplate(template: string, vars: CpaEmailTemplateV
   return renderTemplate(template, vars as unknown as Record<string, string>);
 }
 
+/** Tự động điền số row vào cụm "see line" trong nội dung mail — KHÔNG bắt buộc Admin phải tự
+ * chèn token {cpaReviewRow} vào bodyTemplate (nhiều template cũ, kể cả bản đang dùng thật trên
+ * production, viết tay "Please see line [để trống, bôi vàng]..." mà không có token nào). Chạy
+ * SAU `renderCpaEmailTemplate` — nếu template đã tự dùng {cpaReviewRow} thì cụm "see line" theo
+ * sau sẽ không còn khớp mẫu "span rỗng" bên dưới (số đã điền rồi) nên không chèn trùng.
+ * 1. Ưu tiên: "see line" theo sau bởi 1 <span>...</span> RỖNG/chỉ khoảng trắng (đúng mẫu bôi
+ *    vàng để trống hiện có trên production) — điền số row vào bên trong span đó, giữ nguyên
+ *    style/màu highlight.
+ * 2. Không có span rỗng theo sau (template khác, hoặc không dùng span) — chèn thẳng số row
+ *    ngay sau chữ "line".
+ * 3. Không có cụm "see line" nào trong nội dung — giữ nguyên, không đổi gì. */
+export function injectCpaReviewRowAfterSeeLine(html: string, rowNumber: string): string {
+  if (!rowNumber) return html;
+  const emptySpanAfter = /(see\s+line\b(?:&nbsp;|\s)*)(<span\b[^>]*>)((?:&nbsp;|\s)*)(<\/span>)/i;
+  if (emptySpanAfter.test(html)) {
+    return html.replace(emptySpanAfter, (_m, before, spanOpen, _inner, spanClose) => `${before}${spanOpen}${rowNumber}${spanClose}`);
+  }
+  if (/see\s+line\b/i.test(html)) {
+    return html.replace(/(see\s+line\b)/i, `$1 ${rowNumber}`);
+  }
+  return html;
+}
+
 /** Mẫu Subject mặc định khi Admin chưa cấu hình — {clientName} tự gộp Client trên + Client
  * dưới (nếu có) qua getAllClientNames(). */
 export const DEFAULT_SUBJECT_TEMPLATE = "[EC] {clientName} - {phone}";
@@ -100,7 +123,7 @@ export const DEFAULT_BODY_TEMPLATE = [
   "<p>Dear Robert and Hannah,</p>",
   "<p>Kindly review this file (in server IP 46.21.148.154)</p>",
   "{clientRows}",
-  "<p>***Please see row {cpaReviewRow} in the {monthYear} sheet - 2026 RA- EC Client list.</p>",
+  "<p>***Please see line {cpaReviewRow} in the {monthYear} sheet - 2026 RA- EC Client list.</p>",
   "<p>Best Regards,</p>",
   "<p>{senderName}</p>",
 ].join("");

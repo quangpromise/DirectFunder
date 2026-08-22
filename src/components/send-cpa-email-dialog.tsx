@@ -9,6 +9,7 @@ import { fileToDataUrl } from "@/lib/file-to-data-url";
 import {
   buildTemplateVars,
   renderCpaEmailTemplate,
+  injectCpaReviewRowAfterSeeLine,
   DEFAULT_BODY_TEMPLATE,
 } from "@/lib/cpa-email-template";
 import { REFUND_YEARS } from "@/lib/refund";
@@ -163,7 +164,8 @@ export function SendCpaEmailDialog({
     setTo(defaults.to.join(", "));
     setCc(defaults.cc.join(", "));
     setSubject(`[EC ${yearsAbbrev}] ${vars.clientName} - ${vars.phone}`);
-    setBodyHtml(renderCpaEmailTemplate(bodyTemplate, vars));
+    const renderedBody = renderCpaEmailTemplate(bodyTemplate, vars);
+    setBodyHtml(injectCpaReviewRowAfterSeeLine(renderedBody, cpaReviewRow));
     setFiles([]);
     setError("");
     setEditorNonce((n) => n + 1);

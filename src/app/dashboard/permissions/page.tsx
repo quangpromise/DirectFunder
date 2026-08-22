@@ -74,7 +74,7 @@ export default function PermissionsPage() {
                 <td className="px-4 py-3 text-sm">{FEATURE_LABEL[language][feature]}</td>
                 {ASSIGNABLE_ROLES.map((role) => {
                   const isManager = role === "manager";
-                  const checked = isManager || permissions[feature]?.includes(role);
+                  const checked = isManager || Boolean(permissions[feature]?.includes(role));
                   return (
                     <td key={role} className="px-3 py-3 text-center">
                       <input
