@@ -1760,18 +1760,24 @@ function RowCells({
           <div className="-translate-x-1 flex flex-col items-center gap-1">
             {(showSendToSheetAction || showCpaEmailAction || showTestSheetAction || showClientEmailAction || showUpdateToCrmAction) && (
             <SendActionsMenuButton allSent={allSendActionsSent}>
-              {showSendToSheetAction && (
+              {showUpdateToCrmAction && (
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs text-text-dim">{t("sheet.sendBtn")}</span>
-                  <SendToSheetButton
+                  <span className="text-xs text-text-dim">{t("agentc3UpdateCrm.button")}</span>
+                  <AgentC3UpdateToCrmDialog caseId={row.id} refunds={row.refunds} />
+                </div>
+              )}
+              {showTestSheetAction && (
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs text-text-dim">{t("testSheet.notSentTitle")}</span>
+                  <TestSheetButton
                     caseId={row.id}
-                    sheetSentAt={row.sheetSentAt}
+                    cpaReviewTestSentAt={row.cpaReviewTestSentAt}
                     refunds={row.refunds}
+                    crmSourceOptions={caseStatusOptionsForCrmSource(columns)}
                     confirm={confirm}
                     alertWarn={alertWarn}
-                    sendCaseRowToSheet={sendCaseRowToSheet}
-                    markCaseSheetSent={markCaseSheetSent}
-                    connectGoogleAccount={connectGoogleAccount}
+                    sendCaseRowToCpaReview={sendCaseRowToCpaReview}
+                    markCaseCpaReviewTestSent={markCaseCpaReviewTestSent}
                   />
                 </div>
               )}
@@ -1791,18 +1797,18 @@ function RowCells({
                   />
                 </div>
               )}
-              {showTestSheetAction && (
+              {showSendToSheetAction && (
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs text-text-dim">{t("testSheet.notSentTitle")}</span>
-                  <TestSheetButton
+                  <span className="text-xs text-text-dim">{t("sheet.sendBtn")}</span>
+                  <SendToSheetButton
                     caseId={row.id}
-                    cpaReviewTestSentAt={row.cpaReviewTestSentAt}
+                    sheetSentAt={row.sheetSentAt}
                     refunds={row.refunds}
-                    crmSourceOptions={caseStatusOptionsForCrmSource(columns)}
                     confirm={confirm}
                     alertWarn={alertWarn}
-                    sendCaseRowToCpaReview={sendCaseRowToCpaReview}
-                    markCaseCpaReviewTestSent={markCaseCpaReviewTestSent}
+                    sendCaseRowToSheet={sendCaseRowToSheet}
+                    markCaseSheetSent={markCaseSheetSent}
+                    connectGoogleAccount={connectGoogleAccount}
                   />
                 </div>
               )}
@@ -1821,12 +1827,6 @@ function RowCells({
                     markClientEmailSent={markClientEmailSent}
                     connectWebmailAccount={connectWebmailAccount}
                   />
-                </div>
-              )}
-              {showUpdateToCrmAction && (
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs text-text-dim">{t("agentc3UpdateCrm.button")}</span>
-                  <AgentC3UpdateToCrmDialog caseId={row.id} refunds={row.refunds} />
                 </div>
               )}
             </SendActionsMenuButton>
