@@ -600,6 +600,43 @@ khác trong repo, không đăng ký thêm Cron Job vì giới hạn gói Hobby).
 dòng lịch sử sửa/xoá cũ hơn 30 ngày hiện có trên production — nếu cần giữ lại lịch sử cũ hơn để
 tra cứu/audit lâu dài, hãy tự export trước khi deploy (chưa có sẵn tính năng export lịch sử).
 
+### 4.38 Popup chọn năm gửi ở "Send mail to CPA" — Subject "[EC {năm}]" + điền số row CPA Review vào nội dung mail (thêm 2026-08-22)
+
+Nút "Gửi mail CPA" (`SendCpaEmailDialog`) trước đây mở thẳng popup soạn mail với Subject/Body
+dựng sẵn từ mẫu Admin cấu hình (không có khái niệm năm) — giờ bấm vào mở **popup chọn năm gửi
+trước** (cùng UI grid chọn năm với `TestSheetButton`), rồi mới mở popup soạn mail:
+- **Subject đổi hẳn** thành `[EC {các năm viết tắt 2 số nối bằng "-"}]` (vd chọn 25 -> `[EC 25]`,
+  chọn 23/24/25 -> `[EC 23-24-25]`) — **không dùng `subjectTemplate` Admin cấu hình nữa** (field
+  này giữ lại trong `CpaEmailDefaults`/DB cho tương thích ngược nhưng không còn ô nào ghi đè, đã
+  bỏ luôn field "Mẫu tiêu đề mặc định" khỏi dialog `CpaEmailDefaultsDialog` ở trang Phân quyền).
+- **Body** vẫn dùng `bodyTemplate` Admin cấu hình như cũ, nhưng có thêm 1 biến mới `{cpaReviewRow}`
+  — server tra số thứ tự dòng (row) của hồ sơ này trên tab CPA Review theo SSN (route mới
+  `GET /api/cpa-review/case-row`, khớp đúng số hiển thị ở cột gutter ngoài cùng trên tab CPA
+  Review, `i + 4`) và điền vào. 1 hồ sơ có thể có nhiều dòng trên CPA Review (mỗi lần "Test
+  Sheet" tạo dòng mới) — lấy dòng có `updatedAt` gần nhất khớp SSN. Nếu hồ sơ CHƯA từng gửi sang
+  CPA Review, `{cpaReviewRow}` để rỗng (không chặn gửi mail). `DEFAULT_BODY_TEMPLATE` trong code
+  (`src/lib/cpa-email-template.ts`) đã cập nhật dùng biến này, nhưng **nếu Admin đã tự tuỳ biến
+  `bodyTemplate` từ trước** (như trên production thật, câu "Please see line [để trống]...") thì
+  template cũ đó KHÔNG tự có `{cpaReviewRow}` — Admin cần tự vào "Cấu hình email CPA mặc định"
+  (trang Phân quyền) sửa lại câu chữ, chèn thêm `{cpaReviewRow}` vào chỗ muốn hiện số row.
+
+**Đây CHỈ là thêm code (1 route mới đọc-chỉ, sửa 1 dialog + 1 store action) — KHÔNG đổi
+schema, KHÔNG đổi `DEFAULT_COLUMNS`/`DEFAULT_FEATURE_PERMISSIONS`/`AppConfig`** (dùng lại đúng
+feature `sendCpaEmail` có sẵn) nên **không cần** `prisma migrate deploy`, **không cần** script
+merge `AppConfig`. Chỉ cần deploy code.
+
+**Đã tự kiểm tra bằng Playwright thật trên DB dev (2026-08-22)**: gửi 1 hồ sơ test sang tab CPA
+Review qua "Test Sheet" (tạo dòng thật, row hiển thị = 123) → bấm "Gửi mail CPA", chọn năm 2025
+→ xác nhận Subject hiện đúng `[EC 25]` → gọi trực tiếp `GET /api/cpa-review/case-row?ssn=...`
+qua session thật, xác nhận trả về `{found:true, rowNumber:123}` khớp CHÍNH XÁC với số hiển thị
+trên tab CPA Review. Dữ liệu test đã xoá sau khi kiểm tra xong. `tsc --noEmit`/`eslint` sạch.
+
+**Sau khi deploy code này lên production**: đăng nhập bằng tài khoản có quyền `sendCpaEmail`
+(mặc định Processor), mở 1 hồ sơ status CPA Review, bấm "Gửi mail CPA" → chọn 1-2 năm → xác
+nhận Subject hiện đúng `[EC ...]` → nếu hồ sơ đã từng gửi sang tab CPA Review, vào trang Phân
+quyền sửa lại `bodyTemplate` để chèn `{cpaReviewRow}` vào đúng chỗ muốn hiện số row, gửi lại
+xác nhận số row điền đúng khớp với tab CPA Review.
+
 Mục 2–5 bên dưới là kiến trúc/quy trình đề xuất (phần lớn đã áp dụng đúng như mô tả, trừ Auth đã nêu ở trên). Mục 6 là checklist hành động cụ thể để đưa app này lên cloud thật.
 
 ## 2. Kiến trúc đề xuất

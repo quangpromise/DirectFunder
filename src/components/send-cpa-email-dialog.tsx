@@ -3,15 +3,16 @@
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { upload } from "@vercel/blob/client";
-import { Mail, X, Paperclip, AlertCircle, Loader2 } from "lucide-react";
+import { Mail, X, Paperclip, AlertCircle, Loader2, Search } from "lucide-react";
 import { CaseRecord, CpaEmailDefaults } from "@/lib/types";
 import { fileToDataUrl } from "@/lib/file-to-data-url";
 import {
   buildTemplateVars,
   renderCpaEmailTemplate,
   DEFAULT_BODY_TEMPLATE,
-  DEFAULT_SUBJECT_TEMPLATE,
 } from "@/lib/cpa-email-template";
+import { REFUND_YEARS } from "@/lib/refund";
+import { primarySsn } from "@/lib/client-name";
 import { useT, useLanguage } from "@/lib/i18n";
 import { MailBodyEditor } from "@/components/mail-body-editor";
 
@@ -79,6 +80,7 @@ export function SendCpaEmailDialog({
   confirm,
   onSend,
   markCpaEmailSent,
+  lookupCpaReviewRow,
 }: {
   disabled: boolean;
   caseRecord: CaseRecord;
@@ -89,6 +91,7 @@ export function SendCpaEmailDialog({
   confirm: (message: string, opts?: { title?: string; tone?: "default" | "danger" }) => Promise<boolean>;
   onSend: (payload: SendPayload) => Promise<SendResult>;
   markCpaEmailSent: (caseId: string, action: "manual" | "clear") => Promise<void>;
+  lookupCpaReviewRow: (ssn: string) => Promise<{ found: boolean; rowNumber?: number }>;
 }) {
   const justSent = Boolean(caseRecord.cpaEmailSentAt);
   const [open, setOpen] = useState(false);
@@ -105,7 +108,24 @@ export function SendCpaEmailDialog({
   const t = useT();
   const { language } = useLanguage();
 
+  // Popup chọn năm gửi (thêm 2026-08-22) — mở TRƯỚC popup soạn mail, quyết định Subject
+  // "[EC {năm viết tắt}]" (vd chọn 25 -> "[EC 25]", chọn 23/24/25 -> "[EC 23-24-25]") và
+  // điền số row trên tab CPA Review ({cpaReviewRow}) vào nội dung mail. Cùng UI grid chọn
+  // năm với TestSheetButton (test-sheet-button.tsx) để nhất quán trải nghiệm.
+  const [yearPickerOpen, setYearPickerOpen] = useState(false);
+  const [selectedYears, setSelectedYears] = useState<string[]>([]);
+  const [yearSearch, setYearSearch] = useState("");
+  const [lookingUpRow, setLookingUpRow] = useState(false);
+
   const totalBytes = files.reduce((sum, f) => sum + f.size, 0);
+
+  function toggleYear(year: string) {
+    setSelectedYears((prev) => (prev.includes(year) ? prev.filter((y) => y !== year) : [...prev, year]));
+  }
+
+  const filteredYears = yearSearch.trim()
+    ? REFUND_YEARS.filter((y) => y.includes(yearSearch.trim()))
+    : REFUND_YEARS;
 
   async function handleTriggerClick() {
     if (justSent) {
@@ -114,16 +134,35 @@ export function SendCpaEmailDialog({
       await markCpaEmailSent(caseRecord.id, "clear");
       return;
     }
-    openDialog();
+    setSelectedYears([]);
+    setYearSearch("");
+    setYearPickerOpen(true);
   }
 
-  function openDialog() {
-    const vars = buildTemplateVars(caseRecord, statusLabel, senderEmail, senderName);
-    const subjectTemplate = defaults.subjectTemplate?.trim() || DEFAULT_SUBJECT_TEMPLATE;
+  async function confirmYears() {
+    if (selectedYears.length === 0) return;
+    setYearPickerOpen(false);
+    setLookingUpRow(true);
+    let cpaReviewRow = "";
+    try {
+      const ssn = primarySsn(caseRecord);
+      if (ssn) {
+        const result = await lookupCpaReviewRow(ssn);
+        if (result.found && result.rowNumber) cpaReviewRow = String(result.rowNumber);
+      }
+    } finally {
+      setLookingUpRow(false);
+    }
+    openDialog(selectedYears, cpaReviewRow);
+  }
+
+  function openDialog(years: string[], cpaReviewRow: string) {
+    const vars = buildTemplateVars(caseRecord, statusLabel, senderEmail, senderName, cpaReviewRow);
     const bodyTemplate = defaults.bodyTemplate?.trim() || DEFAULT_BODY_TEMPLATE;
+    const yearsAbbrev = years.map((y) => y.slice(-2)).join("-");
     setTo(defaults.to.join(", "));
     setCc(defaults.cc.join(", "));
-    setSubject(renderCpaEmailTemplate(subjectTemplate, vars));
+    setSubject(`[EC ${yearsAbbrev}]`);
     setBodyHtml(renderCpaEmailTemplate(bodyTemplate, vars));
     setFiles([]);
     setError("");
@@ -222,7 +261,7 @@ export function SendCpaEmailDialog({
     <div className="shrink-0">
       <button
         type="button"
-        disabled={disabled}
+        disabled={disabled || lookingUpRow}
         onClick={handleTriggerClick}
         title={justSent ? t("cpaEmail.sentHint") : t("cpaEmail.button")}
         aria-label={justSent ? t("cpaEmail.sentHint") : t("cpaEmail.button")}
@@ -232,8 +271,79 @@ export function SendCpaEmailDialog({
             : "border-orange-700/60 bg-orange-900/40 text-orange-200 hover:bg-orange-900/60 light:border-orange-400 light:bg-orange-100 light:text-orange-900 light:hover:bg-orange-200"
         }`}
       >
-        <Mail size={11} />
+        {lookingUpRow ? <Loader2 size={11} className="animate-spin" /> : <Mail size={11} />}
       </button>
+
+      {yearPickerOpen &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 px-4 py-8">
+            <div className="popover w-full max-w-sm rounded-2xl p-5 shadow-2xl">
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="text-sm font-semibold">{t("cpaEmail.yearPickerTitle")}</h3>
+                <button onClick={() => setYearPickerOpen(false)} className="text-text-faint hover:text-text">
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="relative mb-2">
+                <Search size={12} className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-text-faint" />
+                <input
+                  value={yearSearch}
+                  onChange={(e) => setYearSearch(e.target.value)}
+                  placeholder={t("testSheet.yearSearchPlaceholder")}
+                  className="w-full rounded-md border border-border bg-bg-elevated py-1 pl-6 pr-2 text-xs outline-none focus:border-accent"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                {filteredYears.map((year) => {
+                  const selected = selectedYears.includes(year);
+                  return (
+                    <button
+                      key={year}
+                      type="button"
+                      onClick={() => toggleYear(year)}
+                      className={`flex flex-col items-center gap-0.5 rounded-lg border px-3 py-2.5 transition ${
+                        selected
+                          ? "border-accent bg-accent-soft"
+                          : "border-border bg-bg-elevated hover:border-accent hover:bg-accent-soft"
+                      }`}
+                    >
+                      <span className="text-sm font-semibold">{year}</span>
+                      <span
+                        className={`text-xs ${
+                          selected ? "font-semibold text-amber-600 light:text-amber-700" : "text-text-dim"
+                        }`}
+                      >
+                        ${(caseRecord.refunds?.[year] ?? 0).toLocaleString("en-US")}
+                      </span>
+                    </button>
+                  );
+                })}
+                {filteredYears.length === 0 && (
+                  <div className="col-span-2 py-2 text-center text-xs text-text-faint">{t("assign.noMatching")}</div>
+                )}
+              </div>
+
+              <p className="mt-3 text-xs text-text-faint">
+                {t("cpaEmail.yearPickerSubjectPreview", {
+                  subject: selectedYears.length > 0 ? `[EC ${selectedYears.map((y) => y.slice(-2)).join("-")}]` : "—",
+                })}
+              </p>
+
+              <button
+                type="button"
+                onClick={confirmYears}
+                disabled={selectedYears.length === 0}
+                className="gradient-btn mt-3 w-full rounded-lg py-1.5 text-xs font-medium text-white disabled:cursor-default disabled:opacity-50"
+              >
+                {t("common.confirm")}
+              </button>
+            </div>
+          </div>,
+          document.body
+        )}
 
       {open &&
         typeof document !== "undefined" &&

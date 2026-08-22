@@ -211,6 +211,13 @@ export const api = {
       body: JSON.stringify({ [action]: true }),
     }),
 
+  /** Tra số thứ tự dòng (row) trên tab CPA Review khớp SSN — xem GET
+   * /api/cpa-review/case-row. Dùng cho popup chọn năm gửi mail CPA mới ({cpaReviewRow}). */
+  lookupCpaReviewRow: (ssn: string) =>
+    request<{ found: boolean; rowNumber?: number; month?: string }>(
+      `/api/cpa-review/case-row?ssn=${encodeURIComponent(ssn)}`
+    ),
+
   /** Đẩy 1 dòng dữ liệu hồ sơ lên Google Sheet — xem POST /api/cases/[id]/send-to-sheet.
    * Lỗi "GOOGLE_NOT_CONNECTED" (HTTP 428, xem request() ném ApiError với message này) báo
    * hiệu UI cần mở popup kết nối Google trước khi gọi lại. Server trả về sheetSentAt (ISO)

@@ -23,6 +23,10 @@ export interface CpaEmailTemplateVars {
   /** Tên người dùng đang đăng nhập (người bấm Gửi mail CPA) — dùng cho chữ ký cuối mail
    * thay vì lộ nguyên địa chỉ Gmail dùng để gửi. */
   senderName: string;
+  /** Số thứ tự dòng (row) của hồ sơ này trên tab CPA Review trong app — tra theo SSN, lấy
+   * dòng cập nhật gần đây nhất nếu hồ sơ có nhiều dòng (thêm 2026-08-22, xem popup chọn năm
+   * gửi mới trong SendCpaEmailDialog). Rỗng nếu chưa tìm thấy dòng nào khớp SSN. */
+  cpaReviewRow: string;
 }
 
 export const CPA_EMAIL_TEMPLATE_VAR_KEYS = [
@@ -38,6 +42,7 @@ export const CPA_EMAIL_TEMPLATE_VAR_KEYS = [
   "monthYear",
   "senderEmail",
   "senderName",
+  "cpaReviewRow",
 ] as const satisfies readonly (keyof CpaEmailTemplateVars)[];
 
 /** Bảng HTML 2 cột (Tên | SSN) — 1 dòng cho Client trên, thêm 1 dòng cho Client dưới nếu
@@ -58,7 +63,8 @@ export function buildTemplateVars(
   c: CaseRecord,
   statusLabel: string,
   senderEmail: string,
-  senderName: string
+  senderName: string,
+  cpaReviewRow: string = ""
 ): CpaEmailTemplateVars {
   return {
     clientName: getAllClientNames(c) || "—",
@@ -75,6 +81,7 @@ export function buildTemplateVars(
     monthYear: buildMonthYear(new Date()),
     senderEmail,
     senderName: senderName || senderEmail,
+    cpaReviewRow,
   };
 }
 
@@ -93,7 +100,7 @@ export const DEFAULT_BODY_TEMPLATE = [
   "<p>Dear Robert and Hannah,</p>",
   "<p>Kindly review this file (in server IP 46.21.148.154)</p>",
   "{clientRows}",
-  "<p>***Please see line bôi vàng để trống tự điền in the {monthYear} sheet - 2026 RA- EC Client list.</p>",
+  "<p>***Please see row {cpaReviewRow} in the {monthYear} sheet - 2026 RA- EC Client list.</p>",
   "<p>Best Regards,</p>",
   "<p>{senderName}</p>",
 ].join("");

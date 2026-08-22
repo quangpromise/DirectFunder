@@ -428,6 +428,9 @@ interface AppState {
    * lại" (clear) — KHÔNG gọi Gmail thật, chỉ lưu/xoá cpaEmailSentAt (xem markCpaEmailSent
    * trong api-client.ts). Cập nhật local case.cpaEmailSentAt theo giá trị server trả về. */
   markCpaEmailSent: (caseId: string, action: "manual" | "clear") => Promise<void>;
+  /** Tra số row trên tab CPA Review khớp SSN — dùng cho popup chọn năm gửi mail CPA mới
+   * (điền {cpaReviewRow} vào nội dung mail). Đọc-chỉ, không cần optimistic/log lịch sử. */
+  lookupCpaReviewRow: (ssn: string) => Promise<{ found: boolean; rowNumber?: number }>;
 
   setGoogleSheetConfig: (config: GoogleSheetConfig) => void;
   /** Đổi tháng đang xem trên tab CPA Review — xem cpaReviewSelectedMonth. */
@@ -2240,6 +2243,15 @@ export const useAppStore = create<AppState>()(
           cases: state.cases.map((c) => (c.id === caseId ? { ...c, cpaEmailSentAt: result.cpaEmailSentAt } : c)),
         }));
         logEdit(caseId, "Gửi mail CPA", "", action === "manual" ? "Đánh dấu đã gửi (thủ công)" : "Muốn gửi lại");
+      },
+
+      lookupCpaReviewRow: async (ssn) => {
+        try {
+          const result = await api.lookupCpaReviewRow(ssn);
+          return result.found ? { found: true, rowNumber: result.rowNumber } : { found: false };
+        } catch {
+          return { found: false };
+        }
       },
 
       setGoogleSheetConfig: (config) => {

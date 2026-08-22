@@ -256,6 +256,7 @@ export default function CasesPage() {
   const cpaSenderEmail = useAppStore((s) => s.cpaSenderEmail);
   const sendCpaEmail = useAppStore((s) => s.sendCpaEmail);
   const markCpaEmailSent = useAppStore((s) => s.markCpaEmailSent);
+  const lookupCpaReviewRow = useAppStore((s) => s.lookupCpaReviewRow);
   const sendCaseRowToSheet = useAppStore((s) => s.sendCaseRowToSheet);
   const markCaseSheetSent = useAppStore((s) => s.markCaseSheetSent);
   const sendCaseRowToCpaReview = useAppStore((s) => s.sendCaseRowToCpaReview);
@@ -1256,6 +1257,7 @@ export default function CasesPage() {
               cpaSenderEmail={cpaSenderEmail}
               sendCpaEmail={sendCpaEmail}
               markCpaEmailSent={markCpaEmailSent}
+              lookupCpaReviewRow={lookupCpaReviewRow}
               canSendToSheetFeature={canSendToSheetFeature}
               sendCaseRowToSheet={sendCaseRowToSheet}
               markCaseSheetSent={markCaseSheetSent}
@@ -1464,6 +1466,7 @@ function RowCells({
   cpaSenderEmail,
   sendCpaEmail,
   markCpaEmailSent,
+  lookupCpaReviewRow,
   canSendToSheetFeature,
   sendCaseRowToSheet,
   markCaseSheetSent,
@@ -1550,6 +1553,7 @@ function RowCells({
     }
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
   markCpaEmailSent: (caseId: string, action: "manual" | "clear") => Promise<void>;
+  lookupCpaReviewRow: (ssn: string) => Promise<{ found: boolean; rowNumber?: number }>;
   canSendToSheetFeature: boolean;
   sendCaseRowToSheet: (
     caseId: string
@@ -1733,6 +1737,7 @@ function RowCells({
                     confirm={confirm}
                     onSend={(payload) => sendCpaEmail(row.id, payload)}
                     markCpaEmailSent={markCpaEmailSent}
+                    lookupCpaReviewRow={lookupCpaReviewRow}
                   />
                 </div>
               )}
