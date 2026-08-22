@@ -12,7 +12,7 @@ import {
   DEFAULT_BODY_TEMPLATE,
 } from "@/lib/cpa-email-template";
 import { REFUND_YEARS } from "@/lib/refund";
-import { primarySsn } from "@/lib/client-name";
+import { primarySsn, getAllClientNames } from "@/lib/client-name";
 import { useT, useLanguage } from "@/lib/i18n";
 import { MailBodyEditor } from "@/components/mail-body-editor";
 
@@ -162,7 +162,7 @@ export function SendCpaEmailDialog({
     const yearsAbbrev = years.map((y) => y.slice(-2)).join("-");
     setTo(defaults.to.join(", "));
     setCc(defaults.cc.join(", "));
-    setSubject(`[EC ${yearsAbbrev}]`);
+    setSubject(`[EC ${yearsAbbrev}] ${vars.clientName} - ${vars.phone}`);
     setBodyHtml(renderCpaEmailTemplate(bodyTemplate, vars));
     setFiles([]);
     setError("");
@@ -328,7 +328,12 @@ export function SendCpaEmailDialog({
 
               <p className="mt-3 text-xs text-text-faint">
                 {t("cpaEmail.yearPickerSubjectPreview", {
-                  subject: selectedYears.length > 0 ? `[EC ${selectedYears.map((y) => y.slice(-2)).join("-")}]` : "—",
+                  subject:
+                    selectedYears.length > 0
+                      ? `[EC ${selectedYears.map((y) => y.slice(-2)).join("-")}] ${getAllClientNames(caseRecord) || "—"} - ${
+                          [caseRecord.phone, caseRecord.phone2].filter(Boolean).join(" / ") || "—"
+                        }`
+                      : "—",
                 })}
               </p>
 
