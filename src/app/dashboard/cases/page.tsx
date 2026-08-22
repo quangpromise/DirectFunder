@@ -27,6 +27,8 @@ import type { ClientProfilePayload } from "@/lib/api-client";
 import { EditableCell } from "@/components/editable-cell";
 import { AssignMenu } from "@/components/assign-menu";
 import { AddColumnDialog } from "@/components/add-column-dialog";
+import { ColumnVisibilityButton } from "@/components/column-visibility-button";
+import { loadHiddenColumnIds, saveHiddenColumnIds } from "@/lib/hidden-columns";
 import { AgentC3ImportDialog } from "@/components/agentc3-import-dialog";
 import { ColumnSettingsDialog } from "@/components/column-settings-dialog";
 import { ClientNameCell } from "@/components/client-name-cell";
@@ -345,6 +347,24 @@ export default function CasesPage() {
   // bảng chính, để nhìn bảng dữ liệu rộng rãi hơn. Nút bật/tắt luôn nằm ở hàng "Thêm dòng"
   // (hàng đó không bị ẩn) nên vẫn bấm lại được để hiện các phần đã ẩn.
   const [tableFocusMode, setTableFocusMode] = useState(false);
+  // Cột người dùng TỰ chọn ẩn (chỉ ảnh hưởng trình duyệt/tài khoản này) — đọc từ localStorage
+  // ngay lúc khởi tạo. Không cần đồng bộ lại khi `user.id` đổi (đăng nhập tài khoản khác luôn
+  // qua trang /login, remount lại toàn bộ component này) nên không cần useEffect riêng — tránh
+  // đúng lỗi "setState trong effect" đã gặp/sửa trước đó ở description-cell.tsx/ssn-cell.tsx.
+  const [hiddenColumnIds, setHiddenColumnIds] = useState<string[]>(() => (user ? loadHiddenColumnIds(user.id) : []));
+  function toggleHiddenColumn(columnId: string) {
+    if (!user) return;
+    setHiddenColumnIds((prev) => {
+      const next = prev.includes(columnId) ? prev.filter((id) => id !== columnId) : [...prev, columnId];
+      saveHiddenColumnIds(user.id, next);
+      return next;
+    });
+  }
+  function showAllHiddenColumns() {
+    if (!user) return;
+    setHiddenColumnIds([]);
+    saveHiddenColumnIds(user.id, []);
+  }
   const [reportPeriod, setReportPeriod] = useState<ReportPeriod>("today");
   const [reportMonth, setReportMonth] = useState<string>(() => currentPhoenixMonth());
   const [reportYear, setReportYear] = useState<number>(() => currentPhoenixYear());
@@ -656,7 +676,11 @@ export default function CasesPage() {
 
   const tabStatusOptions = tab === "all" ? statusOptions : statusOptions.filter((o) => getCaseTab(o.id) === tab);
 
-  const otherColumns = columns.filter(
+  // otherColumnsAll = mọi cột CÓ THỂ ẩn (kể cả cột người dùng đã tự ẩn) — dùng làm danh sách
+  // checklist cho ColumnVisibilityButton. otherColumns = danh sách THẬT SỰ render trong bảng,
+  // trừ thêm những cột user này đã tự chọn ẩn (hiddenColumnIds, localStorage riêng — xem
+  // src/lib/hidden-columns.ts, KHÁC hẳn hiddenFromGrid ở trên vốn ẩn cho MỌI user).
+  const otherColumnsAll = columns.filter(
     (col) =>
       col.key !== "clientName" &&
       col.id !== "status" &&
@@ -665,6 +689,7 @@ export default function CasesPage() {
       !col.hidden &&
       !col.hiddenFromGrid
   );
+  const otherColumns = otherColumnsAll.filter((col) => !hiddenColumnIds.includes(col.id));
   const agentSlot2Hidden = isAgentSlot2Hidden(columns);
 
   // Giao việc cột Agent hiện nhóm Agent + Agent Leader, cột Processor hiện nhóm
@@ -964,6 +989,12 @@ export default function CasesPage() {
           )}
 
           {canAddColumnFeature && <AddColumnDialog onAdd={addColumn} />}
+          <ColumnVisibilityButton
+            columns={otherColumnsAll}
+            hiddenColumnIds={hiddenColumnIds}
+            onToggle={toggleHiddenColumn}
+            onShowAll={showAllHiddenColumns}
+          />
           <HistoryDialog editHistory={editHistory} deletionHistory={deletionHistory} users={users} />
 
           {canAddRowFeature && (
@@ -1135,6 +1166,12 @@ export default function CasesPage() {
 
               <div className="flex flex-wrap items-center gap-2">
                 {canAddColumnFeature && <AddColumnDialog onAdd={addColumn} />}
+                <ColumnVisibilityButton
+                  columns={otherColumnsAll}
+                  hiddenColumnIds={hiddenColumnIds}
+                  onToggle={toggleHiddenColumn}
+                  onShowAll={showAllHiddenColumns}
+                />
                 <HistoryDialog editHistory={editHistory} deletionHistory={deletionHistory} users={users} />
               </div>
 
