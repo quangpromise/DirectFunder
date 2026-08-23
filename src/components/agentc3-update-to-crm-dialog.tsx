@@ -206,6 +206,9 @@ export function AgentC3UpdateToCrmDialog({
   }
 
   const canSubmit = selectedYears.length > 0 || Boolean(status) || Boolean(displayedNote.trim());
+  // Đã gửi thành công TOÀN BỘ các bước -- ẩn nút gửi lại đi, tránh bấm nhầm gửi trùng lần nữa
+  // (kết quả từng bước vẫn hiện nguyên ở trên để biết đã làm gì).
+  const allStepsOk = results !== null && results.length > 0 && results.every((r) => r.ok);
 
   function stepLabel(step: string): string {
     if (step === "leadInfo") return t("agentc3UpdateCrm.step.leadInfo");
@@ -413,14 +416,16 @@ export function AgentC3UpdateToCrmDialog({
                     </div>
                   )}
 
-                  <button
-                    onClick={handleSubmit}
-                    disabled={saving || !canSubmit}
-                    className="gradient-btn mt-2 flex h-9 items-center justify-center gap-1.5 rounded-lg text-sm font-medium text-white shadow-lg shadow-blue-950/30 disabled:cursor-default disabled:opacity-60"
-                  >
-                    {saving && <Loader2 size={14} className="animate-spin" />}
-                    {saving ? t("agentc3UpdateCrm.saving") : t("agentc3UpdateCrm.submitButton")}
-                  </button>
+                  {!allStepsOk && (
+                    <button
+                      onClick={handleSubmit}
+                      disabled={saving || !canSubmit}
+                      className="gradient-btn mt-2 flex h-9 items-center justify-center gap-1.5 rounded-lg text-sm font-medium text-white shadow-lg shadow-blue-950/30 disabled:cursor-default disabled:opacity-60"
+                    >
+                      {saving && <Loader2 size={14} className="animate-spin" />}
+                      {saving ? t("agentc3UpdateCrm.saving") : t("agentc3UpdateCrm.submitButton")}
+                    </button>
+                  )}
                 </>
               )}
             </div>
