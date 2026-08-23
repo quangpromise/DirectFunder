@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
+import { Spinner } from "@/components/spinner";
 import { useT } from "@/lib/i18n";
 
 type CrmDocYear = "2023" | "2024" | "2025";
@@ -51,7 +52,7 @@ export function CrmTtsWitCheckButton({
         onClick={handleClick}
         className="inline-flex shrink-0 cursor-pointer items-center justify-center whitespace-nowrap rounded-md border border-amber-800/60 bg-amber-900/40 px-2 py-1 text-center text-[10px] font-bold leading-tight text-amber-200 transition hover:bg-amber-900/60 disabled:cursor-default disabled:opacity-60 light:border-amber-300 light:bg-amber-100 light:text-amber-900 light:hover:bg-amber-200"
       >
-        {checking ? t("crmTtsWit.checking") : t("crmTtsWit.button")}
+        {checking ? <Spinner size={11} /> : t("crmTtsWit.button")}
       </button>
 
       {result &&
