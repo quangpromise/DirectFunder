@@ -49,6 +49,13 @@
      dù ảnh nền có vùng sáng/tối khác nhau. */
   --app-bg-image: url("/theme-dark.jpg");
   --app-bg-overlay: rgba(11, 11, 12, 0.82);
+
+  /* Nền cho .popover (mọi dialog/dropdown trong app, xem class .popover bên dưới) — lấy
+     cảm hứng từ background app Gemini (đen tuyền phía trên, ngả dần sang xanh navy sẫm
+     phía dưới, thêm 2026-08-24). Đặt qua biến riêng (khác --app-bg-image dùng cho nền
+     toàn trang) để override theo theme dễ dàng — light mode giữ nguyên gradient trắng mờ
+     cũ (đen->navy không hợp nền sáng). */
+  --popover-bg-image: linear-gradient(180deg, #000000 0%, #050810 45%, #0d1b3e 100%);
 }
 
 /* Light mode: nền xám xanh trung tính (đậm hơn trắng rõ rệt) để card/input/button nền
@@ -75,6 +82,10 @@
   --app-bg-overlay: rgba(221, 226, 234, 0.9);
 
   --row-alt-bg: #eef1f6;
+
+  /* Light mode: gradient đen->navy kiểu Gemini không hợp nền sáng — giữ gradient trắng mờ
+     nhẹ như cũ. */
+  --popover-bg-image: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0));
 }
 
 @theme inline {
@@ -172,7 +183,7 @@ body {
    show through, unlike .glass which is deliberately translucent. */
 .popover {
   background: var(--bg-elevated);
-  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0));
+  background-image: var(--popover-bg-image);
   border: 1px solid var(--border-strong);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
