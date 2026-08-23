@@ -6,27 +6,33 @@
 @custom-variant light (&:where([data-theme="light"], [data-theme="light"] *));
 
 :root {
-  --bg: #0b0b0c;
-  --bg-elevated: #17171a;
-  --surface: rgba(255, 255, 255, 0.03);
-  --surface-hover: rgba(255, 255, 255, 0.055);
-  --border: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.14);
-  --text: #f2f0ec;
-  --text-dim: #a6a39c;
-  --text-faint: #726f68;
+  /* Bảng màu Dark mode làm mới (2026-08-24, theo mẫu @backgroundnew.jpg — dashboard SaaS
+     kiểu "navy glass") — đổi từ nền xám trung tính (#0b0b0c) sang navy đậm có ánh xanh, mọi
+     bề mặt (card/border/surface) đều nhuốm nhẹ tông xanh brand thay vì trắng/xám trung tính,
+     để card/dialog/table cảm giác "cùng 1 chất liệu kính" với nền thay vì nổi rời rạc. */
+  --bg: #080b13;
+  --bg-elevated: #131a2b;
+  --surface: rgba(120, 160, 255, 0.05);
+  --surface-hover: rgba(120, 160, 255, 0.09);
+  --border: rgba(140, 175, 255, 0.1);
+  --border-strong: rgba(140, 175, 255, 0.18);
+  --text: #eef2fb;
+  --text-dim: #97a3c2;
+  --text-faint: #626d8c;
 
   /* Tông xanh lấy theo logo Direct Funder (mẫu màu thật từ df-logo-1.png: chữ "Funder" và
      icon tam giác #3888c8) — thay cho tông cam trước đó để toàn bộ giao diện (header bảng,
-     nút chính, badge active...) đồng nhất với thương hiệu. */
-  --accent-from: #5cb0ee;
-  --accent-to: #2569b0;
-  --accent: #3b8fd1;
-  --accent-soft: rgba(59, 143, 209, 0.16);
+     nút chính, badge active...) đồng nhất với thương hiệu. Đậm/rực hơn 1 chút so với bản gốc
+     (2026-08-24) để hợp nền navy sẫm mới, vẫn giữ nguyên GỐC xanh dương (không lệch sang tím)
+     vì đây là quyết định thương hiệu đã chốt. */
+  --accent-from: #4fa2ef;
+  --accent-to: #1e5ba0;
+  --accent: #2f7dc4;
+  --accent-soft: rgba(59, 143, 209, 0.18);
   /* Nền header bảng — đậm, tông xanh đồng bộ accent, tách biệt rõ với --bg-elevated
      (nền cell thường) để header "nổi bật" như yêu cầu thiết kế. */
-  --table-head-bg: #142337;
-  --table-head-text: #cfe4fb;
+  --table-head-bg: #0f1e35;
+  --table-head-text: #bfdcfb;
 
   --status-new: #3b82f6;
   --status-progress: #f59e0b;
@@ -42,20 +48,23 @@
      mỗi hàng (style inline, xem RowCells trong cases/page.tsx) — biến kế thừa được xuyên
      qua `display: contents` nên mọi cell con trong hàng đọc đúng giá trị dù bản thân hàng
      không tạo box riêng. */
-  --row-alt-bg: #131316;
+  --row-alt-bg: #0d1220;
 
-  /* Ảnh nền theo theme (áp dụng ở mọi màn hình TRỪ trang Login — xem
-     DashboardLayout/ThemeSwitcher) + lớp phủ tối để chữ/bảng dữ liệu luôn đủ tương phản
-     dù ảnh nền có vùng sáng/tối khác nhau. */
-  --app-bg-image: url("/theme-dark.jpg");
-  --app-bg-overlay: rgba(11, 11, 12, 0.82);
+  /* Nền toàn màn hình (áp dụng ở mọi màn hình TRỪ trang Login — xem
+     DashboardLayout/ThemeSwitcher) — đổi từ ảnh JPG chụp sẵn sang gradient CSS thuần (2026-
+     08-24, theo mẫu navy-glass): navy đậm phía trên/dưới + 2 quầng sáng xanh mờ (radial) mô
+     phỏng ánh sáng lan toả kiểu dashboard hiện đại, không cần ảnh nền thật nữa. Overlay hạ
+     opacity mạnh (0.82 -> 0.18) so với bản ảnh JPG cũ — gradient đã tự kiểm soát độ tương
+     phản, không cần lớp phủ tối dày để "dẹp" ảnh chụp ngẫu nhiên như trước. */
+  --app-bg-image: radial-gradient(120% 55% at 50% -5%, rgba(79, 162, 239, 0.16), transparent 60%),
+    radial-gradient(85% 45% at 10% 105%, rgba(30, 91, 160, 0.16), transparent 65%),
+    linear-gradient(180deg, #050810 0%, #090e1c 45%, #0c1730 100%);
+  --app-bg-overlay: rgba(5, 8, 14, 0.18);
 
-  /* Nền cho .popover (mọi dialog/dropdown trong app, xem class .popover bên dưới) — lấy
-     cảm hứng từ background app Gemini (đen tuyền phía trên, ngả dần sang xanh navy sẫm
-     phía dưới, thêm 2026-08-24). Đặt qua biến riêng (khác --app-bg-image dùng cho nền
-     toàn trang) để override theo theme dễ dàng — light mode giữ nguyên gradient trắng mờ
-     cũ (đen->navy không hợp nền sáng). */
-  --popover-bg-image: linear-gradient(180deg, #000000 0%, #050810 45%, #0d1b3e 100%);
+  /* Nền cho .popover (mọi dialog/dropdown trong app, xem class .popover bên dưới) — cùng
+     tông navy với --app-bg-image ở trên (đồng bộ "1 chất liệu" giữa nền trang và card nổi),
+     đen tuyền phía trên ngả dần sang navy sẫm phía dưới. */
+  --popover-bg-image: linear-gradient(180deg, #030509 0%, #080c17 45%, #0f1f38 100%);
 }
 
 /* Light mode: nền xám xanh trung tính (đậm hơn trắng rõ rệt) để card/input/button nền
@@ -219,8 +228,20 @@ body {
   color: transparent;
 }
 
+/* Glow nhẹ dưới mọi nút chính dùng .gradient-btn (thêm 2026-08-24, theo mẫu navy-glass) —
+   nút "nổi" hẳn lên khỏi nền tối thay vì phẳng, đậm hơn khi hover/nhấn — áp dụng ĐỒNG LOẠT
+   qua class dùng chung này (mọi nút "Lưu"/"Xác nhận"/CTA... trong app), không cần sửa từng
+   component. */
 .gradient-btn {
   background-image: linear-gradient(135deg, var(--accent-from), var(--accent-to));
+  box-shadow: 0 4px 16px -4px rgba(30, 91, 160, 0.5);
+  transition: box-shadow 150ms ease, transform 100ms ease;
+}
+.gradient-btn:hover:not(:disabled) {
+  box-shadow: 0 6px 22px -4px rgba(30, 91, 160, 0.65);
+}
+.gradient-btn:active:not(:disabled) {
+  transform: scale(0.98);
 }
 
 ::-webkit-scrollbar {
