@@ -27,6 +27,7 @@ import { EditableCell } from "@/components/editable-cell";
 import { AssignMenu } from "@/components/assign-menu";
 import { AddColumnDialog } from "@/components/add-column-dialog";
 import { ColumnVisibilityButton } from "@/components/column-visibility-button";
+import { MyNotesDialog } from "@/components/my-notes-dialog";
 import { loadHiddenColumnIds, saveHiddenColumnIds } from "@/lib/hidden-columns";
 import { AgentC3ImportDialog } from "@/components/agentc3-import-dialog";
 import { ColumnSettingsDialog } from "@/components/column-settings-dialog";
@@ -257,6 +258,9 @@ export default function CasesPage() {
   const sendCpaEmail = useAppStore((s) => s.sendCpaEmail);
   const markCpaEmailSent = useAppStore((s) => s.markCpaEmailSent);
   const lookupCpaReviewRow = useAppStore((s) => s.lookupCpaReviewRow);
+  const myNotesHtml = useAppStore((s) => s.myNotesHtml);
+  const fetchMyNotes = useAppStore((s) => s.fetchMyNotes);
+  const saveMyNotes = useAppStore((s) => s.saveMyNotes);
   const sendCaseRowToSheet = useAppStore((s) => s.sendCaseRowToSheet);
   const markCaseSheetSent = useAppStore((s) => s.markCaseSheetSent);
   const sendCaseRowToCpaReview = useAppStore((s) => s.sendCaseRowToCpaReview);
@@ -955,6 +959,7 @@ export default function CasesPage() {
             onToggle={toggleHiddenColumn}
             onShowAll={showAllHiddenColumns}
           />
+          <MyNotesDialog myNotesHtml={myNotesHtml} fetchMyNotes={fetchMyNotes} saveMyNotes={saveMyNotes} />
           <HistoryDialog editHistory={editHistory} deletionHistory={deletionHistory} users={users} />
 
           {canAddRowFeature && (
@@ -1112,6 +1117,7 @@ export default function CasesPage() {
                   onToggle={toggleHiddenColumn}
                   onShowAll={showAllHiddenColumns}
                 />
+                <MyNotesDialog myNotesHtml={myNotesHtml} fetchMyNotes={fetchMyNotes} saveMyNotes={saveMyNotes} />
                 <HistoryDialog editHistory={editHistory} deletionHistory={deletionHistory} users={users} />
               </div>
 

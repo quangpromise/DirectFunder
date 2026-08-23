@@ -653,6 +653,56 @@ Sheet") → bấm "Gửi mail CPA" → chọn 1-2 năm → xác nhận Subject h
 VÀ nội dung mail hiện đúng số row ngay sau cụm "Please see line" (không cần sửa gì ở Phân
 quyền) → đối chiếu số row đó với số hiển thị thật trên tab CPA Review.
 
+### 4.39 [CHỜ XỬ LÝ] Nút "My Notes" — ghi chú cá nhân rich text cho mọi user (thêm 2026-08-23)
+
+Nút mới trên toolbar bảng Hồ sơ (cạnh "Ẩn cột"/"Lịch sử", cả desktop lẫn menu "Thêm" trên
+mobile) — mở popup ghi chú tự do (đậm/nghiêng/gạch ngang/màu chữ/màu nền, `MyNotesEditor`,
+`src/components/my-notes-editor.tsx`), CHO MỌI ROLE (không cần feature permission nào), CHỈ
+chính chủ tài khoản đọc/sửa được ghi chú của mình — không có khái niệm chia sẻ/xem chung.
+
+Thêm `User.myNotesHtml String?` (cột mới, additive) + route riêng `GET|PATCH /api/me/notes`
+(`src/app/api/me/notes/route.ts`) — **CỐ Ý KHÔNG gộp vào `GET /api/users`/`PATCH
+/api/users/[id]`**: danh sách `/api/users` trả về cho MỌI user xem (để gán việc/hiển thị dropdown
+Agent-Processor), nếu nhét `myNotesHtml` vào đó sẽ lộ ghi chú riêng tư của người khác. Route mới
+luôn thao tác trên `me.id` lấy từ session, không nhận `id` từ client nên không có đường nào
+đọc/sửa ghi chú của tài khoản khác. Nội dung nạp LƯỜI (lazy) lần đầu mở popup (`fetchMyNotes`
+trong `app-store.ts`) — KHÔNG nạp cùng `hydrateFromServer()` như users/cases/columns, tránh
+round-trip thừa mỗi lần vào dashboard cho 1 tính năng không phải ai cũng dùng thường xuyên. Lưu
+tay qua nút "Lưu" (không auto-save mỗi keystroke) — dialog KHÔNG tự đóng sau khi lưu (khác đa
+số dialog cấu hình khác trong app) vì đây là notepad, người dùng có thể ghi tiếp trong cùng 1
+lần mở.
+
+Sanitize qua `sanitizeNotesHtml` MỚI (`src/lib/rich-text.ts`) — tách riêng khỏi `sanitizeRuleHtml`
+(dùng cho tab Rules) vì cần whitelist rộng hơn (`<s>`/`<strike>` cho gạch ngang, style
+`color`/`background-color` cho màu chữ/màu nền, `<font color="...">`) mà Rules chưa cần tới;
+refactor phần lõi thành `sanitizeHtml(html, allowedTags, allowedStyleProps)` dùng chung, không
+đụng hành vi sẵn có của `sanitizeRuleHtml`. Chạy ở SERVER (route `PATCH /api/me/notes`, nguồn xử
+lý chính) — client không tự sanitize trước khi gửi vì nội dung chỉ chính chủ đọc lại (không có
+người dùng thứ 2 nào bị ảnh hưởng nếu client gửi HTML thô, nhưng server vẫn luôn sanitize trước
+khi lưu để phòng hờ).
+
+**Đã tự kiểm tra đầy đủ (2026-08-23)**: gọi thật `GET`/`PATCH /api/me/notes` qua curl (session
+thật) — sanitize giữ đúng `<b>`/`<s>`/`<span style="color:...">`, PATCH rồi GET lại khớp nguyên
+văn. Xác nhận `GET /api/users` (12 user thật) KHÔNG có field `myNotesHtml` ở bất kỳ user nào
+(không lộ ghi chú riêng tư). Xác nhận DB: user khác (`thi@`, `lamgiang@`, `thinh@`) vẫn
+`myNotesHtml: null`, không bị ảnh hưởng bởi thao tác của user đang test. Test qua Playwright
+thật: mở popup → nội dung cũ tự nạp đúng → gõ thêm text → chọn tất cả → bấm In đậm + Gạch ngang
+→ Lưu → hiện "Đã lưu lúc HH:MM" → đọc lại `innerHTML` của editor khớp đúng định dạng vừa áp
+dụng. `tsc --noEmit`/`eslint` sạch. Dữ liệu test đã xoá sau khi kiểm tra xong.
+
+**Sau khi deploy code này lên production PHẢI làm đủ các bước sau** (xoá mục này khỏi file khi đã làm xong):
+1. `prisma migrate deploy` nhắm production (thêm cột `myNotesHtml` trên `users`, an toàn/additive/nullable).
+2. Đăng nhập production bằng BẤT KỲ tài khoản nào (không cần manager) → xác nhận thấy nút "My
+   Notes" trên toolbar bảng Hồ sơ → mở popup, gõ thử vài dòng, dùng thử cả 5 định dạng (đậm/
+   nghiêng/gạch ngang/màu chữ/màu nền) → bấm "Lưu" → xác nhận hiện "Đã lưu lúc..." → reload
+   trang, mở lại popup → xác nhận nội dung + định dạng còn nguyên.
+3. Đăng nhập bằng tài khoản KHÁC → mở "My Notes" → xác nhận thấy popup TRỐNG (không thấy ghi
+   chú của tài khoản ở bước 2) — nếu thấy nội dung của người khác thì có lỗ hổng, cần dừng lại
+   kiểm tra ngay.
+4. Mở DevTools → gọi `fetch("/api/users").then(r=>r.json()).then(console.log)` bằng tài khoản
+   bất kỳ → xác nhận KHÔNG có field `myNotesHtml` trong response (double-check không lộ qua
+   danh sách users chung, đúng như đã test ở local).
+
 Mục 2–5 bên dưới là kiến trúc/quy trình đề xuất (phần lớn đã áp dụng đúng như mô tả, trừ Auth đã nêu ở trên). Mục 6 là checklist hành động cụ thể để đưa app này lên cloud thật.
 
 ## 2. Kiến trúc đề xuất

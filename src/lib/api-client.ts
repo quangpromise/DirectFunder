@@ -218,6 +218,15 @@ export const api = {
       `/api/cpa-review/case-row?ssn=${encodeURIComponent(ssn)}`
     ),
 
+  /** "My Notes" cá nhân — chỉ chính chủ tài khoản đọc/sửa được, xem GET/PATCH
+   * /api/me/notes. */
+  getMyNotes: () => request<{ myNotesHtml: string }>("/api/me/notes"),
+  saveMyNotes: (myNotesHtml: string) =>
+    request<{ ok: true; myNotesHtml: string }>("/api/me/notes", {
+      method: "PATCH",
+      body: JSON.stringify({ myNotesHtml }),
+    }),
+
   /** Đẩy 1 dòng dữ liệu hồ sơ lên Google Sheet — xem POST /api/cases/[id]/send-to-sheet.
    * Lỗi "GOOGLE_NOT_CONNECTED" (HTTP 428, xem request() ném ApiError với message này) báo
    * hiệu UI cần mở popup kết nối Google trước khi gọi lại. Server trả về sheetSentAt (ISO)

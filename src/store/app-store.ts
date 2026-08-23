@@ -140,6 +140,10 @@ interface AppState {
    * action set riêng, không sửa được qua UI). Chữ ký chính lấy tên user hiện tại — xem
    * cases/page.tsx (RowCells truyền user.name làm cpaSenderName cho SendCpaEmailDialog). */
   cpaSenderEmail: string;
+  /** "My Notes" cá nhân (thêm 2026-08-23) — CHỈ của chính user đang đăng nhập, KHÔNG nạp
+   * cùng hydrateFromServer (tránh round-trip thừa mỗi lần vào dashboard cho 1 tính năng ít
+   * dùng) — nạp lười (lazy) lần đầu mở popup qua fetchMyNotes(). null = chưa nạp lần nào. */
+  myNotesHtml: string | null;
   /** Sheet đích + cột nào/thứ tự nào được đẩy khi bấm nút "Send" ở cột Status (chỉ hiện
    * khi status = cpa_review) — null = Admin chưa cấu hình, nút Send báo lỗi rõ ràng. */
   googleSheetConfig: GoogleSheetConfig | null;
@@ -431,6 +435,11 @@ interface AppState {
   /** Tra số row trên tab CPA Review khớp SSN — dùng cho popup chọn năm gửi mail CPA mới
    * (điền {cpaReviewRow} vào nội dung mail). Đọc-chỉ, không cần optimistic/log lịch sử. */
   lookupCpaReviewRow: (ssn: string) => Promise<{ found: boolean; rowNumber?: number }>;
+  /** Nạp "My Notes" của chính user đang đăng nhập — gọi lần đầu mở popup (xem
+   * myNotesHtml trong state, null = chưa nạp). */
+  fetchMyNotes: () => Promise<void>;
+  /** Lưu "My Notes" — foreground, chờ kết quả thật để UI báo lỗi/thành công ngay. */
+  saveMyNotes: (html: string) => Promise<{ ok: true } | { ok: false; error: string }>;
 
   setGoogleSheetConfig: (config: GoogleSheetConfig) => void;
   /** Đổi tháng đang xem trên tab CPA Review — xem cpaReviewSelectedMonth. */
@@ -664,6 +673,7 @@ export const useAppStore = create<AppState>()(
       featurePermissions: DEFAULT_FEATURE_PERMISSIONS,
       cpaEmailDefaults: { to: [], cc: [] },
       cpaSenderEmail: "",
+      myNotesHtml: null,
       googleSheetConfig: null,
       cpaReviewSheetConfig: {},
       cpaReviewSelectedMonth: currentMonthKey(),
@@ -2251,6 +2261,21 @@ export const useAppStore = create<AppState>()(
           return result.found ? { found: true, rowNumber: result.rowNumber } : { found: false };
         } catch {
           return { found: false };
+        }
+      },
+
+      fetchMyNotes: async () => {
+        const result = await api.getMyNotes();
+        set({ myNotesHtml: result.myNotesHtml });
+      },
+
+      saveMyNotes: async (html) => {
+        try {
+          const result = await api.saveMyNotes(html);
+          set({ myNotesHtml: result.myNotesHtml });
+          return { ok: true } as const;
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Lưu ghi chú thất bại" } as const;
         }
       },
 

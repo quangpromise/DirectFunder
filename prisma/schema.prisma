@@ -40,6 +40,12 @@ model User {
   /// (AES-256-GCM) — KHÔNG lưu plain text vì đây là mật khẩu thật không thể thu hồi từ xa
   /// như OAuth refresh token (khác googleRefreshToken ở trên).
   webmailPasswordEncrypted String?
+  /// Nội dung "My Notes" (thêm 2026-08-23) — ghi chú cá nhân, HTML rich text (đậm/nghiêng/
+  /// gạch ngang/màu chữ/màu nền, xem src/components/my-notes-editor.tsx +
+  /// sanitizeNotesHtml trong src/lib/rich-text.ts). CHỈ chính chủ tài khoản đọc/sửa được
+  /// (GET/PATCH /api/me/notes) — KHÔNG bao giờ trả về trong GET /api/users (danh sách dùng
+  /// chung cho mọi user xem để gán việc), tránh lộ ghi chú riêng tư cho người khác.
+  myNotesHtml String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
