@@ -14,9 +14,16 @@
   --bg: #0b0b0c;
   --bg-elevated: #17171a;
   --surface: rgba(255, 255, 255, 0.03);
-  --surface-hover: rgba(255, 255, 255, 0.055);
-  --border: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.14);
+  /* Hover mượt hơn + nhuốm nhẹ accent xanh (thay vì xám trung tính) — dùng chung cho hover
+     nút VÀ hover từng dòng bảng dữ liệu (2026-08-24, theo yêu cầu làm mới layout bảng kiểu
+     Apple: hover phải "mượt mà", có phản hồi rõ nhưng không chói). */
+  --surface-hover: rgba(79, 162, 239, 0.09);
+  /* Hairline mảnh hơn 1 chút (0.08 -> 0.06 / 0.14 -> 0.12) — bớt "rối mắt" ở bảng dữ liệu
+     nhiều cột (mỗi ô đều có viền dọc+ngang) mà không mất hẳn ranh giới cột, vẫn áp dụng
+     chung cho mọi border trong app (card/input/dialog) để nhất quán 1 hệ hairline duy nhất
+     thay vì có 2 tông viền khác nhau giữa bảng và phần còn lại. */
+  --border: rgba(255, 255, 255, 0.06);
+  --border-strong: rgba(255, 255, 255, 0.12);
   --text: #f2f0ec;
   --text-dim: #a6a39c;
   --text-faint: #726f68;
@@ -75,9 +82,11 @@
   --bg: #dde2ea;
   --bg-elevated: #ffffff;
   --surface: rgba(20, 30, 48, 0.065);
-  --surface-hover: rgba(20, 30, 48, 0.12);
-  --border: rgba(20, 30, 48, 0.18);
-  --border-strong: rgba(20, 30, 48, 0.30);
+  /* Hover nhuốm nhẹ accent xanh + hairline mảnh hơn — cùng lý do đã ghi ở bản Dark mode
+     phía trên (2026-08-24, làm mới layout bảng kiểu Apple). */
+  --surface-hover: rgba(59, 143, 209, 0.14);
+  --border: rgba(20, 30, 48, 0.14);
+  --border-strong: rgba(20, 30, 48, 0.26);
   --text: #0e1117;
   --text-dim: #333a48;
   --text-faint: #5c6474;
@@ -115,8 +124,20 @@
   --font-sans: var(--font-inter);
 }
 
-* {
-  border-color: var(--border);
+/* Bọc vào @layer base (thay vì để "unlayered" như bản gốc, thêm 2026-08-24) — CSS Cascade
+   Layers quy định rule KHÔNG nằm trong layer nào luôn thắng MỌI rule có layer bất kể độ đặc
+   hiệu (specificity), nên rule `*{border-color}` gốc (viết ngay sau @theme, không có
+   @layer) đã âm thầm ĐÈ MỌI utility class border-color (border-accent, border-border-strong,
+   border-red-500...) trong toàn app suốt từ đầu — đã tự phát hiện + xác minh bằng
+   getComputedStyle lúc làm mới layout bảng (ô đang sửa có class "border-accent" nhưng màu
+   viền thực tế luôn ra --border xám mờ, không bao giờ ra xanh --accent như code yêu cầu).
+   Tailwind v4 tự đặt utility class vào layer `utilities` (thứ tự layer:
+   theme, base, components, utilities) — bọc rule này vào `base` (thấp hơn `utilities`) để
+   utility class ở bất kỳ component nào cũng override đúng ý đồ ban đầu. */
+@layer base {
+  * {
+    border-color: var(--border);
+  }
 }
 
 /* Tắt mọi transition trong đúng 1 frame lúc đổi Dark/Light (gắn/gỡ bởi

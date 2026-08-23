@@ -117,7 +117,7 @@ export function DescriptionCell({
       <button
         onClick={openHistory}
         title={latest || undefined}
-        className={`min-w-0 flex-1 truncate rounded-md px-2.5 py-1.5 text-center text-xs transition hover:bg-surface-hover ${
+        className={`min-w-0 flex-1 truncate rounded-md px-2.5 py-2 text-center text-xs transition hover:bg-surface-hover ${
           unread ? "font-medium text-red-400" : "text-text-dim"
         }`}
       >

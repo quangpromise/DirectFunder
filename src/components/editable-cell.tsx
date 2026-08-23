@@ -137,7 +137,7 @@ export function EditableCell({
 
   if (type === "boolean") {
     return (
-      <div className="flex h-full items-center justify-center px-2 py-1.5">
+      <div className="flex h-full items-center justify-center px-2 py-2">
         <input
           type="checkbox"
           checked={Boolean(value)}
@@ -188,7 +188,7 @@ export function EditableCell({
     return (
       <div
         className={`w-full ${alignClass} ${viewTextClass} ${
-          dense ? "px-1.5 py-1.5 text-[11px] font-semibold" : "px-2.5 py-1.5 text-xs"
+          dense ? "px-1.5 py-2 text-[11px] font-semibold" : "px-2.5 py-2 text-xs"
         } ${colorClass ?? (dense ? "text-text" : "text-text-dim")}`}
         title={displayText || undefined}
       >
@@ -288,7 +288,7 @@ export function EditableCell({
       }}
       {...{ [CELL_NAV_ATTR]: "1" }}
       className={`w-full rounded-md ${alignClass} transition hover:bg-surface-hover ${viewTextClass} ${
-        dense ? "px-1.5 py-1.5 text-[11px] font-semibold" : "px-2.5 py-1.5 text-xs"
+        dense ? "px-1.5 py-2 text-[11px] font-semibold" : "px-2.5 py-2 text-xs"
       } ${colorClass ?? (dense ? "text-text" : "")}`}
       title={displayText || undefined}
     >
@@ -351,7 +351,7 @@ function SelectCell({
 
   if (!editable) {
     return (
-      <div className="flex min-w-0 items-center justify-center px-2 py-1.5">{badge}</div>
+      <div className="flex min-w-0 items-center justify-center px-2 py-2">{badge}</div>
     );
   }
 
@@ -367,7 +367,7 @@ function SelectCell({
       <button
         ref={triggerRef}
         onClick={openMenu}
-        className="flex w-full min-w-0 items-center justify-center px-2 py-1.5 text-center transition hover:bg-surface-hover"
+        className="flex w-full min-w-0 items-center justify-center px-2 py-2 text-center transition hover:bg-surface-hover"
       >
         {badge}
       </button>
