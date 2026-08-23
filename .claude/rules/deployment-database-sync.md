@@ -743,16 +743,16 @@ xanh "Đã kiểm tra" đúng thiết kế. Dữ liệu test (link CRM tạm, 2 
 dọn sạch sau khi kiểm tra. `tsc --noEmit`/`eslint` sạch.
 
 **Sau khi deploy code này lên production PHẢI làm đủ các bước sau** (xoá mục này khỏi file khi đã làm xong):
-1. `prisma migrate deploy` nhắm production (3 cột mới trên `cases`, an toàn/additive/nullable).
+1. ✅ **Đã xong 2026-08-23** — `prisma migrate deploy` nhắm production đã chạy (3 cột mới trên
+   `cases`, an toàn/additive/nullable).
 2. Không cần script merge cho phần đổi tên cột "Order" → "Check CRM" (chỉ đổi qua i18n, xem
    giải thích ở trên).
-3. Chạy script merge cộng dồn cập nhật `width` của cột `"order"` trong `AppConfig.columns`
-   production thành `118` NẾU muốn đồng bộ ngay (không bắt buộc — chỉ là cosmetic, cột vẫn dùng
-   được dù còn 92, chỉ hơi cắt chữ header; Admin cũng có thể tự kéo giãn cột qua UI).
-4. Đăng nhập production bằng tài khoản bất kỳ có quyền cột "order" (mặc định mọi role), mở bảng
-   Hồ sơ → xác nhận cột hiện "Check CRM" (không còn "Order"), KHÔNG còn thấy nút "8821" (nút
-   "TTS & WIT" cũ đặt lệnh Support) — chỉ còn đúng 1 nút "TTS & WIT" mới ở hồ sơ đã có
-   `clientLink`, hồ sơ chưa liên kết hiện "—".
+3. ✅ **Đã xong 2026-08-23** — đã chạy script merge cập nhật `width` của cột `"order"` trong
+   `AppConfig.columns` production từ `92` lên `118` (cosmetic, đỡ cắt chữ header "Check CRM").
+4. [CHỜ XÁC NHẬN QUA UI] Đăng nhập production bằng tài khoản bất kỳ có quyền cột "order" (mặc
+   định mọi role), mở bảng Hồ sơ → xác nhận cột hiện "Check CRM" (không còn "Order"), KHÔNG còn
+   thấy nút "8821" (nút "TTS & WIT" cũ đặt lệnh Support) — chỉ còn đúng 1 nút "TTS & WIT" mới ở
+   hồ sơ đã có `clientLink`, hồ sơ chưa liên kết hiện "—".
 5. Bấm nút "TTS & WIT" ở 1 hồ sơ thật đã liên kết CRM → xác nhận chuyển "Đang kiểm tra…" rồi
    flash xanh "Đã kiểm tra", không có lỗi nào hiện ra.
 6. Vào tab "Orders" (Support) → xác nhận vẫn đặt/xử lý được lệnh Order 8821/TTS & WIT như cũ
