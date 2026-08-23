@@ -50,7 +50,6 @@ import { useConfirm } from "@/components/confirm-dialog";
 import { useAlert } from "@/components/alert-dialog";
 import { isDuplicateSsn, digitsOnly } from "@/lib/ssn";
 import { getFullName } from "@/lib/client-name";
-import { hasWaitingOrderForSsn, missingOrderClientFields } from "@/lib/orders";
 import { greetingPeriodFor, greetingEmoji, GreetingPeriod } from "@/lib/greeting";
 import { useT, useLanguage, translateColumnLabel, translateOptionLabel } from "@/lib/i18n";
 import { PeriodSelector, ReportPanel, ReportStatCard } from "@/components/report-ui";
@@ -252,7 +251,7 @@ export default function CasesPage() {
   const users = useAppStore((s) => s.users);
   const permissions = useAppStore((s) => s.featurePermissions);
   const updateCell = useAppStore((s) => s.updateCell);
-  const placeOrder = useAppStore((s) => s.placeOrder);
+  const checkCrmLatestTts = useAppStore((s) => s.checkCrmLatestTts);
   const cpaEmailDefaults = useAppStore((s) => s.cpaEmailDefaults);
   const cpaSenderEmail = useAppStore((s) => s.cpaSenderEmail);
   const sendCpaEmail = useAppStore((s) => s.sendCpaEmail);
@@ -1245,7 +1244,7 @@ export default function CasesPage() {
               agentUsers={agentUsers}
               processorUsers={processorUsers}
               updateCell={updateCell}
-              placeOrder={placeOrder}
+              checkCrmLatestTts={checkCrmLatestTts}
               deleteRow={deleteRow}
               assignCase={assignCase}
               updateClientLink={updateClientLink}
@@ -1454,7 +1453,7 @@ function RowCells({
   agentUsers,
   processorUsers,
   updateCell,
-  placeOrder,
+  checkCrmLatestTts,
   deleteRow,
   assignCase,
   updateClientLink,
@@ -1518,13 +1517,9 @@ function RowCells({
     value: string | number | boolean | null | CheckInitialValue,
     isCustom: boolean
   ) => void;
-  placeOrder: (
-    caseId: string,
-    field: "order8821" | "orderTtsWit",
-    byUserId: string,
-    clientSlots?: (0 | 1)[],
-    description?: string
-  ) => void;
+  checkCrmLatestTts: (
+    caseId: string
+  ) => Promise<{ ok: true; throttled: boolean; foundNew: { tts: boolean; wit: boolean } } | { ok: false; error: string }>;
   deleteRow: (caseId: string, deletedByUserId: string) => void;
   assignCase: (
     caseId: string,
@@ -1852,43 +1847,14 @@ function RowCells({
           <div key={col.id} className="border-b border-r border-border bg-[var(--row-bg)] transition-colors group-hover:bg-surface-hover">
             <OrderCell
               editable={canEditColumn(user.role, col) && canEditRow}
-              onOrder8821={async (slots) => {
-                const label = `Order 8821 - ${slots.length === 2 ? t("order8821.both") : slots[0] === 0 ? t("order8821.client1") : t("order8821.client2")}`;
-                if (hasWaitingOrderForSsn(allCases, "order8821", slots.map((s) => row.ssn[s]))) {
-                  await alertWarn(t("order8821.oldNotDoneWarning"), { title: t("cases.placeOrderTitle") });
+              hasClientLink={Boolean(row.clientLink)}
+              onCheckCrm={async () => {
+                const res = await checkCrmLatestTts(row.id);
+                if (!res.ok) {
+                  await alertWarn(res.error, { title: t("crmTtsWit.checkFailedTitle") });
                   return false;
                 }
-                const missing = missingOrderClientFields(row, slots);
-                if (missing.length > 0) {
-                  await alertWarn(`${t("cases.missingFieldsBody", { label })}\n${missing.map((m) => `• ${m}`).join("\n")}`, {
-                    title: t("cases.missingFieldsTitle"),
-                  });
-                  return false;
-                }
-                if (await confirm(t("cases.placeOrderConfirm", { label }), { title: t("cases.placeOrderTitle") })) {
-                  placeOrder(row.id, "order8821", user.id, slots);
-                  return true;
-                }
-                return false;
-              }}
-              onOrderTtsWit={async (slots, description) => {
-                const label = `Order TTS & WIT - ${slots.length === 2 ? t("order8821.both") : slots[0] === 0 ? t("order8821.client1") : t("order8821.client2")}`;
-                if (hasWaitingOrderForSsn(allCases, "orderTtsWit", slots.map((s) => row.ssn[s]))) {
-                  await alertWarn(t("order8821.oldNotDoneWarning"), { title: t("cases.placeOrderTitle") });
-                  return false;
-                }
-                const missing = missingOrderClientFields(row, slots);
-                if (missing.length > 0) {
-                  await alertWarn(`${t("cases.missingFieldsBody", { label })}\n${missing.map((m) => `• ${m}`).join("\n")}`, {
-                    title: t("cases.missingFieldsTitle"),
-                  });
-                  return false;
-                }
-                if (await confirm(t("cases.placeOrderConfirm", { label }), { title: t("cases.placeOrderTitle") })) {
-                  placeOrder(row.id, "orderTtsWit", user.id, slots, description);
-                  return true;
-                }
-                return false;
+                return true;
               }}
             />
           </div>

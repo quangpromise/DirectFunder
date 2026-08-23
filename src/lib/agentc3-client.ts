@@ -338,6 +338,60 @@ export async function saveCrmConversationLog(
   }
 }
 
+export interface CrmDocSnapshot {
+  timestamp: string;
+  filename: string;
+  title: string;
+}
+
+const WIT_YEARS = new Set(["2023", "2024", "2025"]);
+
+/** Đọc tab Documentation của khách hàng, tìm file TTS/WIT mới nhất đã upload — dùng cho nút
+ * "TTS & WIT" ở cột "Check CRM" (xem POST /api/agentc3-import/check-latest-tts). Đã khảo sát
+ * thật cấu trúc trang (2026-08-23): mỗi loại tài liệu là 1 dòng "header" (vd "Pitbulltax 2024
+ * TTS", "2023 WI Transcript" — tên WIT thật trên CRM là "{năm} WI Transcript", KHÔNG phải
+ * "Wage & Income Transcript" như tưởng ban đầu, dò được qua toàn bộ danh mục title_ind 1-103),
+ * theo sau là 0..N dòng "lịch sử upload" (cột đầu là số thứ tự thuần, kèm timestamp thật
+ * "YYYY-MM-DD HH:MM:SS" ở cột thứ 3) cho tới khi gặp dòng header kế tiếp. CHỈ theo dõi WIT năm
+ * 2023-2025 (bỏ 2022 dù CRM có) theo đúng yêu cầu — TTS thì mọi năm. */
+export async function fetchLatestTtsAndWit(
+  customerId: string
+): Promise<{ tts: CrmDocSnapshot | null; wit: CrmDocSnapshot | null }> {
+  const res = await fetchWithSession(`/customer/info/${encodeURIComponent(customerId)}/documentation_edil`);
+  if (res.status === 404) throw new AgentC3NotFoundError(`Không tìm thấy khách hàng ${customerId} trên CRM`);
+  if (!res.ok) throw new AgentC3NotFoundError(`CRM trả lỗi ${res.status} khi đọc tài liệu ${customerId}`);
+  const html = await res.text();
+  const $ = cheerio.load(html);
+
+  let currentTitle = "";
+  let latestTts: CrmDocSnapshot | null = null;
+  let latestWit: CrmDocSnapshot | null = null;
+
+  $("table.table-striped tr").each((_, tr) => {
+    const tds = $(tr).find("td");
+    if (tds.length < 5) return;
+    const firstText = $(tds[0]).text().trim();
+    const isHistoryRow = /^\d+$/.test(firstText);
+    if (!isHistoryRow) {
+      if (firstText) currentTitle = firstText;
+      return;
+    }
+    const isTts = /TTS/i.test(currentTitle);
+    const isWit = /^(2023|2024|2025) WI Transcript$/i.test(currentTitle) && WIT_YEARS.has(currentTitle.slice(0, 4));
+    if (!isTts && !isWit) return;
+
+    const timestamp = $(tds[2]).text().trim();
+    if (!timestamp) return;
+    const filename = $(tds[1]).find("a").first().text().trim();
+    const snapshot: CrmDocSnapshot = { timestamp, filename, title: currentTitle };
+
+    if (isTts && (!latestTts || timestamp > latestTts.timestamp)) latestTts = snapshot;
+    if (isWit && (!latestWit || timestamp > latestWit.timestamp)) latestWit = snapshot;
+  });
+
+  return { tts: latestTts, wit: latestWit };
+}
+
 /** Ô tài liệu "{năm} 1040X - Submitted" trong tab Documentation ứng với đúng số thứ tự
  * (`title_ind`) CRM đã gán sẵn cho loại tài liệu đó (dò được qua `info_view.js`/HTML tab
  * Documentation — CRM không cho đặt tên tài liệu tự do, phải khớp đúng 1 trong các ô có sẵn). */

@@ -435,6 +435,10 @@ interface AppState {
   /** Tra số row trên tab CPA Review khớp SSN — dùng cho popup chọn năm gửi mail CPA mới
    * (điền {cpaReviewRow} vào nội dung mail). Đọc-chỉ, không cần optimistic/log lịch sử. */
   lookupCpaReviewRow: (ssn: string) => Promise<{ found: boolean; rowNumber?: number }>;
+  /** Nút "TTS & WIT" ở cột "Check CRM" — kiểm tra CRM agentc3 tìm file TTS/WIT mới. */
+  checkCrmLatestTts: (
+    caseId: string
+  ) => Promise<{ ok: true; throttled: boolean; foundNew: { tts: boolean; wit: boolean } } | { ok: false; error: string }>;
   /** Nạp "My Notes" của chính user đang đăng nhập — gọi lần đầu mở popup (xem
    * myNotesHtml trong state, null = chưa nạp). */
   fetchMyNotes: () => Promise<void>;
@@ -2261,6 +2265,15 @@ export const useAppStore = create<AppState>()(
           return result.found ? { found: true, rowNumber: result.rowNumber } : { found: false };
         } catch {
           return { found: false };
+        }
+      },
+
+      checkCrmLatestTts: async (caseId) => {
+        try {
+          const result = await api.checkCrmLatestTts(caseId);
+          return result;
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Lỗi không xác định" };
         }
       },
 

@@ -259,7 +259,9 @@ export const DEFAULT_COLUMNS: ColumnDef[] = [
     label: "Order",
     type: "order",
     editableBy: ["manager", "support", "agent", "processor", "agent_leader", "processor_leader"],
-    width: 92,
+    // 92 -> 118 (2026-08-23): header đổi thành "Check CRM" (dài hơn "Order") qua i18n key
+    // col.header.order, tăng nhẹ để đỡ bị cắt chữ trên header.
+    width: 118,
   },
   // Cột Status RIÊNG của tab Order (khác với Status ở bảng Hồ sơ) — không hiển thị
   // trong bảng Hồ sơ (bị lọc bỏ khỏi otherColumns), chỉ dùng trong tab Order. Tách
