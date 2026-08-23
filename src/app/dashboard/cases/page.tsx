@@ -1517,9 +1517,10 @@ function RowCells({
     value: string | number | boolean | null | CheckInitialValue,
     isCustom: boolean
   ) => void;
-  checkCrmLatestTts: (
-    caseId: string
-  ) => Promise<{ ok: true; throttled: boolean; foundNew: { tts: boolean; wit: boolean } } | { ok: false; error: string }>;
+  checkCrmLatestTts: (caseId: string) => Promise<
+    | { ok: true; tts: Record<"2023" | "2024" | "2025", string | null>; wit: Record<"2023" | "2024" | "2025", string | null> }
+    | { ok: false; error: string }
+  >;
   deleteRow: (caseId: string, deletedByUserId: string) => void;
   assignCase: (
     caseId: string,
@@ -1852,9 +1853,9 @@ function RowCells({
                 const res = await checkCrmLatestTts(row.id);
                 if (!res.ok) {
                   await alertWarn(res.error, { title: t("crmTtsWit.checkFailedTitle") });
-                  return false;
+                  return null;
                 }
-                return true;
+                return { tts: res.tts, wit: res.wit };
               }}
             />
           </div>

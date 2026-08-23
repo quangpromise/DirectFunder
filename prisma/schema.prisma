@@ -166,18 +166,6 @@ model Case {
   /// (useSuccessFlash) sang bền vững qua reload, cùng cơ chế Mark as sent/"muốn gửi lại" —
   /// xem POST /api/cases/[id]/send-client-email.
   clientEmailSentAt  DateTime?
-  /// Snapshot timestamp (chuỗi "YYYY-MM-DD HH:MM:SS" y hệt định dạng CRM agentc3 trả về, so
-  /// sánh trực tiếp bằng string vì ISO-like) của file TTS mới nhất đã thấy trên CRM lần bấm
-  /// nút "TTS & WIT" (cột "Check CRM") gần nhất — null = chưa từng kiểm tra (baseline), xem
-  /// POST /api/agentc3-import/check-latest-tts.
-  crmLatestTtsUploadedAt String?
-  /// Tương tự crmLatestTtsUploadedAt nhưng cho WIT (CRM gọi "{năm} WI Transcript", CHỈ theo
-  /// dõi năm 2023-2025 theo yêu cầu) — timestamp lớn nhất trong 3 năm đó gộp lại, không tách
-  /// riêng theo từng năm.
-  crmLatestWitUploadedAt String?
-  /// Thời điểm lần cuối app kiểm tra CRM tìm TTS/WIT mới cho hồ sơ này — throttle nhẹ (bỏ qua
-  /// nếu vừa kiểm tra < 30 giây trước, phòng double-click).
-  crmTtsCheckedAt        DateTime?
   /// Thứ tự hiển thị dòng trên bảng Hồ sơ (kéo-thả) — số càng nhỏ hiển thị càng lên trên.
   /// Dùng fractional indexing (giá trị mới = trung bình 2 hàng xóm khi kéo-thả) để không
   /// phải ghi lại toàn bộ bảng mỗi lần đổi vị trí 1 dòng. Hồ sơ mới luôn nhận giá trị âm

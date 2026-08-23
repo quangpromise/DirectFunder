@@ -338,34 +338,35 @@ export async function saveCrmConversationLog(
   }
 }
 
-export interface CrmDocSnapshot {
-  timestamp: string;
-  filename: string;
-  title: string;
+export type CrmDocYear = "2023" | "2024" | "2025";
+const TARGET_YEARS: CrmDocYear[] = ["2023", "2024", "2025"];
+
+export interface CrmTtsWitDates {
+  tts: Record<CrmDocYear, string | null>;
+  wit: Record<CrmDocYear, string | null>;
 }
 
-const WIT_YEARS = new Set(["2023", "2024", "2025"]);
-
-/** Đọc tab Documentation của khách hàng, tìm file TTS/WIT mới nhất đã upload — dùng cho nút
- * "TTS & WIT" ở cột "Check CRM" (xem POST /api/agentc3-import/check-latest-tts). Đã khảo sát
- * thật cấu trúc trang (2026-08-23): mỗi loại tài liệu là 1 dòng "header" (vd "Pitbulltax 2024
- * TTS", "2023 WI Transcript" — tên WIT thật trên CRM là "{năm} WI Transcript", KHÔNG phải
- * "Wage & Income Transcript" như tưởng ban đầu, dò được qua toàn bộ danh mục title_ind 1-103),
- * theo sau là 0..N dòng "lịch sử upload" (cột đầu là số thứ tự thuần, kèm timestamp thật
- * "YYYY-MM-DD HH:MM:SS" ở cột thứ 3) cho tới khi gặp dòng header kế tiếp. CHỈ theo dõi WIT năm
- * 2023-2025 (bỏ 2022 dù CRM có) theo đúng yêu cầu — TTS thì mọi năm. */
-export async function fetchLatestTtsAndWit(
-  customerId: string
-): Promise<{ tts: CrmDocSnapshot | null; wit: CrmDocSnapshot | null }> {
+/** Đọc tab Documentation của khách hàng, tìm ngày upload MỚI NHẤT của file TTS và WIT cho
+ * từng năm 2023/2024/2025 — dùng cho nút "TTS & WIT" ở cột "Check CRM" (xem POST
+ * /api/agentc3-import/check-latest-tts), hiện thẳng lên popup kết quả mỗi lần bấm (KHÔNG so
+ * sánh/lưu mốc, không tạo Notification — đơn giản hoá 2026-08-23 sau phản hồi thực tế). Đã
+ * khảo sát thật cấu trúc trang: mỗi loại tài liệu là 1 dòng "header" (vd "Pitbulltax 2024 TTS",
+ * "2023 WI Transcript" — tên WIT thật trên CRM là "{năm} WI Transcript", KHÔNG phải "Wage &
+ * Income Transcript" như tưởng ban đầu, dò được qua toàn bộ danh mục title_ind 1-103), theo sau
+ * là 0..N dòng "lịch sử upload" (cột đầu là số thứ tự thuần, kèm timestamp thật "YYYY-MM-DD
+ * HH:MM:SS" ở cột thứ 3) cho tới khi gặp dòng header kế tiếp. */
+export async function fetchTtsWitDatesByYear(customerId: string): Promise<CrmTtsWitDates> {
   const res = await fetchWithSession(`/customer/info/${encodeURIComponent(customerId)}/documentation_edil`);
   if (res.status === 404) throw new AgentC3NotFoundError(`Không tìm thấy khách hàng ${customerId} trên CRM`);
   if (!res.ok) throw new AgentC3NotFoundError(`CRM trả lỗi ${res.status} khi đọc tài liệu ${customerId}`);
   const html = await res.text();
   const $ = cheerio.load(html);
 
+  const result: CrmTtsWitDates = {
+    tts: { "2023": null, "2024": null, "2025": null },
+    wit: { "2023": null, "2024": null, "2025": null },
+  };
   let currentTitle = "";
-  let latestTts: CrmDocSnapshot | null = null;
-  let latestWit: CrmDocSnapshot | null = null;
 
   $("table.table-striped tr").each((_, tr) => {
     const tds = $(tr).find("td");
@@ -376,20 +377,21 @@ export async function fetchLatestTtsAndWit(
       if (firstText) currentTitle = firstText;
       return;
     }
+    const yearMatch = /\b(20\d{2})\b/.exec(currentTitle);
+    const year = yearMatch?.[1];
+    if (!year || !TARGET_YEARS.includes(year as CrmDocYear)) return;
     const isTts = /TTS/i.test(currentTitle);
-    const isWit = /^(2023|2024|2025) WI Transcript$/i.test(currentTitle) && WIT_YEARS.has(currentTitle.slice(0, 4));
+    const isWit = /WI Transcript/i.test(currentTitle);
     if (!isTts && !isWit) return;
 
     const timestamp = $(tds[2]).text().trim();
     if (!timestamp) return;
-    const filename = $(tds[1]).find("a").first().text().trim();
-    const snapshot: CrmDocSnapshot = { timestamp, filename, title: currentTitle };
-
-    if (isTts && (!latestTts || timestamp > latestTts.timestamp)) latestTts = snapshot;
-    if (isWit && (!latestWit || timestamp > latestWit.timestamp)) latestWit = snapshot;
+    const bucket = isTts ? result.tts : result.wit;
+    const y = year as CrmDocYear;
+    if (!bucket[y] || timestamp > bucket[y]!) bucket[y] = timestamp;
   });
 
-  return { tts: latestTts, wit: latestWit };
+  return result;
 }
 
 /** Ô tài liệu "{năm} 1040X - Submitted" trong tab Documentation ứng với đúng số thứ tự

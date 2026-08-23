@@ -703,63 +703,67 @@ dụng. `tsc --noEmit`/`eslint` sạch. Dữ liệu test đã xoá sau khi kiể
    bất kỳ → xác nhận KHÔNG có field `myNotesHtml` trong response (double-check không lộ qua
    danh sách users chung, đúng như đã test ở local).
 
-### 4.40 [CHỜ XỬ LÝ] Nút "TTS & WIT" ở cột "Check CRM" — kiểm tra CRM agentc3 tìm file TTS/WIT mới (thêm 2026-08-23)
+### 4.40 Nút "TTS & WIT" ở cột "Check CRM" — hiện popup ngày TTS/WIT mới nhất theo năm (thêm 2026-08-23, đơn giản hoá cùng ngày)
 
 Cột "Order" trên bảng Hồ sơ (trước đây hiện 2 nút đặt lệnh "Order 8821"/"TTS & WIT" cho Support,
 `Order8821Picker`/`OrderTtsWitPicker` trong `src/components/order-cell.tsx`) đã **ẨN 2 nút đó
 khỏi bảng Hồ sơ chính** (tính năng đặt lệnh vẫn còn nguyên, chỉ dùng được qua tab "Orders" riêng
 cho Support — không đụng `placeOrder`/`hasWaitingOrderForSsn`/`missingOrderClientFields`/
 `src/app/dashboard/orders/page.tsx`), thay bằng **1 nút mới cũng tên "TTS & WIT"**
-(`CrmTtsWitCheckButton`, `src/components/crm-tts-wit-check-button.tsx`) — bấm để kiểm tra ngay
-CRM ngoài (`tax.agentc3.com`) xem có tài liệu TTS/WIT mới hơn lần kiểm tra trước không, báo
-Notification cho **Agent 1 + Processor 1** (2 slot chính) của hồ sơ nếu có. Cột đổi tên hiển thị
-từ "Order" thành "Check CRM" — **CHỈ đổi qua i18n** (`col.header.order` trong `src/lib/i18n.ts`,
-VI + EN), KHÔNG đụng `label` trong `DEFAULT_COLUMNS`/`AppConfig.columns` vì cột này dùng key
-i18n cố định (`translateColumnLabel()` tra `DEFAULT_COLUMN_LABEL_KEY["order"]`), bỏ qua hoàn
-toàn `label` lưu trong DB — **không cần script merge cho phần đổi tên cột**, chỉ deploy code.
+(`CrmTtsWitCheckButton`, `src/components/crm-tts-wit-check-button.tsx`) — bấm để đọc trực tiếp
+CRM ngoài (`tax.agentc3.com`) và **mở popup hiện ngay** ngày upload mới nhất của TTS/WIT cho
+từng năm 2023/2024/2025 (6 ô: TTS×3 năm + WIT×3 năm, "—" nếu năm đó chưa có file). Cột đổi tên
+hiển thị từ "Order" thành "Check CRM" — **CHỈ đổi qua i18n** (`col.header.order` trong
+`src/lib/i18n.ts`, VI + EN), KHÔNG đụng `label` trong `DEFAULT_COLUMNS`/`AppConfig.columns` vì
+cột này dùng key i18n cố định (`translateColumnLabel()` tra `DEFAULT_COLUMN_LABEL_KEY["order"]`),
+bỏ qua hoàn toàn `label` lưu trong DB — **không cần script merge cho phần đổi tên cột**.
 
-Chỉ nút "TTS & WIT" mới hiện khi hồ sơ đã có `Case.clientLink` trỏ CRM agentc3 (giống gate của
+**Lịch sử quyết định (đọc trước khi sửa lại tính năng này)**: bản đầu (cùng ngày) thiết kế theo
+kiểu "so mốc + báo Notification cho Agent 1/Processor 1 khi có file mới hơn lần trước" (thêm 3
+cột `Case.crmLatestTtsUploadedAt`/`crmLatestWitUploadedAt`/`crmTtsCheckedAt`) — user test xong
+báo "không thấy có thông báo gì" vì lần bấm ĐẦU TIÊN của 1 hồ sơ theo thiết kế đó chỉ lưu mốc,
+không báo gì (đúng thiết kế nhưng không có phản hồi tức thời, gây hiểu nhầm là lỗi). Sau khi hỏi
+lại, user xác nhận muốn **bỏ hẳn cơ chế Notification/so-mốc**, đổi thành mỗi lần bấm luôn hiện
+NGAY kết quả qua popup — đơn giản hơn, phản hồi tức thời, không cần theo dõi trạng thái gì giữa
+các lần bấm. Đã **XOÁ SẠCH** 3 cột `Case` vừa thêm (migration DROP COLUMN riêng, xem bên dưới —
+3 cột này ĐÃ deploy lên production trước đó cùng ngày rồi bị xoá lại ngay, không có dữ liệu thật
+nào bị mất vì tính năng mới ra đời trong ngày, chỉ có dữ liệu test).
+
+Chỉ nút "TTS & WIT" hiện khi hồ sơ đã có `Case.clientLink` trỏ CRM agentc3 (giống gate của
 "Update to CRM") — ngược lại ô hiện "—" tĩnh. Route `POST /api/agentc3-import/check-latest-tts`
-(gate `canViewCase`, dùng chung `fetchWithSession`/cheerio với `agentc3-client.ts`) đọc tab
-Documentation, phân loại theo tên loại tài liệu: **TTS** = mọi tiêu đề chứa "TTS" (mọi năm,
-"Pitbulltax {năm} TTS"/"{năm} TTS"); **WIT** = CHÍNH XÁC "{năm} WI Transcript" với năm thuộc
-2023/2024/2025 (cố ý bỏ 2022 dù CRM có slot — theo yêu cầu). So với snapshot lưu ở
-`Case.crmLatestTtsUploadedAt`/`crmLatestWitUploadedAt` (string, so sánh trực tiếp vì định dạng
-CRM trả về `YYYY-MM-DD HH:MM:SS` là ISO-like) — lần kiểm tra ĐẦU TIÊN của 1 hồ sơ chỉ lưu
-baseline, KHÔNG báo (tránh báo "mới" cho toàn bộ file cũ có sẵn từ trước). `Case.crmTtsCheckedAt`
-throttle nhẹ 30 giây (chặn double-click). Thêm 3 cột `Case` mới (additive) —
-`crmLatestTtsUploadedAt`/`crmLatestWitUploadedAt` (String?) + `crmTtsCheckedAt` (DateTime?).
+(gate `canViewCase`, dùng chung `fetchWithSession`/cheerio với `agentc3-client.ts`,
+`fetchTtsWitDatesByYear()`) đọc tab Documentation, CHỈ ĐỌC — không ghi/so sánh/thông báo gì.
+Phân loại theo tên loại tài liệu + năm trích từ chính tiêu đề (regex `\b(20\d{2})\b`): **TTS**
+= tiêu đề chứa "TTS" ("Pitbulltax {năm} TTS"/"{năm} TTS"); **WIT** = tiêu đề chứa "WI Transcript"
+("{năm} WI Transcript") — CẢ 2 chỉ giữ lại năm thuộc 2023/2024/2025 (cố ý bỏ 2022 dù CRM có slot
+WIT năm đó — theo yêu cầu ban đầu, giữ nguyên phạm vi này ở thiết kế mới).
 
 **Đã tự kiểm tra đầy đủ (2026-08-23)** qua curl thật (session admin thật) + Playwright thật: gán
 tạm `clientLink` của 1 hồ sơ dev sang customer CRM thật đã biết có sẵn TTS/WIT (`BY309062`) →
-gọi route lần 1 → xác nhận chỉ lưu baseline (`crmLatestTtsUploadedAt`/`crmLatestWitUploadedAt`
-đúng timestamp thật đọc được, KHÔNG có Notification nào); set lùi 2 giá trị đó về ngày cũ giả
-lập "có bản mới" → gọi lại → xác nhận `foundNew:{tts:true,wit:true}` VÀ đúng 2 Notification tạo
-cho Processor 1 của hồ sơ, nội dung đúng tên/SSN/tên file/timestamp, phân biệt rõ TTS/WIT; gọi
-lại ngay → xác nhận `throttled:true`. Qua UI: cột hiện đúng "CHECK CRM" (đã tăng `width` cột từ
-92 lên 118 để đỡ cắt chữ — cũng cần merge `width` này vào `AppConfig.columns` production, xem
-bước 3 dưới, KHÁC `label` không cần merge), nút "TTS & WIT" chuyển "Đang kiểm tra…" rồi flash
-xanh "Đã kiểm tra" đúng thiết kế. Dữ liệu test (link CRM tạm, 2 Notification, snapshot CRM) đã
-dọn sạch sau khi kiểm tra. `tsc --noEmit`/`eslint` sạch.
+gọi route → xác nhận trả đúng `{tts:{"2023":...,"2024":...,"2025":...}, wit:{...}}` khớp đúng
+timestamp thật đọc được từ CRM. Qua UI: bấm nút "TTS & WIT" → popup mở ngay hiện đủ 6 ô ngày
+đúng dữ liệu route trả về. Dữ liệu test (link CRM tạm) đã khôi phục lại sau khi kiểm tra.
+`tsc --noEmit`/`eslint` sạch.
 
 **Sau khi deploy code này lên production PHẢI làm đủ các bước sau** (xoá mục này khỏi file khi đã làm xong):
-1. ✅ **Đã xong 2026-08-23** — `prisma migrate deploy` nhắm production đã chạy (3 cột mới trên
-   `cases`, an toàn/additive/nullable).
-2. Không cần script merge cho phần đổi tên cột "Order" → "Check CRM" (chỉ đổi qua i18n, xem
-   giải thích ở trên).
+1. ✅ **Đã xong 2026-08-23** — `prisma migrate deploy` nhắm production đã chạy CẢ 2 migration
+   cùng ngày: migration thêm 3 cột `crmLatestTtsUploadedAt`/`crmLatestWitUploadedAt`/
+   `crmTtsCheckedAt` (bản thiết kế đầu, đã lỗi thời) VÀ migration `drop_case_crm_tts_tracking`
+   xoá lại đúng 3 cột đó ngay sau (bản thiết kế cuối không cần lưu gì trên `Case`) — production
+   hiện tại schema `cases` KHÔNG còn 3 cột này, khớp đúng code hiện tại.
+2. Không cần script merge cho phần đổi tên cột "Order" → "Check CRM" (chỉ đổi qua i18n).
 3. ✅ **Đã xong 2026-08-23** — đã chạy script merge cập nhật `width` của cột `"order"` trong
-   `AppConfig.columns` production từ `92` lên `118` (cosmetic, đỡ cắt chữ header "Check CRM").
+   `AppConfig.columns` production từ `92` lên `118` (cosmetic, đỡ cắt chữ header "Check CRM") —
+   BƯỚC NÀY VẪN ĐÚNG, không bị ảnh hưởng bởi việc đổi thiết kế Notification → popup.
 4. [CHỜ XÁC NHẬN QUA UI] Đăng nhập production bằng tài khoản bất kỳ có quyền cột "order" (mặc
    định mọi role), mở bảng Hồ sơ → xác nhận cột hiện "Check CRM" (không còn "Order"), KHÔNG còn
-   thấy nút "8821" (nút "TTS & WIT" cũ đặt lệnh Support) — chỉ còn đúng 1 nút "TTS & WIT" mới ở
-   hồ sơ đã có `clientLink`, hồ sơ chưa liên kết hiện "—".
-5. Bấm nút "TTS & WIT" ở 1 hồ sơ thật đã liên kết CRM → xác nhận chuyển "Đang kiểm tra…" rồi
-   flash xanh "Đã kiểm tra", không có lỗi nào hiện ra.
+   thấy nút "8821" — chỉ còn đúng 1 nút "TTS & WIT" mới ở hồ sơ đã có `clientLink`, hồ sơ chưa
+   liên kết hiện "—".
+5. Bấm nút "TTS & WIT" ở 1 hồ sơ thật đã liên kết CRM → xác nhận popup mở ngay, hiện đúng 6 ô
+   ngày (TTS/WIT × 2023/2024/2025) khớp đúng dữ liệu thật trên CRM, năm nào chưa có file hiện
+   "—". Bấm lại nhiều lần → xác nhận luôn đọc lại CRM mới nhất (không cache/không lỗi trùng).
 6. Vào tab "Orders" (Support) → xác nhận vẫn đặt/xử lý được lệnh Order 8821/TTS & WIT như cũ
    (tính năng cũ không mất, chỉ mất chỗ bấm nhanh từ bảng Hồ sơ chính).
-7. Set thử `crmLatestTtsUploadedAt`/`crmLatestWitUploadedAt` của 1 hồ sơ thật về giá trị cũ hơn
-   (qua script, giống cách đã test ở local) → bấm lại nút → xác nhận Agent 1 + Processor 1 của
-   hồ sơ đó nhận đúng Notification, bấm vào nhảy đúng tới hồ sơ.
 
 Mục 2–5 bên dưới là kiến trúc/quy trình đề xuất (phần lớn đã áp dụng đúng như mô tả, trừ Auth đã nêu ở trên). Mục 6 là checklist hành động cụ thể để đưa app này lên cloud thật.
 

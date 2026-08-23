@@ -400,13 +400,14 @@ export const api = {
     );
   },
 
-  /** Nút "TTS & WIT" ở cột "Check CRM" — kiểm tra ngay CRM agentc3 tìm file TTS/WIT mới hơn
-   * lần kiểm tra trước, báo Notification cho Agent 1 + Processor 1 nếu có. */
+  /** Nút "TTS & WIT" ở cột "Check CRM" — đọc trực tiếp CRM agentc3, trả về ngày upload mới
+   * nhất của TTS/WIT cho từng năm 2023/2024/2025 để hiện popup kết quả. */
   checkCrmLatestTts: (caseId: string) =>
-    request<{ ok: true; throttled: boolean; foundNew: { tts: boolean; wit: boolean } }>(
-      "/api/agentc3-import/check-latest-tts",
-      { method: "POST", body: JSON.stringify({ caseId }) }
-    ),
+    request<{
+      ok: true;
+      tts: Record<"2023" | "2024" | "2025", string | null>;
+      wit: Record<"2023" | "2024" | "2025", string | null>;
+    }>("/api/agentc3-import/check-latest-tts", { method: "POST", body: JSON.stringify({ caseId }) }),
 
   listNotifications: () => request<AppNotification[]>("/api/notifications"),
   markNotificationRead: (id: string) => request<{ ok: true }>(`/api/notifications/${id}`, { method: "PATCH" }),

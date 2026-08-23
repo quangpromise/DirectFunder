@@ -1,6 +1,6 @@
 "use client";
 
-import { CrmTtsWitCheckButton } from "@/components/crm-tts-wit-check-button";
+import { CrmTtsWitCheckButton, CrmTtsWitResult } from "@/components/crm-tts-wit-check-button";
 
 /**
  * Cột "Check CRM" (trước đây tên "Order", đổi 2026-08-23) — trước đây hiện 2 nút đặt lệnh
@@ -16,7 +16,7 @@ export function OrderCell({
 }: {
   editable: boolean;
   hasClientLink: boolean;
-  onCheckCrm: () => Promise<boolean | void>;
+  onCheckCrm: () => Promise<CrmTtsWitResult | null>;
 }) {
   return (
     <div className="flex h-full min-w-0 flex-col items-center justify-center gap-0.5 px-1 py-1">

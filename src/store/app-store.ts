@@ -435,10 +435,11 @@ interface AppState {
   /** Tra số row trên tab CPA Review khớp SSN — dùng cho popup chọn năm gửi mail CPA mới
    * (điền {cpaReviewRow} vào nội dung mail). Đọc-chỉ, không cần optimistic/log lịch sử. */
   lookupCpaReviewRow: (ssn: string) => Promise<{ found: boolean; rowNumber?: number }>;
-  /** Nút "TTS & WIT" ở cột "Check CRM" — kiểm tra CRM agentc3 tìm file TTS/WIT mới. */
-  checkCrmLatestTts: (
-    caseId: string
-  ) => Promise<{ ok: true; throttled: boolean; foundNew: { tts: boolean; wit: boolean } } | { ok: false; error: string }>;
+  /** Nút "TTS & WIT" ở cột "Check CRM" — đọc ngày TTS/WIT mới nhất theo năm từ CRM agentc3. */
+  checkCrmLatestTts: (caseId: string) => Promise<
+    | { ok: true; tts: Record<"2023" | "2024" | "2025", string | null>; wit: Record<"2023" | "2024" | "2025", string | null> }
+    | { ok: false; error: string }
+  >;
   /** Nạp "My Notes" của chính user đang đăng nhập — gọi lần đầu mở popup (xem
    * myNotesHtml trong state, null = chưa nạp). */
   fetchMyNotes: () => Promise<void>;
