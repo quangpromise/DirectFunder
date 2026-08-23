@@ -160,7 +160,10 @@ export function SendCpaEmailDialog({
   function openDialog(years: string[], cpaReviewRow: string) {
     const vars = buildTemplateVars(caseRecord, statusLabel, senderEmail, senderName, cpaReviewRow);
     const bodyTemplate = defaults.bodyTemplate?.trim() || DEFAULT_BODY_TEMPLATE;
-    const yearsAbbrev = years.map((y) => y.slice(-2)).join("-");
+    const yearsAbbrev = [...years]
+      .sort((a, b) => Number(a) - Number(b))
+      .map((y) => y.slice(-2))
+      .join("-");
     setTo(defaults.to.join(", "));
     setCc(defaults.cc.join(", "));
     setSubject(`[EC ${yearsAbbrev}] ${vars.clientName} - ${vars.phone}`);
@@ -332,7 +335,10 @@ export function SendCpaEmailDialog({
                 {t("cpaEmail.yearPickerSubjectPreview", {
                   subject:
                     selectedYears.length > 0
-                      ? `[EC ${selectedYears.map((y) => y.slice(-2)).join("-")}] ${getAllClientNames(caseRecord) || "—"} - ${
+                      ? `[EC ${[...selectedYears]
+                          .sort((a, b) => Number(a) - Number(b))
+                          .map((y) => y.slice(-2))
+                          .join("-")}] ${getAllClientNames(caseRecord) || "—"} - ${
                           [caseRecord.phone, caseRecord.phone2].filter(Boolean).join(" / ") || "—"
                         }`
                       : "—",
