@@ -181,12 +181,29 @@ body {
 
 /* Solid-ish surface for floating menus/modals: text behind must never
    show through, unlike .glass which is deliberately translucent. */
+/* Hiệu ứng mở popup (thêm 2026-08-24) — phóng to nhẹ 95% -> 100% kèm mờ dần vào, áp dụng
+   ĐỒNG LOẠT cho mọi .popover (dropdown lẫn dialog trung tâm) qua chính class dùng chung này,
+   không cần sửa từng component. transform/opacity là 2 thuộc tính rẻ nhất để animate (chạy
+   trên compositor, không tốn layout/paint lại) — tránh dùng blur()/kích thước layout để nhẹ
+   máy. */
+@keyframes popover-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 .popover {
   background: var(--bg-elevated);
   background-image: var(--popover-bg-image);
   border: 1px solid var(--border-strong);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
+  animation: popover-in 160ms ease-out;
 }
 
 .gradient-text {
