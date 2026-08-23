@@ -450,6 +450,12 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermissions = {
   // hasFeature() không cần liệt kê), Admin có thể cấp thêm cho role khác qua trang Phân
   // quyền. Mọi user đã đăng nhập đều XEM được tab Rules bất kể quyền này (không giới hạn xem).
   manageRules: [],
+  // Ai được THẤY tab "Order" ở nav + truy cập trực tiếp route — trước đây hard-code
+  // roles: ["agent","processor","support","agent_leader","processor_leader"] ở cả
+  // top-nav.tsx lẫn src/app/dashboard/orders/page.tsx (thêm 2026-08-23, cùng pattern
+  // viewCollecting/viewCpaReview/viewForProcessor). Giữ nguyên đúng 5 role đó làm mặc định để
+  // hành vi hiện có không đổi cho tới khi Admin chủ động cấp/thu hồi quyền cho role khác.
+  viewOrders: ["agent", "processor", "support", "agent_leader", "processor_leader"],
   // Ai được THẤY tab "Collecting" ở nav + truy cập trực tiếp route — trước đây hard-code
   // roles: ["manager","accounting"] ở top-nav.tsx (2026-08-12), giờ cấu hình được qua trang
   // Phân quyền (2026-08-13). Giữ "accounting" làm mặc định để hành vi hiện có không đổi cho

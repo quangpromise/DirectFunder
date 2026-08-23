@@ -40,7 +40,8 @@ const PRIMARY_NAV: { href: string; labelKey: string; icon: typeof Table2; roles:
     href: "/dashboard/orders",
     labelKey: "nav.orders",
     icon: ClipboardList,
-    roles: ["agent", "processor", "support", "agent_leader", "processor_leader"],
+    roles: "all",
+    feature: "viewOrders",
   },
   // Tab mới (2026-08-12), độc lập hoàn toàn với bảng Hồ sơ — bảng thu hồi công nợ dạng
   // Excel. roles: "all" + feature "viewCollecting" (2026-08-13) — Admin cấu hình nhóm nào

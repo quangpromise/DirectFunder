@@ -411,13 +411,7 @@ export default function OrdersPage() {
 
   if (!user) return null;
 
-  if (
-    user.role !== "agent" &&
-    user.role !== "processor" &&
-    user.role !== "support" &&
-    user.role !== "agent_leader" &&
-    user.role !== "processor_leader"
-  ) {
+  if (!hasFeature(permissions, "viewOrders", user.role)) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
         <ShieldAlert size={28} className="text-text-faint" />

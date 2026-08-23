@@ -765,6 +765,42 @@ timestamp thật đọc được từ CRM. Qua UI: bấm nút "TTS & WIT" → po
 6. Vào tab "Orders" (Support) → xác nhận vẫn đặt/xử lý được lệnh Order 8821/TTS & WIT như cũ
    (tính năng cũ không mất, chỉ mất chỗ bấm nhanh từ bảng Hồ sơ chính).
 
+### 4.41 [CHỜ XỬ LÝ] Feature key `viewOrders` — cấu hình được quyền xem tab "Order" qua trang Phân quyền (thêm 2026-08-23)
+
+Trước đây tab "Order" ở nav (`top-nav.tsx`) VÀ trang `/dashboard/orders` (chặn truy cập thẳng
+qua URL) đều hard-code `roles: ["agent","processor","support","agent_leader","processor_leader"]`
+— Quản lý (manager) và Kế toán KHÔNG xem được tab này dù có toàn quyền ở mọi tab khác. Đổi thành
+feature key `viewOrders` (mặc định giữ nguyên đúng 5 role đó, KHÔNG rỗng — đúng loại thay đổi mô
+tả ở mục 4.8/4.21, giống `viewCollecting`/`viewCpaReview`/`viewForProcessor`), Admin giờ cấp/thu
+quyền qua trang Phân quyền (dòng "Xem tab Order" tự xuất hiện, `ASSIGNABLE_FEATURES` lặp tự
+động). **Hệ quả phụ có chủ đích**: vì `hasFeature()` luôn bypass cho `role === "manager"` (đúng
+convention chung mọi feature key khác trong app), Quản lý (Admin) giờ xem được tab "Order" — TRƯỚC
+ĐÂY KHÔNG xem được do hard-code loại trừ. Đây là thay đổi hành vi nhỏ nhưng đã chủ ý (nhất quán
+với mọi tab feature-gated khác), không phải bug.
+
+Không đổi schema (không cột/bảng nào mới) — chỉ đổi `AppConfig.featurePermissions`.
+
+**Đã tự kiểm tra ở local (2026-08-23)** qua Playwright thật: merge `viewOrders` vào DB dev →
+đăng nhập Manager → trang Phân quyền hiện đúng dòng "Xem tab Order" (Manager luôn tick sẵn/khoá,
+Agent/Processor/Support/Agent Leader/Processor Leader đã tick sẵn đúng mặc định, Kế toán KHÔNG
+tick — khớp đúng hành vi hard-code cũ) → vào thẳng `/dashboard/orders` bằng Manager → xác nhận
+xem được bình thường (trước đây bị chặn "Bạn không có quyền..."). `tsc --noEmit` sạch; `eslint`
+chỉ còn 1 lỗi CÓ SẴN TỪ TRƯỚC ở dòng không liên quan trong cùng file (`orders/page.tsx:84`,
+`react-hooks/set-state-in-effect` ở 1 component khác, xác nhận qua `git diff` không đụng dòng đó).
+
+**Sau khi deploy code này lên production PHẢI làm đủ các bước sau** (xoá mục này khỏi file khi đã làm xong):
+1. Không cần `prisma migrate deploy` (không đổi schema).
+2. ✅ **Đã xong 2026-08-23** — đã chạy script merge cộng dồn thêm
+   `viewOrders: ["agent","processor","support","agent_leader","processor_leader"]` vào
+   `AppConfig.featurePermissions` production.
+3. [CHỜ XÁC NHẬN QUA UI] Đăng nhập production bằng tài khoản **Agent/Processor/Support/Agent Leader/Processor Leader**
+   thật → xác nhận vẫn thấy + dùng được tab "Order" như trước (không bị mất quyền do quên bước 2).
+4. Đăng nhập bằng tài khoản **Manager** → xác nhận giờ CŨNG thấy tab "Order" (trước đây không
+   thấy — xác nhận đúng thay đổi có chủ đích, không phải lỗi).
+5. Vào trang Phân quyền, tick thêm 1 role khác (vd Kế toán) vào dòng "Xem tab Order" → đăng nhập
+   tài khoản role đó → xác nhận thấy tab (trước đó không thấy). Bỏ tick lại → xác nhận mất quyền
+   xem, kể cả gõ thẳng URL `/dashboard/orders`.
+
 Mục 2–5 bên dưới là kiến trúc/quy trình đề xuất (phần lớn đã áp dụng đúng như mô tả, trừ Auth đã nêu ở trên). Mục 6 là checklist hành động cụ thể để đưa app này lên cloud thật.
 
 ## 2. Kiến trúc đề xuất
