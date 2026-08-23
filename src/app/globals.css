@@ -65,12 +65,16 @@
   --app-bg-image: url("/theme-dark.jpg");
   --app-bg-overlay: rgba(11, 11, 12, 0.82);
 
-  /* Nền cho .popover (mọi dialog/dropdown trong app, xem class .popover bên dưới) — lấy
-     cảm hứng từ background app Gemini (đen tuyền phía trên, ngả dần sang xanh navy sẫm
-     phía dưới, thêm 2026-08-24). Đặt qua biến riêng (khác --app-bg-image dùng cho nền
-     toàn trang) để override theo theme dễ dàng — light mode giữ nguyên gradient trắng mờ
-     cũ (đen->navy không hợp nền sáng). */
-  --popover-bg-image: linear-gradient(180deg, #000000 0%, #050810 45%, #0d1b3e 100%);
+  /* Nền cho .popover (mọi dialog/dropdown trong app) — đổi từ gradient đen->navy "kiểu
+     Gemini" (2026-08-24 đầu ngày) sang kính mờ kiểu Apple "Liquid Glass" (@pop-up.jpg —
+     Control Center iOS: kính trong mờ bắt màu/ánh sáng môi trường phía sau qua backdrop-
+     blur mạnh, KHÔNG phải màu đặc/gradient cố định) — cùng ngày, theo phản hồi "bỏ màu xanh
+     Gemini đi". `--popover-glass-bg` là lớp phủ sáng mờ rất nhẹ (rgba trắng, không phải
+     màu xanh/navy) để tạo hiệu ứng "kính" — nền thật là những gì backdrop-filter blur/
+     saturate ra phía sau nó (xem .popover bên dưới), biến này chỉ thêm 1 lớp sáng mỏng lên
+     trên cho có "chất liệu kính" thay vì blur trong suốt hoàn toàn. */
+  --popover-glass-bg: rgba(255, 255, 255, 0.07);
+  --popover-glass-border: rgba(255, 255, 255, 0.16);
 }
 
 /* Light mode: nền xám xanh trung tính (đậm hơn trắng rõ rệt) để card/input/button nền
@@ -100,9 +104,10 @@
 
   --row-alt-bg: #eef1f6;
 
-  /* Light mode: gradient đen->navy kiểu Gemini không hợp nền sáng — giữ gradient trắng mờ
-     nhẹ như cũ. */
-  --popover-bg-image: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0));
+  /* Kính mờ Light mode — lớp phủ TRẮNG đậm hơn bản Dark (nền sáng cần lớp phủ rõ hơn mới đủ
+     "chất liệu kính" thay vì gần như vô hình), viền cũng đậm hơn tương ứng. */
+  --popover-glass-bg: rgba(255, 255, 255, 0.55);
+  --popover-glass-border: rgba(255, 255, 255, 0.7);
 }
 
 @theme inline {
@@ -208,8 +213,15 @@ body {
   -webkit-backdrop-filter: blur(20px);
 }
 
-/* Solid-ish surface for floating menus/modals: text behind must never
-   show through, unlike .glass which is deliberately translucent. */
+/* Vẫn giữ nền SOLID-ISH (--bg-elevated làm gốc) — chữ/nội dung phía sau KHÔNG được xuyên
+   qua, khác .glass (cố ý trong suốt) — quan trọng vì .popover còn dùng cho dropdown/menu nổi
+   ngay trên bảng dữ liệu dày đặc chữ+màu, để trong suốt thật (như Apple Control Center làm
+   trên nền ảnh) sẽ làm chữ trong popup khó đọc/lẫn màu với nội dung bảng phía sau. Thay vào
+   đó mô phỏng "chất liệu kính" (Apple Liquid Glass, @pop-up.jpg — Control Center iOS, thêm
+   2026-08-24 thay cho gradient đen->navy "kiểu Gemini" cũ theo phản hồi "bỏ màu xanh Gemini
+   đi") bằng: backdrop-filter blur+saturate mạnh hơn hẳn (tạo độ sâu/khúc xạ ở viền và lúc
+   phóng to mở popup) + 1 dải sáng mờ (sheen) chỉ ở phía trên thay vì phủ màu kín cả khối như
+   trước — giữ đúng cảm giác "kính" mà không hy sinh độ tương phản chữ. */
 /* Hiệu ứng mở popup (thêm 2026-08-24) — phóng to nhẹ 95% -> 100% kèm mờ dần vào, áp dụng
    ĐỒNG LOẠT cho mọi .popover (dropdown lẫn dialog trung tâm) qua chính class dùng chung này,
    không cần sửa từng component. transform/opacity là 2 thuộc tính rẻ nhất để animate (chạy
@@ -228,10 +240,10 @@ body {
 
 .popover {
   background: var(--bg-elevated);
-  background-image: var(--popover-bg-image);
-  border: 1px solid var(--border-strong);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background-image: linear-gradient(180deg, var(--popover-glass-bg), transparent 55%);
+  border: 1px solid var(--popover-glass-border);
+  backdrop-filter: blur(28px) saturate(160%);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
   animation: popover-in 160ms ease-out;
 }
 
