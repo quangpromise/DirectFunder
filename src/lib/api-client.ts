@@ -78,6 +78,10 @@ export const api = {
     request<ApiUser>(`/api/users/${userId}`, { method: "PATCH", body: JSON.stringify({ avatarUrl }) }),
   updateUserTeam: (userId: string, teamMemberIds: string[]) =>
     request<ApiUser>(`/api/users/${userId}`, { method: "PATCH", body: JSON.stringify({ teamMemberIds }) }),
+  /** Admin bật/tắt quyền xem panel "Đang online" (top-nav) riêng cho 1 tài khoản KHÔNG phải
+   * Manager (Manager luôn xem được sẵn, không cần cờ này). */
+  updateUserOnlinePresenceAccess: (userId: string, canViewOnlinePresence: boolean) =>
+    request<ApiUser>(`/api/users/${userId}`, { method: "PATCH", body: JSON.stringify({ canViewOnlinePresence }) }),
   /** Admin đổi email tài khoản KHÁC (xem PATCH /api/users/[id]) — server tự chuẩn hoá
    * lowercase + kiểm tra trùng, trả 409 nếu email đã dùng cho tài khoản khác. */
   updateUserEmail: (userId: string, email: string) =>

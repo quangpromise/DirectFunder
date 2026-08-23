@@ -410,6 +410,8 @@ interface AppState {
   resetUserPassword: (userId: string, newPassword: string) => Promise<boolean>;
   updateAvatar: (userId: string, avatarUrl: string | null) => void;
   updateUserTeam: (userId: string, teamMemberIds: string[]) => void;
+  /** Admin bật/tắt quyền xem panel "Đang online" riêng cho 1 tài khoản không phải Manager. */
+  updateUserOnlinePresenceAccess: (userId: string, canViewOnlinePresence: boolean) => void;
   /** Admin đổi email tài khoản KHÁC — KHÔNG optimistic (khác updateUserRole/updateAvatar)
    * vì email unique, server có thể trả lỗi trùng (409), phải đợi kết quả thật trước khi cập
    * nhật state, tránh hiện email mới trên UI dù server đã từ chối. */
@@ -2224,6 +2226,13 @@ export const useAppStore = create<AppState>()(
           users: state.users.map((u) => (u.id === userId ? { ...u, teamMemberIds } : u)),
         }));
         syncInBackground("updateUserTeam", api.updateUserTeam(userId, teamMemberIds));
+      },
+
+      updateUserOnlinePresenceAccess: (userId, canViewOnlinePresence) => {
+        set((state) => ({
+          users: state.users.map((u) => (u.id === userId ? { ...u, canViewOnlinePresence } : u)),
+        }));
+        syncInBackground("updateUserOnlinePresenceAccess", api.updateUserOnlinePresenceAccess(userId, canViewOnlinePresence));
       },
 
       updateUserEmail: async (userId, email) => {

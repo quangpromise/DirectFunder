@@ -25,6 +25,7 @@ export async function GET() {
       avatarUrl: true,
       teamMemberIds: true,
       webmailUsername: true,
+      canViewOnlinePresence: true,
     },
   });
   return NextResponse.json(users);

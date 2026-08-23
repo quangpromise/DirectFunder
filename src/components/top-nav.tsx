@@ -72,6 +72,8 @@ const ADMIN_NAV: { href: string; labelKey: string; icon: typeof Table2; roles: R
 export function TopNav() {
   const user = useCurrentUser();
   const featurePermissions = useAppStore((s) => s.featurePermissions);
+  const users = useAppStore((s) => s.users);
+  const onlineUserIds = useAppStore((s) => s.onlineUserIds);
   const pathname = usePathname();
   const logout = useAppStore((s) => s.logout);
   const updateAvatar = useAppStore((s) => s.updateAvatar);
@@ -100,6 +102,13 @@ export function TopNav() {
       (!item.feature || hasFeature(featurePermissions, item.feature, user.role))
   );
   const adminItems = ADMIN_NAV.filter((item) => item.roles === "all" || item.roles.includes(user.role));
+
+  // Panel "Đang online" trong dropdown Tài khoản (thêm 2026-08-23) — Manager luôn xem được,
+  // user khác chỉ xem nếu Admin đã bật canViewOnlinePresence riêng cho họ (nút mắt ở trang
+  // Quản lý tài khoản). CHỈ liệt kê những tài khoản ĐANG online (không hiện cả danh sách
+  // offline như trang Quản lý tài khoản — dropdown này nhỏ gọn hơn).
+  const canSeeOnlinePanel = user.role === "manager" || Boolean(user.canViewOnlinePresence);
+  const onlineUsers = canSeeOnlinePanel ? users.filter((u) => onlineUserIds.includes(u.id)) : [];
 
   // Dùng chung cho cả hàng tab desktop lẫn danh sách trong menu hamburger mobile (2 nơi gọi
   // bên dưới) — tránh lặp lại JSX Link 4 lần khi giờ NAV tách 2 nhóm để chèn RulesPanel vào
@@ -210,6 +219,28 @@ export function TopNav() {
                     <RoleBadge role={user.role} />
                   </div>
                 </div>
+                {canSeeOnlinePanel && (
+                  <div className="mx-2 mb-1.5 rounded-lg bg-surface px-2 py-1.5">
+                    <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-text-faint">
+                      {t("topNav.onlineNow", { count: onlineUsers.length })}
+                    </div>
+                    {onlineUsers.length === 0 ? (
+                      <div className="py-0.5 text-xs text-text-faint">{t("topNav.onlineNone")}</div>
+                    ) : (
+                      <div className="flex max-h-40 flex-col gap-1 overflow-y-auto">
+                        {onlineUsers.map((u) => (
+                          <div key={u.id} className="flex items-center gap-1.5">
+                            <div className="relative shrink-0">
+                              <Avatar name={u.name} color={u.avatarColor} url={u.avatarUrl} size={20} />
+                              <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border-2 border-surface bg-emerald-500" />
+                            </div>
+                            <span className="truncate text-xs text-text">{u.name}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
                 {/* Trạng thái + kết nối/ngắt kết nối hộp mail webmail (mail.directfunder.com)
                     — dùng cho tính năng "Send email to client" (send-client-email-button.tsx),
                     nhưng kết nối được đặt ở ĐÂY cho MỌI user (không giới hạn theo quyền

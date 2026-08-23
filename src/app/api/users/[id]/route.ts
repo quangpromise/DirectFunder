@@ -45,7 +45,13 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/users/
     return NextResponse.json({ ok: true });
   }
 
-  const patch: { role?: string; email?: string; avatarUrl?: string | null; teamMemberIds?: string[] } = {};
+  const patch: {
+    role?: string;
+    email?: string;
+    avatarUrl?: string | null;
+    teamMemberIds?: string[];
+    canViewOnlinePresence?: boolean;
+  } = {};
   if (typeof body.role === "string") {
     if (!(await canManageUsers(me.role))) {
       return NextResponse.json({ error: "Không có quyền quản lý tài khoản" }, { status: 403 });
@@ -78,6 +84,12 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/users/
     }
     patch.teamMemberIds = body.teamMemberIds.map(String);
   }
+  if (typeof body.canViewOnlinePresence === "boolean") {
+    if (!(await canManageUsers(me.role))) {
+      return NextResponse.json({ error: "Không có quyền quản lý tài khoản" }, { status: 403 });
+    }
+    patch.canViewOnlinePresence = body.canViewOnlinePresence;
+  }
   const user = await prisma.user.update({ where: { id }, data: patch });
   return NextResponse.json({
     id: user.id,
@@ -89,6 +101,7 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/users/
     avatarUrl: user.avatarUrl,
     teamMemberIds: user.teamMemberIds,
     webmailUsername: user.webmailUsername,
+    canViewOnlinePresence: user.canViewOnlinePresence,
   });
 }
 

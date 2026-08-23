@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Plus, Trash2, ShieldAlert, X, Users, Key, Mail, CheckCircle2, Search } from "lucide-react";
+import { Plus, Trash2, ShieldAlert, X, Users, Key, Mail, CheckCircle2, Search, Eye, EyeOff } from "lucide-react";
 import { useAppStore, useCurrentUser } from "@/store/app-store";
 import { ROLE_LABEL, Role, LEADER_MANAGES_ROLE, User } from "@/lib/types";
 import { ASSIGNABLE_ROLES } from "@/lib/rbac";
@@ -25,6 +25,7 @@ export default function UsersPage() {
   const removeUser = useAppStore((s) => s.removeUser);
   const updateAvatar = useAppStore((s) => s.updateAvatar);
   const updateUserTeam = useAppStore((s) => s.updateUserTeam);
+  const updateUserOnlinePresenceAccess = useAppStore((s) => s.updateUserOnlinePresenceAccess);
   const resetUserPassword = useAppStore((s) => s.resetUserPassword);
   const updateUserEmail = useAppStore((s) => s.updateUserEmail);
 
@@ -245,6 +246,9 @@ export default function UsersPage() {
                     onOpenResetPassword={() => openResetPassword(u.id)}
                     onOpenEditEmail={() => openEditEmail(u.id, u.email)}
                     onOpenTeamEdit={() => setTeamEditUserId(u.id)}
+                    onToggleOnlinePresenceAccess={() =>
+                      updateUserOnlinePresenceAccess(u.id, !u.canViewOnlinePresence)
+                    }
                   />
                 ))}
               </div>
@@ -534,6 +538,7 @@ function UserCard({
   onOpenResetPassword,
   onOpenEditEmail,
   onOpenTeamEdit,
+  onToggleOnlinePresenceAccess,
 }: {
   u: User;
   /** Đang online hay không (Pusher presence channel, xem use-realtime.ts) — realtime, chỉ
@@ -547,6 +552,9 @@ function UserCard({
   onOpenResetPassword: () => void;
   onOpenEditEmail: () => void;
   onOpenTeamEdit: () => void;
+  /** Bật/tắt quyền xem panel "Đang online" (top-nav) riêng cho tài khoản này — không hiện
+   * với Manager (đã luôn xem được sẵn). */
+  onToggleOnlinePresenceAccess: () => void;
 }) {
   const t = useT();
   const { language } = useLanguage();
@@ -615,6 +623,23 @@ function UserCard({
             className="shrink-0 rounded-md border border-border p-1.5 text-text-faint transition hover:bg-surface-hover hover:text-text"
           >
             <Users size={13} />
+          </button>
+        )}
+
+        {/* Bật/tắt quyền xem panel "Đang online" (thêm 2026-08-23) — Manager luôn xem được
+            sẵn (bypass ở top-nav.tsx) nên nút này không có ý nghĩa với card Manager, ẩn đi. */}
+        {u.role !== "manager" && (
+          <button
+            onClick={onToggleOnlinePresenceAccess}
+            title={u.canViewOnlinePresence ? t("users.onlinePresenceGranted") : t("users.onlinePresenceDenied")}
+            aria-label={t("users.toggleOnlinePresence")}
+            className={`shrink-0 rounded-md border p-1.5 transition ${
+              u.canViewOnlinePresence
+                ? "border-emerald-500/40 text-emerald-500 hover:bg-emerald-500/10"
+                : "border-border text-text-faint hover:bg-surface-hover hover:text-text"
+            }`}
+          >
+            {u.canViewOnlinePresence ? <Eye size={13} /> : <EyeOff size={13} />}
           </button>
         )}
 

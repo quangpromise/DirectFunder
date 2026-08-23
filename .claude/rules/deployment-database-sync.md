@@ -850,6 +850,54 @@ Pusher đã cấu hình đủ 6 biến môi trường (đã có sẵn từ mục
 `getPusherServer()` tự trả `null`, chấm trạng thái mặc định luôn XÁM (không lỗi, chỉ mất tính
 năng, đúng thiết kế graceful-degrade nhất quán với mọi tính năng Pusher khác trong app).
 
+### 4.43 Phân quyền xem "Đang online" theo TỪNG USER (không theo role) + panel trong dropdown Tài khoản (thêm 2026-08-23, cùng ngày với mục 4.42)
+
+Mở rộng mục 4.42 theo yêu cầu tiếp theo — trước đó chỉ Admin xem được (qua trang
+`/dashboard/users`, chấm cạnh avatar). Giờ thêm 2 việc:
+
+1. **Phân quyền theo TỪNG TÀI KHOẢN CỤ THỂ** (không phải theo Role như toàn bộ hệ thống
+   `FeaturePermissions` hiện có) — Admin bật/tắt cho từng user riêng lẻ qua nút mắt (Eye/EyeOff)
+   trên `UserCard` (`/dashboard/users`), lưu ở cột mới `User.canViewOnlinePresence` (Boolean,
+   default `false`, additive). **Đây KHÔNG dùng chung cơ chế `AppConfig.featurePermissions`**
+   (vốn là `Record<FeatureKey, Role[]>`) — cố ý thiết kế field riêng trên `User` vì yêu cầu là
+   "theo từng user", không phải "theo role". Nút mắt tự ẩn trên card của Manager (Manager luôn
+   bypass sẵn, xem bên dưới, nút sẽ vô nghĩa).
+2. **Panel "Đang online" dời từ trang `/dashboard/users` (Admin-only) sang dropdown "Tài khoản"**
+   ở góc phải header (`top-nav.tsx`, mọi user đều có sẵn dropdown này) — theo đúng yêu cầu "hiện
+   ở góc phải phần quản lý tài khoản của mỗi user được phân quyền". Hiện DANH SÁCH user đang
+   online (chỉ liệt kê ai đang online, KHÔNG hiện cả danh sách offline như trang Quản lý tài
+   khoản — dropdown nhỏ gọn hơn). Gate: `user.role === "manager" || user.canViewOnlinePresence`
+   — Manager luôn thấy (đúng convention `hasFeature()` bypass toàn app), user khác chỉ thấy nếu
+   Admin đã cấp qua nút mắt ở bước 1. Chấm/danh sách trên trang `/dashboard/users` (mục 4.42)
+   GIỮ NGUYÊN không đổi — 2 nơi hiển thị độc lập, cùng đọc chung `state.onlineUserIds`.
+
+API: `GET /api/users` (list) + `PATCH /api/users/[id]` (route có sẵn) thêm field
+`canViewOnlinePresence` — PATCH validate `typeof body.canViewOnlinePresence === "boolean"`,
+gate bằng `canManageUsers()` sẵn có (cùng quyền `manageUsers` đang gate role/email/teamMemberIds),
+không cần feature key mới.
+
+**Đã tự kiểm tra đầy đủ (2026-08-23)** bằng Playwright thật với 2 phiên đăng nhập thật khác
+nhau: Admin bấm nút mắt cấp quyền cho 1 tài khoản Processor thường (Quang Hua, không phải
+Manager) → đăng nhập bằng đúng tài khoản đó ở browser khác, mở dropdown "Tài khoản" → xác nhận
+thấy panel "ĐANG ONLINE (2)" liệt kê đúng Admin + chính mình (2 phiên đang mở), tên/avatar khớp
+đúng. Trước khi cấp quyền, đã xác nhận dropdown của tài khoản đó KHÔNG có panel này (đúng gate).
+Đã revert lại quyền test về `false` sau khi kiểm tra xong (không để lại trạng thái test trong
+DB dev). `tsc --noEmit`/`eslint` sạch.
+
+**Sau khi deploy code này lên production PHẢI làm đủ các bước sau** (xoá mục này khỏi file khi đã làm xong):
+1. ✅ **Đã xong 2026-08-23** — `prisma migrate deploy` nhắm production đã chạy (1 cột mới
+   `canViewOnlinePresence` trên `users`, an toàn/additive/default `false`, không đổi hành vi
+   hiện có).
+2. Không cần script merge `AppConfig` (không đụng `DEFAULT_FEATURE_PERMISSIONS`/`DEFAULT_COLUMNS`).
+3. Đăng nhập production bằng **Admin**, vào Quản lý tài khoản → xác nhận thấy nút mắt (Eye/EyeOff)
+   cạnh mỗi tài khoản KHÔNG phải Manager → bấm cấp quyền cho 1 tài khoản thật.
+4. Đăng nhập bằng đúng tài khoản vừa cấp → mở dropdown "Tài khoản" (avatar góc phải) → xác nhận
+   thấy panel "Đang online" liệt kê đúng những ai đang thật sự online lúc đó.
+5. Đăng nhập bằng 1 tài khoản KHÁC chưa được cấp (không phải Manager) → xác nhận dropdown "Tài
+   khoản" của họ KHÔNG có panel này.
+6. Vào lại Quản lý tài khoản (Admin), bấm nút mắt thu hồi quyền vừa cấp ở bước 3 → đăng nhập lại
+   tài khoản đó → xác nhận panel biến mất khỏi dropdown.
+
 Mục 2–5 bên dưới là kiến trúc/quy trình đề xuất (phần lớn đã áp dụng đúng như mô tả, trừ Auth đã nêu ở trên). Mục 6 là checklist hành động cụ thể để đưa app này lên cloud thật.
 
 ## 2. Kiến trúc đề xuất

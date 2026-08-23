@@ -241,6 +241,10 @@ export interface User {
    * chưa kết nối. Hiển thị ở dropdown tài khoản (top-nav.tsx) để biết đã kết nối chưa,
    * KHÔNG bao giờ trả về mật khẩu (chỉ server mới đọc webmailPasswordEncrypted). */
   webmailUsername?: string | null;
+  /** Cho phép user này xem panel "Đang online" ở top-nav dù không phải Manager (thêm
+   * 2026-08-23) — Admin bật/tắt riêng từng tài khoản qua trang Quản lý tài khoản. Manager
+   * luôn xem được bất kể cờ này. Mặc định false/undefined. */
+  canViewOnlinePresence?: boolean;
 }
 
 export type ColumnType =

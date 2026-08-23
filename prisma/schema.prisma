@@ -46,6 +46,12 @@ model User {
   /// (GET/PATCH /api/me/notes) — KHÔNG bao giờ trả về trong GET /api/users (danh sách dùng
   /// chung cho mọi user xem để gán việc), tránh lộ ghi chú riêng tư cho người khác.
   myNotesHtml String?
+  /// Cho phép user này xem panel "Đang online" ở top-nav (chấm xanh/xám theo từng tài
+  /// khoản, thêm 2026-08-23) dù KHÔNG phải Manager — Admin bật/tắt riêng từng tài khoản qua
+  /// trang Quản lý tài khoản (nút mắt trên UserCard). Manager luôn xem được bất kể cờ này
+  /// (hasFeature-style bypass, xem OnlineUsersButton). Mặc định false — không đổi hành vi
+  /// hiện có (trước đây chỉ Manager xem được qua trang /dashboard/users).
+  canViewOnlinePresence Boolean @default(false)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
