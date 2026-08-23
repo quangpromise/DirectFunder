@@ -932,6 +932,43 @@ Khi backend thật sẵn sàng, cần một đường di trú 1 lần để khô
 6. **Bật backup tự động / point-in-time recovery** của Neon, và kiểm tra backup gần nhất còn dùng được **trước khi** chạy bất kỳ migration nào lên production — để có đường lùi nếu migration có vấn đề.
 7. **Preview deployment theo PR** (Vercel tự tạo) nên trỏ vào một DB branch nháp (branch ra từ *schema* production, không phải *data* production) để test tính năng mới không đụng vào dữ liệu thật.
 
+### 4.44 [CHỜ XỬ LÝ] Nút "Dịch" trên header — dịch văn bản tự do qua Google Cloud Translation API (thêm 2026-08-24)
+
+Icon `Languages` mới trên header (cạnh chuông thông báo, `TranslateWidget`,
+`src/components/translate-widget.tsx`) — thay cho việc mở tab riêng translate.google.com,
+người dùng gõ/dán văn bản bất kỳ (không gắn với hồ sơ/dữ liệu nào trong app) rồi dịch ngay
+trong popup: chọn ngôn ngữ nguồn (mặc định "Tự nhận diện")/đích (mặc định theo ngôn ngữ UI
+hiện tại), nút đổi chiều, nút sao chép kết quả. Cho MỌI role, không cần feature permission
+riêng — cùng tinh thần "My Notes" (mục 4.39).
+
+Dùng **Google Cloud Translation API v2** (`src/lib/google-translate.ts`, xác thực bằng API
+KEY đơn giản — KHÁC Service Account đang dùng cho Google Sheets sync, vì đây chỉ là 1 lệnh
+gọi dịch văn bản, không cần OAuth/JWT hay quyền truy cập tài nguyên nào của user). Route
+`POST /api/translate` (gate `requireUser`, không giới hạn role) nhận `{text, target, source?}`,
+giới hạn 5000 ký tự/lần gọi, trả `{translatedText, detectedSourceLanguage?}`. Thiếu
+`GOOGLE_TRANSLATE_API_KEY` → route tự trả lỗi rõ ràng 501 (không crash app, nút vẫn hiện
+nhưng bấm dịch sẽ báo lỗi rõ).
+
+**Đây CHỈ là thêm code (1 route mới, 1 component mới) — KHÔNG đổi schema, KHÔNG đụng
+`DEFAULT_COLUMNS`/`DEFAULT_FEATURE_PERMISSIONS`/`AppConfig`** nên **không cần**
+`prisma migrate deploy`, **không cần** script merge `AppConfig`. Chỉ cần deploy code + thêm 1
+biến môi trường mới.
+
+**Sau khi deploy code này lên production PHẢI làm đủ các bước sau** (xoá mục này khỏi file khi đã làm xong):
+1. Tạo API Key trên Google Cloud Console (Console → APIs & Services → Credentials → Create API
+   Key), bật "Cloud Translation API" cho đúng project đó (Enable APIs & Services → tìm "Cloud
+   Translation API" → Enable — gói miễn phí 500,000 ký tự/tháng). Nên giới hạn API key theo
+   đúng "Cloud Translation API" (API restrictions) để tránh bị dùng sai mục đích nếu lộ.
+2. Thêm `GOOGLE_TRANSLATE_API_KEY` vào Vercel Environment Variables (Production).
+3. Đăng nhập production bằng tài khoản bất kỳ (không cần manager) → xác nhận thấy icon
+   "Languages" trên header cạnh chuông thông báo → bấm mở popup, gõ thử 1 câu tiếng Việt, để
+   ngôn ngữ đích English → bấm "Dịch" → xác nhận ra đúng kết quả tiếng Anh, có nút sao chép
+   hoạt động.
+4. Thử đổi ngôn ngữ nguồn về 1 ngôn ngữ cụ thể (không phải "Tự nhận diện") → bấm nút đổi chiều
+   (swap) → xác nhận văn bản/kết quả hoán đổi đúng vị trí.
+5. Nếu quên bước 1-2 (thiếu API key) → xác nhận bấm "Dịch" báo lỗi rõ ràng (không phải lỗi
+   trắng màn hình/crash).
+
 ## 5. Checklist an toàn dữ liệu khi đổi schema
 
 Áp dụng cho cả Zustand persist hiện tại lẫn DB thật sau này:
