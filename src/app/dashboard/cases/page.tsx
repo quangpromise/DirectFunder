@@ -1712,7 +1712,7 @@ function RowCells({
               {showUpdateToCrmAction && (
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs text-text-dim">{t("agentc3UpdateCrm.button")}</span>
-                  <AgentC3UpdateToCrmDialog caseId={row.id} refunds={row.refunds} />
+                  <AgentC3UpdateToCrmDialog caseId={row.id} clientName={getFullName(row)} refunds={row.refunds} />
                 </div>
               )}
               {showTestSheetAction && (

@@ -90,7 +90,17 @@ function buildConversationLogText(years: string[], refunds: Record<string, numbe
  * Log kèm dropdown Performed By, và dropdown Status (đọc thẳng từ CRM, KHÔNG phải Status của
  * Direct Funder). Ghi ngược qua `POST /api/agentc3-import/update-to-crm` — mỗi phần (Status/
  * CPA Review, Conversation Log, từng file) chạy độc lập, 1 phần lỗi không chặn phần khác. */
-export function AgentC3UpdateToCrmDialog({ caseId, refunds }: { caseId: string; refunds: Record<string, number> }) {
+export function AgentC3UpdateToCrmDialog({
+  caseId,
+  clientName,
+  refunds,
+}: {
+  caseId: string;
+  /** Tên Taxpayer (client dòng 1) — hiện cố định ở đầu popup để biết đang cập nhật CRM cho
+   * đúng hồ sơ nào (thêm 2026-08-23), tránh nhầm khi mở nhiều popup liên tiếp. */
+  clientName: string;
+  refunds: Record<string, number>;
+}) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const [loadingContext, setLoadingContext] = useState(false);
@@ -224,7 +234,10 @@ export function AgentC3UpdateToCrmDialog({ caseId, refunds }: { caseId: string; 
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 px-4 py-8">
           <div className="popover flex max-h-full w-full max-w-lg flex-col rounded-2xl shadow-2xl">
             <div className="flex items-center justify-between px-5 pt-5">
-              <h3 className="text-sm font-semibold">{t("agentc3UpdateCrm.title")}</h3>
+              <div>
+                <h3 className="text-sm font-semibold">{t("agentc3UpdateCrm.title")}</h3>
+                {clientName && <p className="mt-0.5 text-xs text-text-dim">{clientName}</p>}
+              </div>
               <button onClick={() => setOpen(false)} className="text-text-faint hover:text-text">
                 <X size={16} />
               </button>
@@ -250,13 +263,20 @@ export function AgentC3UpdateToCrmDialog({ caseId, refunds }: { caseId: string; 
                             key={year}
                             type="button"
                             onClick={() => toggleYear(year)}
-                            className={`rounded-lg border px-2 py-2 text-sm font-medium transition ${
+                            className={`flex flex-col items-center gap-0.5 rounded-lg border px-2 py-2 transition ${
                               selected
                                 ? "border-accent bg-accent-soft"
                                 : "border-border bg-bg-elevated hover:border-accent hover:bg-accent-soft"
                             }`}
                           >
-                            {year}
+                            <span className="text-sm font-medium">{year}</span>
+                            <span
+                              className={`text-xs ${
+                                selected ? "font-semibold text-amber-600 light:text-amber-700" : "text-text-dim"
+                              }`}
+                            >
+                              ${(refunds?.[year] ?? 0).toLocaleString("en-US")}
+                            </span>
                           </button>
                         );
                       })}
