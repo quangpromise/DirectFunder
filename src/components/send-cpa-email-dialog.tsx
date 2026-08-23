@@ -3,7 +3,8 @@
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { upload } from "@vercel/blob/client";
-import { Mail, X, Paperclip, AlertCircle, Loader2, Search } from "lucide-react";
+import { Mail, X, Paperclip, AlertCircle, Search } from "lucide-react";
+import { Spinner } from "@/components/spinner";
 import { CaseRecord, CpaEmailDefaults } from "@/lib/types";
 import { fileToDataUrl } from "@/lib/file-to-data-url";
 import {
@@ -276,7 +277,7 @@ export function SendCpaEmailDialog({
             : "border-orange-700/60 bg-orange-900/40 text-orange-200 hover:bg-orange-900/60 light:border-orange-400 light:bg-orange-100 light:text-orange-900 light:hover:bg-orange-200"
         }`}
       >
-        {lookingUpRow ? <Loader2 size={11} className="animate-spin" /> : <Mail size={11} />}
+        {lookingUpRow ? <Spinner size={11} /> : <Mail size={11} />}
       </button>
 
       {yearPickerOpen &&
@@ -457,7 +458,7 @@ export function SendCpaEmailDialog({
 
               {uploadStatus && (
                 <div className="mx-5 mt-3 flex items-center gap-1.5 rounded-lg border border-border bg-bg-elevated px-3 py-2 text-xs text-text-dim">
-                  <Loader2 size={13} className="shrink-0 animate-spin" />
+                  <Spinner size={13} className="shrink-0" />
                   {t("cpaEmail.uploadingAttachments", { done: uploadStatus.done, total: uploadStatus.total })}
                 </div>
               )}

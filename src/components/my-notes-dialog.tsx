@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { NotebookPen, X, Check, AlertCircle, Loader2 } from "lucide-react";
+import { NotebookPen, X, Check, AlertCircle } from "lucide-react";
 import { MyNotesEditor } from "@/components/my-notes-editor";
+import { Spinner } from "@/components/spinner";
 import { useT, useLanguage } from "@/lib/i18n";
 
 /**
@@ -98,7 +99,7 @@ export function MyNotesDialog({
               <div className="mt-3 min-h-0 flex-1 px-5">
                 {loading ? (
                   <div className="flex h-full items-center justify-center text-text-faint">
-                    <Loader2 size={18} className="animate-spin" />
+                    <Spinner size={18} />
                   </div>
                 ) : (
                   <MyNotesEditor value={draft} onChange={setDraft} placeholder={t("myNotes.placeholder")} language={language} />

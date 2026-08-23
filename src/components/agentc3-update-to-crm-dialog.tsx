@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { Loader2, RefreshCw, X } from "lucide-react";
+import { RefreshCw, X } from "lucide-react";
+import { Spinner } from "@/components/spinner";
 import { api } from "@/lib/api-client";
 import { REFUND_YEARS } from "@/lib/refund";
 import { todayIsoDate } from "@/lib/date-format";
@@ -249,7 +250,7 @@ export function AgentC3UpdateToCrmDialog({
             <div className="mt-4 flex flex-col gap-3 overflow-y-auto px-5 pb-5">
               {loadingContext ? (
                 <div className="flex items-center justify-center gap-2 py-8 text-sm text-text-dim">
-                  <Loader2 size={16} className="animate-spin" />
+                  <Spinner size={16} />
                   {t("agentc3UpdateCrm.loadingContext")}
                 </div>
               ) : contextError ? (
@@ -422,7 +423,7 @@ export function AgentC3UpdateToCrmDialog({
                       disabled={saving || !canSubmit}
                       className="gradient-btn mt-2 flex h-9 items-center justify-center gap-1.5 rounded-lg text-sm font-medium text-white shadow-lg shadow-blue-950/30 disabled:cursor-default disabled:opacity-60"
                     >
-                      {saving && <Loader2 size={14} className="animate-spin" />}
+                      {saving && <Spinner size={14} />}
                       {saving ? t("agentc3UpdateCrm.saving") : t("agentc3UpdateCrm.submitButton")}
                     </button>
                   )}

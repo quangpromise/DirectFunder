@@ -206,6 +206,12 @@ body {
   animation: popover-in 160ms ease-out;
 }
 
+/* Glow xanh dương-xanh lá cho <Spinner> (src/components/spinner.tsx) — filter drop-shadow
+   nhẹ, khớp hiệu ứng phát sáng của vòng tròn loading Gemini. */
+.spinner-glow {
+  filter: drop-shadow(0 0 3px rgba(34, 211, 238, 0.55)) drop-shadow(0 0 7px rgba(74, 222, 128, 0.35));
+}
+
 .gradient-text {
   background-image: linear-gradient(90deg, var(--accent-from), var(--accent-to));
   -webkit-background-clip: text;

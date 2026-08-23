@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Download, Loader2, X } from "lucide-react";
+import { Download, X } from "lucide-react";
+import { Spinner } from "@/components/spinner";
 import { useAppStore, useCurrentUser } from "@/store/app-store";
 import { api } from "@/lib/api-client";
 import type { AgentC3ImportPreview } from "@/lib/api-client";
@@ -251,7 +252,7 @@ export function AgentC3ImportDialog() {
                     ))}
                     {batchRunning && links.length > batchResults.length && (
                       <div className="flex items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2 text-xs text-text-faint">
-                        <Loader2 size={12} className="animate-spin" />
+                        <Spinner size={12} />
                         {links[batchResults.length]}
                       </div>
                     )}
@@ -285,7 +286,7 @@ export function AgentC3ImportDialog() {
                     disabled={fetching || links.length === 0}
                     className="gradient-btn flex h-9 items-center justify-center gap-1.5 rounded-lg text-sm font-medium text-white shadow-lg shadow-blue-950/30 disabled:cursor-default disabled:opacity-60"
                   >
-                    {fetching && <Loader2 size={14} className="animate-spin" />}
+                    {fetching && <Spinner size={14} />}
                     {fetching
                       ? t("agentc3Import.fetching")
                       : links.length > 1
@@ -428,7 +429,7 @@ export function AgentC3ImportDialog() {
                     disabled={saving}
                     className="gradient-btn mt-2 flex h-9 items-center justify-center gap-1.5 rounded-lg text-sm font-medium text-white shadow-lg shadow-blue-950/30 disabled:cursor-default disabled:opacity-60"
                   >
-                    {saving && <Loader2 size={14} className="animate-spin" />}
+                    {saving && <Spinner size={14} />}
                     {saving ? t("agentc3Import.saving") : existing ? t("agentc3Import.updateButton") : t("agentc3Import.createButton")}
                   </button>
                 </>

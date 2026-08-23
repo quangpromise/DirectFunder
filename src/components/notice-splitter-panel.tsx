@@ -2,7 +2,8 @@
 
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Download, FileText, Loader2, Plus, Settings, Trash2, Upload, X } from "lucide-react";
+import { Download, FileText, Plus, Settings, Trash2, Upload, X } from "lucide-react";
+import { Spinner } from "@/components/spinner";
 import { useT } from "@/lib/i18n";
 import { isCareOfEligibleNoticeType } from "@/lib/irs-splitter/care-of-eligibility";
 import { detectRecords } from "@/lib/irs-splitter/detect-records";
@@ -236,7 +237,7 @@ export function NoticeSplitterPanel() {
 
         {analyzing && (
           <div className="flex items-center gap-2 py-8 text-sm text-text-dim">
-            <Loader2 size={16} className="animate-spin" />
+            <Spinner size={16} />
             {t("irsSplitter.analyzing")}
           </div>
         )}
@@ -347,7 +348,7 @@ export function NoticeSplitterPanel() {
                 disabled={splitting}
                 className="gradient-btn flex h-9 items-center gap-1.5 rounded-lg px-4 text-sm font-medium text-white shadow-lg shadow-blue-950/30 disabled:cursor-default disabled:opacity-60"
               >
-                {splitting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+                {splitting ? <Spinner size={14} /> : <Download size={14} />}
                 {splitting ? t("irsSplitter.splitting") : t("irsSplitter.splitAndDownload", { count: records.length })}
               </button>
             </div>
