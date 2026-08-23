@@ -106,9 +106,10 @@ export function TopNav() {
   // Panel "Đang online" trong dropdown Tài khoản (thêm 2026-08-23) — Manager luôn xem được,
   // user khác chỉ xem nếu Admin đã bật canViewOnlinePresence riêng cho họ (nút mắt ở trang
   // Quản lý tài khoản). CHỈ liệt kê những tài khoản ĐANG online (không hiện cả danh sách
-  // offline như trang Quản lý tài khoản — dropdown này nhỏ gọn hơn).
+  // offline như trang Quản lý tài khoản — dropdown này nhỏ gọn hơn), KHÔNG kể chính mình
+  // (hiển nhiên đang online, không cần tự thấy tên mình trong danh sách).
   const canSeeOnlinePanel = user.role === "manager" || Boolean(user.canViewOnlinePresence);
-  const onlineUsers = canSeeOnlinePanel ? users.filter((u) => onlineUserIds.includes(u.id)) : [];
+  const onlineUsers = canSeeOnlinePanel ? users.filter((u) => onlineUserIds.includes(u.id) && u.id !== user.id) : [];
 
   // Dùng chung cho cả hàng tab desktop lẫn danh sách trong menu hamburger mobile (2 nơi gọi
   // bên dưới) — tránh lặp lại JSX Link 4 lần khi giờ NAV tách 2 nhóm để chèn RulesPanel vào
