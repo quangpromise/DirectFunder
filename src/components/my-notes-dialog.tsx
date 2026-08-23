@@ -85,8 +85,8 @@ export function MyNotesDialog({
       {open &&
         typeof document !== "undefined" &&
         createPortal(
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4 py-8">
-            <div className="popover flex h-[70vh] w-full max-w-lg flex-col rounded-2xl shadow-2xl">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4 py-4">
+            <div className="popover flex h-[95vh] w-full max-w-lg flex-col rounded-2xl shadow-2xl">
               <div className="flex items-center justify-between px-5 pt-5">
                 <h3 className="text-sm font-semibold">{t("myNotes.title")}</h3>
                 <button onClick={() => setOpen(false)} className="text-text-faint hover:text-text">
