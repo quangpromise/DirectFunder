@@ -3,11 +3,12 @@
 import { CrmTtsWitCheckButton, CrmTtsWitResult } from "@/components/crm-tts-wit-check-button";
 
 /**
- * Cột "Check CRM" (trước đây tên "Order", đổi 2026-08-23) — trước đây hiện 2 nút đặt lệnh
- * "Order 8821"/"TTS & WIT" cho Support (Order8821Picker/OrderTtsWitPicker) đã ĐÃ ẨN khỏi bảng
- * Hồ sơ chính theo yêu cầu (tính năng đặt lệnh vẫn còn nguyên, chỉ dùng được qua tab "Orders"
- * riêng). Giờ hiện 1 nút "TTS & WIT" mới — bấm để kiểm tra CRM agentc3 tìm file TTS/WIT mới
- * (xem CrmTtsWitCheckButton) — chỉ hiện khi hồ sơ đã liên kết CRM.
+ * Cột "TTS & WIT Lastest" (trước đây tên "Order", đổi 2026-08-23, đổi tiếp cùng ngày) — trước
+ * đây hiện 2 nút đặt lệnh "Order 8821"/"TTS & WIT" cho Support (Order8821Picker/
+ * OrderTtsWitPicker) đã ĐÃ ẨN khỏi bảng Hồ sơ chính theo yêu cầu (tính năng đặt lệnh vẫn còn
+ * nguyên, chỉ dùng được qua tab "Orders" riêng). Giờ hiện 1 nút "Check log" — bấm để kiểm tra
+ * CRM agentc3 tìm file TTS/WIT mới (xem CrmTtsWitCheckButton) — chỉ hiện khi hồ sơ đã liên kết
+ * CRM.
  */
 export function OrderCell({
   editable,

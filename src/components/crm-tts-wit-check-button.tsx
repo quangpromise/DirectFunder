@@ -14,8 +14,8 @@ export interface CrmTtsWitResult {
 }
 
 /**
- * Nút "TTS & WIT" ở cột "Check CRM" (thay cho 2 nút "Order 8821"/"TTS & WIT" đặt lệnh cho
- * Support đã ẩn khỏi bảng Hồ sơ chính, thêm 2026-08-23) — bấm để đọc trực tiếp CRM agentc3,
+ * Nút "Check log" ở cột "TTS & WIT Lastest" (thay cho 2 nút "Order 8821"/"TTS & WIT" đặt lệnh
+ * cho Support đã ẩn khỏi bảng Hồ sơ chính, thêm 2026-08-23) — bấm để đọc trực tiếp CRM agentc3,
  * hiện popup ngày upload mới nhất của TTS/WIT cho từng năm 2023/2024/2025 (đơn giản hoá cùng
  * ngày, sau phản hồi thực tế — bỏ hẳn cơ chế Notification/so-mốc trước đó, vì người bấm không
  * thấy kết quả tức thời). Chỉ hiện khi hồ sơ đã liên kết CRM (`hasClientLink`) — component cha
@@ -49,7 +49,7 @@ export function CrmTtsWitCheckButton({
         type="button"
         disabled={disabled || checking}
         onClick={handleClick}
-        className="w-full shrink-0 cursor-pointer whitespace-nowrap rounded-md border border-amber-800/60 bg-amber-900/40 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-amber-200 transition hover:bg-amber-900/60 disabled:cursor-default disabled:opacity-60 light:border-amber-300 light:bg-amber-100 light:text-amber-900 light:hover:bg-amber-200"
+        className="inline-flex shrink-0 cursor-pointer items-center justify-center whitespace-nowrap rounded-md border border-amber-800/60 bg-amber-900/40 px-2 py-1 text-center text-[10px] font-bold leading-tight text-amber-200 transition hover:bg-amber-900/60 disabled:cursor-default disabled:opacity-60 light:border-amber-300 light:bg-amber-100 light:text-amber-900 light:hover:bg-amber-200"
       >
         {checking ? t("crmTtsWit.checking") : t("crmTtsWit.button")}
       </button>

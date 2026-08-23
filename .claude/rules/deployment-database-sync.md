@@ -765,6 +765,14 @@ timestamp thật đọc được từ CRM. Qua UI: bấm nút "TTS & WIT" → po
 6. Vào tab "Orders" (Support) → xác nhận vẫn đặt/xử lý được lệnh Order 8821/TTS & WIT như cũ
    (tính năng cũ không mất, chỉ mất chỗ bấm nhanh từ bảng Hồ sơ chính).
 
+**Bổ sung cùng ngày (2026-08-23)** — đổi tên lần 2 theo yêu cầu: cột "Check CRM" → **"TTS & WIT
+Lastest"**, nút "TTS & WIT" → **"Check log"** (chỉ đổi qua i18n `col.header.order`/
+`crmTtsWit.button`, không cần script merge cho phần tên). Nút đổi từ `w-full` (kéo giãn hết
+chiều rộng cột) sang `inline-flex` fit theo đúng độ dài chữ "Check log" (yêu cầu "fit button vừa
+cỡ chữ"). Cột tăng `width` từ 118 lên **140** (header "TTS & WIT Lastest" dài hơn "Check CRM") —
+✅ **Đã xong 2026-08-23**: đã chạy script merge cập nhật `width` cột `"order"` trong
+`AppConfig.columns` production từ 118 lên 140.
+
 ### 4.41 [CHỜ XỬ LÝ] Feature key `viewOrders` — cấu hình được quyền xem tab "Order" qua trang Phân quyền (thêm 2026-08-23)
 
 Trước đây tab "Order" ở nav (`top-nav.tsx`) VÀ trang `/dashboard/orders` (chặn truy cập thẳng
