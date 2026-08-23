@@ -761,6 +761,7 @@ export default function CasesPage() {
             </button>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            <MyNotesDialog myNotesHtml={myNotesHtml} fetchMyNotes={fetchMyNotes} saveMyNotes={saveMyNotes} />
             <ForProcessorButton />
             <EcQualificationBox />
           </div>
@@ -959,7 +960,6 @@ export default function CasesPage() {
             onToggle={toggleHiddenColumn}
             onShowAll={showAllHiddenColumns}
           />
-          <MyNotesDialog myNotesHtml={myNotesHtml} fetchMyNotes={fetchMyNotes} saveMyNotes={saveMyNotes} />
           <HistoryDialog editHistory={editHistory} deletionHistory={deletionHistory} users={users} />
 
           {canAddRowFeature && (
@@ -1026,6 +1026,7 @@ export default function CasesPage() {
                   </button>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
+                  <MyNotesDialog myNotesHtml={myNotesHtml} fetchMyNotes={fetchMyNotes} saveMyNotes={saveMyNotes} />
                   <ForProcessorButton />
                   <EcQualificationBox />
                 </div>
@@ -1117,7 +1118,6 @@ export default function CasesPage() {
                   onToggle={toggleHiddenColumn}
                   onShowAll={showAllHiddenColumns}
                 />
-                <MyNotesDialog myNotesHtml={myNotesHtml} fetchMyNotes={fetchMyNotes} saveMyNotes={saveMyNotes} />
                 <HistoryDialog editHistory={editHistory} deletionHistory={deletionHistory} users={users} />
               </div>
 
