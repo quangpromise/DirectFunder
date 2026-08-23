@@ -58,7 +58,7 @@ export function CrmTtsWitCheckButton({
         typeof document !== "undefined" &&
         createPortal(
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 px-4 py-8" onClick={() => setResult(null)}>
-            <div className="popover w-full max-w-sm rounded-2xl p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="popover w-full max-w-md rounded-2xl p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
               <div className="mb-3 flex items-center justify-between">
                 <h3 className="text-sm font-semibold">{t("crmTtsWit.resultTitle")}</h3>
                 <button onClick={() => setResult(null)} className="text-text-faint hover:text-text" aria-label={t("common.close")}>
@@ -69,22 +69,26 @@ export function CrmTtsWitCheckButton({
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-text-faint">TTS</div>
-                  <div className="flex flex-col gap-1">
+                  <div className="flex flex-col gap-1.5">
                     {YEARS.map((year) => (
-                      <div key={year} className="flex items-center justify-between rounded-lg border border-border bg-bg-elevated px-2 py-1.5 text-xs">
-                        <span className="text-text-dim">{year}</span>
-                        <span className="font-medium text-text">{result.tts[year] ?? "—"}</span>
+                      <div key={year} className="rounded-lg border border-border bg-bg-elevated px-2.5 py-1.5">
+                        <div className="text-[10px] leading-none text-text-dim">{year}</div>
+                        <div className="mt-1 whitespace-nowrap text-xs font-medium leading-none tabular-nums text-text">
+                          {result.tts[year] ?? "—"}
+                        </div>
                       </div>
                     ))}
                   </div>
                 </div>
                 <div>
                   <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-text-faint">WIT</div>
-                  <div className="flex flex-col gap-1">
+                  <div className="flex flex-col gap-1.5">
                     {YEARS.map((year) => (
-                      <div key={year} className="flex items-center justify-between rounded-lg border border-border bg-bg-elevated px-2 py-1.5 text-xs">
-                        <span className="text-text-dim">{year}</span>
-                        <span className="font-medium text-text">{result.wit[year] ?? "—"}</span>
+                      <div key={year} className="rounded-lg border border-border bg-bg-elevated px-2.5 py-1.5">
+                        <div className="text-[10px] leading-none text-text-dim">{year}</div>
+                        <div className="mt-1 whitespace-nowrap text-xs font-medium leading-none tabular-nums text-text">
+                          {result.wit[year] ?? "—"}
+                        </div>
                       </div>
                     ))}
                   </div>
