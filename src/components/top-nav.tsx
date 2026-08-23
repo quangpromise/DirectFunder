@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -94,6 +94,46 @@ export function TopNav() {
     if (ok) await disconnectWebmailAccount();
   }
 
+  // Pill trượt phía sau tab đang active trên hàng nav desktop (thêm 2026-08-24, lấy cảm hứng
+  // từ 1 mẫu bottom-nav trên Pinterest) — đo vị trí/độ rộng của đúng <Link> đang active qua
+  // offsetLeft/offsetWidth (offsetParent = chính <nav>, đã đặt position: relative) rồi
+  // transition CSS left/width thay vì dùng thư viện animation ngoài (framer-motion...) chưa
+  // có sẵn trong repo. navLinkRefs là Map thường (không phải state) vì chỉ dùng để ĐỌC DOM
+  // trong effect, không cần trigger re-render khi gán ref. Đặt TRƯỚC early-return `if
+  // (!user)` bên dưới — Hook không được gọi có điều kiện (react-hooks/rules-of-hooks).
+  const navRef = useRef<HTMLElement>(null);
+  const navLinkRefs = useRef<Map<string, HTMLAnchorElement>>(new Map());
+  const [navIndicatorStyle, setNavIndicatorStyle] = useState<{ left: number; width: number; opacity: number }>({
+    left: 0,
+    width: 0,
+    opacity: 0,
+  });
+
+  function setNavLinkRef(href: string, el: HTMLAnchorElement | null) {
+    if (el) navLinkRefs.current.set(href, el);
+    else navLinkRefs.current.delete(href);
+  }
+
+  useEffect(() => {
+    function reposition() {
+      const activeHref = [...PRIMARY_NAV, ...ADMIN_NAV].find((item) => pathname.startsWith(item.href))?.href;
+      const el = activeHref ? navLinkRefs.current.get(activeHref) : null;
+      if (el) {
+        setNavIndicatorStyle({ left: el.offsetLeft, width: el.offsetWidth, opacity: 1 });
+      } else {
+        setNavIndicatorStyle((s) => ({ ...s, opacity: 0 }));
+      }
+    }
+    reposition();
+    window.addEventListener("resize", reposition);
+    return () => window.removeEventListener("resize", reposition);
+    // CHỈ phụ thuộc pathname — reposition() dùng trực tiếp PRIMARY_NAV/ADMIN_NAV (hằng số
+    // module-level, ổn định sẵn) chứ KHÔNG dùng primaryItems/adminItems (mảng MỚI mỗi lần
+    // render do .filter() ở dưới) — nhét mảng đó vào dependency từng gây setState mỗi effect
+    // chạy -> re-render -> mảng mới lại -> lặp vô hạn ("Maximum update depth exceeded", đã tự
+    // gây ra lỗi này lúc test, xem git blame).
+  }, [pathname]);
+
   if (!user) return null;
 
   const primaryItems = PRIMARY_NAV.filter(
@@ -114,6 +154,12 @@ export function TopNav() {
   // Dùng chung cho cả hàng tab desktop lẫn danh sách trong menu hamburger mobile (2 nơi gọi
   // bên dưới) — tránh lặp lại JSX Link 4 lần khi giờ NAV tách 2 nhóm để chèn RulesPanel vào
   // giữa (xem PRIMARY_NAV/ADMIN_NAV phía trên).
+  //
+  // Desktop: KHÔNG tự tô nền active nữa (khác trước đây) — nền active giờ là 1 "viên thuốc"
+  // (pill) trượt mượt phía sau, dùng chung 1 element (xem navIndicatorStyle bên dưới) thay
+  // vì mỗi Link tự bật/tắt nền tức thời. z-10 để chữ/icon luôn nổi trên pill đang trượt qua.
+  // Mobile (menu hamburger) giữ nguyên nền active tức thời như cũ — pill trượt chỉ hợp hàng
+  // ngang, không hợp danh sách dọc.
   function renderNavLink(item: (typeof PRIMARY_NAV)[number], mobile: boolean) {
     const { href, labelKey, icon: Icon } = item;
     const active = pathname.startsWith(href);
@@ -121,11 +167,12 @@ export function TopNav() {
       <Link
         key={href}
         href={href}
+        ref={mobile ? undefined : (el) => setNavLinkRef(href, el)}
         onClick={mobile ? () => setMobileOpen(false) : undefined}
-        className={`flex items-center gap-1.5 rounded-lg text-sm transition ${mobile ? "gap-2.5 px-3 py-2" : "px-3 py-1.5"} ${
+        className={`relative z-10 flex items-center gap-1.5 rounded-full text-sm transition-colors ${mobile ? "gap-2.5 px-3 py-2" : "px-3 py-1.5"} ${
           active
-            ? "border border-border-strong bg-accent-soft text-text"
-            : "border border-transparent text-text-dim hover:bg-surface-hover hover:text-text"
+            ? `text-text ${mobile ? "border border-border-strong bg-accent-soft" : ""}`
+            : "text-text-dim hover:bg-surface-hover hover:text-text"
         }`}
       >
         <Icon size={mobile ? 16 : 15} />
@@ -157,14 +204,50 @@ export function TopNav() {
         />
       </div>
 
-      <nav className="ml-2 hidden items-center gap-1 md:flex">
+      {/* Container "viên thuốc" bo tròn hoàn toàn + nền mờ trong suốt (glass), bao trọn dãy
+          tab điều hướng route thật (Cases/Orders/.../admin) — kiểu bottom-nav tham khảo từ
+          Pinterest (thêm 2026-08-24). Rules KHÔNG còn nằm trong khung border chung này nữa
+          (tách riêng ra ngoài, xem <RulesPanel> ngay dưới) vì nó là dropdown, không phải route
+          thật nên không tham gia hiệu ứng pill/glow trượt theo pathname — để chung dễ gây hiểu
+          lầm "Rules cũng là 1 tab điều hướng như Cases/Orders". position: relative để pill
+          trượt (navIndicatorStyle) định vị theo offsetParent là chính <nav>. */}
+      <nav ref={navRef} className="glass relative ml-2 hidden items-center gap-1 overflow-hidden rounded-full p-1 md:flex">
+        {/* "Ánh đèn chiếu xuống" phía trên tab active (thêm 2026-08-24) — 1 thanh sáng mảnh
+            (glow) nằm sát mép trên nav, cùng trượt theo navIndicatorStyle, tạo cảm giác ánh
+            sáng rọi từ trên xuống pill nền bên dưới. `overflow-hidden` ở <nav> (thêm ở trên)
+            cắt phần glow tràn ra ngoài bo góc khi thanh sáng nằm sát rìa trái/phải. */}
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute top-0 h-1 -translate-y-1/2 rounded-full bg-gradient-to-r from-accent-from to-accent-to blur-[2px] transition-all duration-300 ease-out"
+          style={{
+            left: navIndicatorStyle.left + 10,
+            width: Math.max(navIndicatorStyle.width - 20, 0),
+            opacity: navIndicatorStyle.opacity,
+            boxShadow: "0 0 14px 3px var(--accent)",
+          }}
+        />
+        {/* Nền pill: gradient đổ từ sáng (gần thanh sáng phía trên) xuống mờ dần — mô phỏng
+            ánh sáng lan xuống, thay vì 1 màu phẳng như bản đầu. */}
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-1 rounded-full transition-all duration-300 ease-out"
+          style={{
+            left: navIndicatorStyle.left,
+            width: navIndicatorStyle.width,
+            opacity: navIndicatorStyle.opacity,
+            backgroundImage: "linear-gradient(180deg, var(--accent-soft), transparent 130%)",
+          }}
+        />
         {primaryItems.map((item) => renderNavLink(item, false))}
-        {/* Rules đặt NGAY SAU Cases/Orders (yêu cầu 2026-08-11: thứ tự Cases -> Orders ->
-            Rules) — vẫn là dropdown (variant="tab" chỉ đổi hình thức hiển thị cho khớp style
-            Link, KHÔNG điều hướng route). */}
-        <RulesPanel variant="tab" />
         {adminItems.map((item) => renderNavLink(item, false))}
       </nav>
+      {/* Rules tách riêng khỏi khung border chung ở trên (yêu cầu 2026-08-24) — vẫn đặt NGAY
+          SAU dãy tab (yêu cầu 2026-08-11: thứ tự Cases -> Orders -> Rules), chỉ khác là giờ có
+          border/nền pill RIÊNG của chính nó (xem rules-panel.tsx variant="tab") thay vì dùng
+          chung nền .glass với Cases/Orders. Vẫn là dropdown (KHÔNG điều hướng route). */}
+      <div className="ml-1 hidden md:block">
+        <RulesPanel variant="tab" />
+      </div>
 
       <button
         onClick={() => setMobileOpen((o) => !o)}

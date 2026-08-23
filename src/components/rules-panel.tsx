@@ -215,7 +215,7 @@ export function RulesPanel({ variant = "icon" }: { variant?: "icon" | "tab" }) {
       {variant === "tab" ? (
         <button
           onClick={() => setOpen((o) => !o)}
-          className="flex items-center gap-1.5 rounded-lg border border-transparent px-3 py-1.5 text-sm text-text-dim transition hover:bg-surface-hover hover:text-text"
+          className="flex h-9 items-center gap-1.5 rounded-full border border-border bg-surface px-3 text-sm text-text-dim transition hover:bg-surface-hover hover:text-text"
           aria-label={t("rules.title")}
         >
           <ScrollText size={15} />
