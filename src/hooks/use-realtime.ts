@@ -9,6 +9,11 @@ import type { AppNotification } from "@/lib/types";
 const CASES_CHANNEL = "private-cases";
 const CPA_REVIEW_CHANNEL = "private-cpa-review";
 const RULES_CHANNEL = "private-rules";
+const PRESENCE_ONLINE_CHANNEL = "presence-online-users";
+
+interface PresenceMembers {
+  each: (callback: (member: { id: string }) => void) => void;
+}
 
 /** Subscribe realtime (Pusher) cho toàn dashboard — gọi 1 lần ở layout, cạnh
  * hydrateFromServer(). No-op nếu chưa đăng nhập hoặc Pusher chưa được cấu hình
@@ -21,6 +26,10 @@ const RULES_CHANNEL = "private-rules";
  *   src/lib/pusher-server.ts cho lý do). Debounce 500ms để gộp nhiều tín hiệu dồn dập.
  * - "private-notifications-{userId}": "notification:new" — thông báo thật, prepend thẳng
  *   vào store qua receiveNotification.
+ * - "presence-online-users": Pusher tự theo dõi ai đang online, MỌI user đăng nhập đều
+ *   subscribe (không chỉ Admin) để chính mình được tính vào danh sách — chấm xanh cạnh
+ *   avatar ở trang Quản lý tài khoản chỉ Admin mới thấy UI, nhưng dữ liệu presence không
+ *   nhạy cảm (chỉ id/tên/role đồng nghiệp nội bộ) nên không cần chặn subscribe theo role.
  */
 export function useRealtime(userId: string | undefined): void {
   useEffect(() => {
@@ -75,6 +84,22 @@ export function useRealtime(userId: string | undefined): void {
     const notifChannel = pusher.subscribe(notifChannelName);
     notifChannel.bind("notification:new", onNotification);
 
+    function onPresenceSubscribed(members: PresenceMembers) {
+      const ids: string[] = [];
+      members.each((m) => ids.push(m.id));
+      useAppStore.getState().setOnlineUserIds(ids);
+    }
+    function onMemberAdded(member: { id: string }) {
+      useAppStore.getState().addOnlineUserId(member.id);
+    }
+    function onMemberRemoved(member: { id: string }) {
+      useAppStore.getState().removeOnlineUserId(member.id);
+    }
+    const presenceChannel = pusher.subscribe(PRESENCE_ONLINE_CHANNEL);
+    presenceChannel.bind("pusher:subscription_succeeded", onPresenceSubscribed);
+    presenceChannel.bind("pusher:member_added", onMemberAdded);
+    presenceChannel.bind("pusher:member_removed", onMemberRemoved);
+
     return () => {
       if (debounceTimer) clearTimeout(debounceTimer);
       if (cpaReviewDebounceTimer) clearTimeout(cpaReviewDebounceTimer);
@@ -83,10 +108,15 @@ export function useRealtime(userId: string | undefined): void {
       cpaReviewChannel.unbind("cpaReview:changed", onCpaReviewChanged);
       rulesChannel.unbind("rules:changed", onRulesChanged);
       notifChannel.unbind("notification:new", onNotification);
+      presenceChannel.unbind("pusher:subscription_succeeded", onPresenceSubscribed);
+      presenceChannel.unbind("pusher:member_added", onMemberAdded);
+      presenceChannel.unbind("pusher:member_removed", onMemberRemoved);
       pusher.unsubscribe(CASES_CHANNEL);
       pusher.unsubscribe(CPA_REVIEW_CHANNEL);
       pusher.unsubscribe(RULES_CHANNEL);
       pusher.unsubscribe(notifChannelName);
+      pusher.unsubscribe(PRESENCE_ONLINE_CHANNEL);
+      useAppStore.getState().setOnlineUserIds([]);
     };
   }, [userId]);
 }

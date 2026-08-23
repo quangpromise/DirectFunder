@@ -19,6 +19,7 @@ const DEFAULT_NEW_USER_PASSWORD = "12345678";
 export default function UsersPage() {
   const user = useCurrentUser();
   const users = useAppStore((s) => s.users);
+  const onlineUserIds = useAppStore((s) => s.onlineUserIds);
   const addUser = useAppStore((s) => s.addUser);
   const updateUserRole = useAppStore((s) => s.updateUserRole);
   const removeUser = useAppStore((s) => s.removeUser);
@@ -235,6 +236,7 @@ export default function UsersPage() {
                   <UserCard
                     key={u.id}
                     u={u}
+                    online={onlineUserIds.includes(u.id)}
                     isLastManager={u.role === "manager" && managerCount <= 1}
                     isSelf={u.id === user.id}
                     onRoleChange={(r) => updateUserRole(u.id, r)}
@@ -523,6 +525,7 @@ export default function UsersPage() {
  * component cha, hiện lại là dư thừa). */
 function UserCard({
   u,
+  online,
   isLastManager,
   isSelf,
   onRoleChange,
@@ -533,6 +536,9 @@ function UserCard({
   onOpenTeamEdit,
 }: {
   u: User;
+  /** Đang online hay không (Pusher presence channel, xem use-realtime.ts) — realtime, chỉ
+   * đúng khi Pusher đã cấu hình + kết nối, mặc định false nếu chưa. */
+  online: boolean;
   isLastManager: boolean;
   isSelf: boolean;
   onRoleChange: (role: Role) => void;
@@ -552,7 +558,17 @@ function UserCard({
   return (
     <div className="flex w-60 min-w-0 flex-col gap-2 rounded-lg border border-border bg-surface p-2.5">
       <div className="flex items-center gap-2">
-        <AvatarUpload name={u.name} color={u.avatarColor} url={u.avatarUrl} size={28} onChange={onAvatarChange} />
+        <div className="relative shrink-0">
+          <AvatarUpload name={u.name} color={u.avatarColor} url={u.avatarUrl} size={28} onChange={onAvatarChange} />
+          {/* Chấm trạng thái online (thêm 2026-08-23) — xanh lá + viền khớp nền card, chỉ
+              hiện khi Pusher presence xác nhận đang kết nối. */}
+          <span
+            title={online ? t("users.online") : t("users.offline")}
+            className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-surface ${
+              online ? "bg-emerald-500" : "bg-text-faint/40"
+            }`}
+          />
+        </div>
         <div className="min-w-0 flex-1">
           <div className="truncate text-xs font-medium">{u.name}</div>
           <div className="truncate text-[11px] text-text-faint">{u.email}</div>

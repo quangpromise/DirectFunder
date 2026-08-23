@@ -144,6 +144,11 @@ interface AppState {
    * cùng hydrateFromServer (tránh round-trip thừa mỗi lần vào dashboard cho 1 tính năng ít
    * dùng) — nạp lười (lazy) lần đầu mở popup qua fetchMyNotes(). null = chưa nạp lần nào. */
   myNotesHtml: string | null;
+  /** Danh sách id user đang online (thêm 2026-08-23) — cập nhật realtime qua Pusher presence
+   * channel "presence-online-users" (xem use-realtime.ts), KHÔNG nạp cùng hydrateFromServer
+   * (chỉ có ý nghĩa khi Pusher đã kết nối). Dùng cho chấm xanh cạnh avatar ở trang Quản lý
+   * tài khoản. Rỗng nếu Pusher chưa cấu hình/chưa kết nối. */
+  onlineUserIds: string[];
   /** Sheet đích + cột nào/thứ tự nào được đẩy khi bấm nút "Send" ở cột Status (chỉ hiện
    * khi status = cpa_review) — null = Admin chưa cấu hình, nút Send báo lỗi rõ ràng. */
   googleSheetConfig: GoogleSheetConfig | null;
@@ -229,6 +234,12 @@ interface AppState {
   hydrateFromServer: () => Promise<void>;
   /** Nhận 1 thông báo đẩy realtime qua Pusher — xem src/hooks/use-realtime.ts. */
   receiveNotification: (n: AppNotification) => void;
+  /** Ghi đè toàn bộ danh sách id online (lúc subscribe presence channel thành công) — xem
+   * use-realtime.ts. */
+  setOnlineUserIds: (ids: string[]) => void;
+  /** Thêm/xoá 1 id khỏi danh sách online (member_added/member_removed) — xem use-realtime.ts. */
+  addOnlineUserId: (id: string) => void;
+  removeOnlineUserId: (id: string) => void;
   /** Nạp lại cases sau khi nhận tín hiệu "case:changed" qua Pusher. */
   refetchCases: () => Promise<void>;
   /** Nạp lại cpaReviewRecords sau khi nhận tín hiệu "cpaReview:changed" qua Pusher — kể cả
@@ -679,6 +690,7 @@ export const useAppStore = create<AppState>()(
       cpaEmailDefaults: { to: [], cc: [] },
       cpaSenderEmail: "",
       myNotesHtml: null,
+      onlineUserIds: [],
       googleSheetConfig: null,
       cpaReviewSheetConfig: {},
       cpaReviewSelectedMonth: currentMonthKey(),
@@ -781,6 +793,11 @@ export const useAppStore = create<AppState>()(
             ? state.notifications
             : [n, ...state.notifications],
         })),
+      setOnlineUserIds: (ids) => set({ onlineUserIds: ids }),
+      addOnlineUserId: (id) =>
+        set((state) => (state.onlineUserIds.includes(id) ? state : { onlineUserIds: [...state.onlineUserIds, id] })),
+      removeOnlineUserId: (id) =>
+        set((state) => ({ onlineUserIds: state.onlineUserIds.filter((existing) => existing !== id) })),
       /** Gọi lại khi nhận tín hiệu "case:changed" qua Pusher — GET /api/cases đã tự lọc
        * RBAC nên chỉ cần thay nguyên state.cases, không cần merge tay từng dòng. */
       refetchCases: async () => {

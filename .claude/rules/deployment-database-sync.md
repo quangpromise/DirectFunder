@@ -809,6 +809,47 @@ chỉ còn 1 lỗi CÓ SẴN TỪ TRƯỚC ở dòng không liên quan trong cù
    tài khoản role đó → xác nhận thấy tab (trước đó không thấy). Bỏ tick lại → xác nhận mất quyền
    xem, kể cả gõ thẳng URL `/dashboard/orders`.
 
+### 4.42 Chấm trạng thái "đang online" cạnh avatar ở trang Quản lý tài khoản (thêm 2026-08-23)
+
+Trang "Quản lý tài khoản" (Admin, `/dashboard/users`) giờ hiện 1 chấm nhỏ ở góc avatar mỗi tài
+khoản — xanh lá = đang online, xám = không online — dựa trên **Pusher Presence Channel**
+(`presence-online-users`, MỚI hoàn toàn, khác 3 kênh `private-*` đã có sẵn). Cơ chế: MỌI user
+đăng nhập (không chỉ Admin) đều tự subscribe kênh này ở `useRealtime()` (`src/hooks/
+use-realtime.ts`, chạy 1 lần ở layout dashboard cạnh `hydrateFromServer()`) — bản thân việc
+subscribe = "báo tôi đang online" với Pusher, tự động unsubscribe khi đóng tab/mất mạng = "báo
+offline". Pusher tự dedupe theo `user_id` nếu 1 người mở nhiều tab/thiết bị (chỉ tính 1 lần, chỉ
+"rời" khi TẤT CẢ tab đó đóng) — không cần code tự đếm connection.
+
+**Route `POST /api/pusher/auth`** (đã có sẵn cho 3 kênh `private-*`) mở rộng thêm nhánh riêng
+cho `presence-online-users` — gọi `pusher.authorizeChannel(socketId, channel, {user_id, user_info:
+{name, role}})` thay vì `authorizeChannel(socketId, channel)` như kênh private (presence channel
+BẮT BUỘC phải có `channel_data`, khác private channel). Không hạn chế role nào được subscribe
+(mọi user đăng nhập đều được — dữ liệu presence chỉ gồm id/tên/role đồng nghiệp nội bộ, không
+nhạy cảm), chỉ UI hiện chấm trạng thái là ở trang `/dashboard/users` vốn đã chỉ Admin truy cập
+được (`ADMIN_NAV`, không phải feature permission riêng).
+
+`App-store` thêm `onlineUserIds: string[]` (KHÔNG nạp cùng `hydrateFromServer`, chỉ cập nhật
+realtime qua 3 action mới `setOnlineUserIds`/`addOnlineUserId`/`removeOnlineUserId` — bind vào 3
+event Pusher chuẩn của presence channel: `pusher:subscription_succeeded` (danh sách online lúc
+subscribe xong), `pusher:member_added`, `pusher:member_removed`). Reset về rỗng khi effect cleanup
+(đóng tab/logout).
+
+**Đã tự kiểm tra đầy đủ (2026-08-23)** bằng Playwright thật với **2 phiên đăng nhập thật khác
+nhau** (2 browser context riêng biệt, không phải giả lập): đăng nhập Admin ở browser A, mở trang
+Quản lý tài khoản → xác nhận chính Admin hiện chấm XANH (tự thấy mình online), tài khoản khác
+(Quang Hua) hiện chấm XÁM. Đăng nhập Quang Hua ở browser B (Pusher thật, không mock) → đợi vài
+giây, xác nhận chấm của Quang Hua trên browser A **tự chuyển XANH mà không cần F5** (nhận đúng
+`pusher:member_added` qua Pusher cloud thật). Đóng hẳn browser B (ngắt kết nối) → đợi vài giây,
+xác nhận chấm của Quang Hua trên browser A **tự chuyển lại XÁM** (nhận đúng
+`pusher:member_removed`). `tsc --noEmit`/`eslint` sạch trên toàn bộ file mới/sửa.
+
+**Không đổi schema/feature-permission** — không có bảng/cột DB nào mới (trạng thái online hoàn
+toàn ở bộ nhớ Pusher + Zustand, không lưu DB), không có feature key mới. Chỉ cần deploy code,
+**không cần** `prisma migrate deploy`, **không cần** script merge `AppConfig`. Yêu cầu duy nhất:
+Pusher đã cấu hình đủ 6 biến môi trường (đã có sẵn từ mục 4.20) — nếu thiếu, `getPusherClient()`/
+`getPusherServer()` tự trả `null`, chấm trạng thái mặc định luôn XÁM (không lỗi, chỉ mất tính
+năng, đúng thiết kế graceful-degrade nhất quán với mọi tính năng Pusher khác trong app).
+
 Mục 2–5 bên dưới là kiến trúc/quy trình đề xuất (phần lớn đã áp dụng đúng như mô tả, trừ Auth đã nêu ở trên). Mục 6 là checklist hành động cụ thể để đưa app này lên cloud thật.
 
 ## 2. Kiến trúc đề xuất

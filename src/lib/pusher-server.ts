@@ -14,6 +14,12 @@ import Pusher from "pusher";
 const CASES_CHANNEL = "private-cases";
 const CPA_REVIEW_CHANNEL = "private-cpa-review";
 const RULES_CHANNEL = "private-rules";
+/** Presence channel — MỌI user đăng nhập đều subscribe (xem use-realtime.ts) để Pusher tự
+ * theo dõi ai đang online (member_added/member_removed khi kết nối/mất kết nối), dùng cho
+ * chấm xanh "đang online" cạnh avatar ở trang Quản lý tài khoản (thêm 2026-08-23). Cùng
+ * user_id mở nhiều tab/thiết bị chỉ tính 1 lần — Pusher tự dedupe theo user_id trong
+ * channel_data, chỉ bắn member_removed khi kết nối CUỐI CÙNG của user đó ngắt. */
+const PRESENCE_ONLINE_CHANNEL = "presence-online-users";
 
 function notificationChannel(userId: string): string {
   return `private-notifications-${userId}`;
@@ -89,4 +95,4 @@ export async function broadcastNotification(
   await safeTrigger(notificationChannel(toUserId), "notification:new", notification, socketId);
 }
 
-export { CASES_CHANNEL, CPA_REVIEW_CHANNEL, RULES_CHANNEL, notificationChannel, getPusherServer };
+export { CASES_CHANNEL, CPA_REVIEW_CHANNEL, RULES_CHANNEL, PRESENCE_ONLINE_CHANNEL, notificationChannel, getPusherServer };
