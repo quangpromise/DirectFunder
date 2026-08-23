@@ -714,48 +714,48 @@ export default function OrdersPage() {
                 : "100px 140px 95px 95px minmax(150px,1fr) 95px 90px 90px 160px 64px 95px 90px 34px",
           }}
         >
-          <div className="flex items-center justify-center sticky top-0 z-20 whitespace-nowrap border-b border-r border-border-strong border-b-accent bg-table-head-bg px-2 py-2.5 text-center text-[10px] font-semibold uppercase tracking-normal text-table-head-text">
+          <div className="flex items-center justify-center sticky top-0 z-20 whitespace-nowrap border-b border-r border-border-strong bg-table-head-bg px-2 py-2.5 text-center text-[10px] font-semibold uppercase tracking-normal text-table-head-text">
             {t("orders.col.placedAt")}
           </div>
-          <div className="flex items-center justify-center sticky top-0 z-20 whitespace-nowrap border-b border-r border-border-strong border-b-accent bg-table-head-bg px-3 py-2.5 text-center text-[10px] font-semibold uppercase tracking-normal text-table-head-text">
+          <div className="flex items-center justify-center sticky top-0 z-20 whitespace-nowrap border-b border-r border-border-strong bg-table-head-bg px-3 py-2.5 text-center text-[10px] font-semibold uppercase tracking-normal text-table-head-text">
             {t("orders.col.clientName")}
           </div>
-          <div className="flex items-center justify-center sticky top-0 z-20 whitespace-nowrap border-b border-r border-border-strong border-b-accent bg-table-head-bg px-3 py-2.5 text-center text-[10px] font-semibold uppercase tracking-normal text-table-head-text">
+          <div className="flex items-center justify-center sticky top-0 z-20 whitespace-nowrap border-b border-r border-border-strong bg-table-head-bg px-3 py-2.5 text-center text-[10px] font-semibold uppercase tracking-normal text-table-head-text">
             {t("orders.col.phone")}
           </div>
-          <div className="flex items-center justify-center sticky top-0 z-20 whitespace-nowrap border-b border-r border-border-strong border-b-accent bg-table-head-bg px-3 py-2.5 text-center text-[10px] font-semibold uppercase tracking-normal text-table-head-text">
+          <div className="flex items-center justify-center sticky top-0 z-20 whitespace-nowrap border-b border-r border-border-strong bg-table-head-bg px-3 py-2.5 text-center text-[10px] font-semibold uppercase tracking-normal text-table-head-text">
             {t("orders.col.ssn")}
           </div>
           {showFormatNameCol && (
-            <div className="flex items-center justify-center sticky top-0 z-20 whitespace-nowrap border-b border-r border-border-strong border-b-accent bg-table-head-bg px-3 py-2.5 text-center text-[10px] font-semibold uppercase tracking-normal text-table-head-text">
+            <div className="flex items-center justify-center sticky top-0 z-20 whitespace-nowrap border-b border-r border-border-strong bg-table-head-bg px-3 py-2.5 text-center text-[10px] font-semibold uppercase tracking-normal text-table-head-text">
               {t("orders.col.formatName")}
             </div>
           )}
           {showAddressCol && (
-            <div className="flex items-center justify-center sticky top-0 z-20 whitespace-nowrap border-b border-r border-border-strong border-b-accent bg-table-head-bg px-3 py-2.5 text-center text-[10px] font-semibold uppercase tracking-normal text-table-head-text">
+            <div className="flex items-center justify-center sticky top-0 z-20 whitespace-nowrap border-b border-r border-border-strong bg-table-head-bg px-3 py-2.5 text-center text-[10px] font-semibold uppercase tracking-normal text-table-head-text">
               {t("orders.col.address")}
             </div>
           )}
-          <div className="flex items-center justify-center sticky top-0 z-20 whitespace-nowrap border-b border-r border-border-strong border-b-accent bg-table-head-bg px-3 py-2.5 text-center text-[10px] font-semibold uppercase tracking-normal text-table-head-text">
+          <div className="flex items-center justify-center sticky top-0 z-20 whitespace-nowrap border-b border-r border-border-strong bg-table-head-bg px-3 py-2.5 text-center text-[10px] font-semibold uppercase tracking-normal text-table-head-text">
             {t("orders.col.account")}
           </div>
-          <div className="flex items-center justify-center sticky top-0 z-20 whitespace-nowrap border-b border-r border-border-strong border-b-accent bg-table-head-bg px-2 py-2.5 text-center text-[10px] font-semibold uppercase tracking-normal text-table-head-text">
+          <div className="flex items-center justify-center sticky top-0 z-20 whitespace-nowrap border-b border-r border-border-strong bg-table-head-bg px-2 py-2.5 text-center text-[10px] font-semibold uppercase tracking-normal text-table-head-text">
             {tab === "order8821" ? t("orders.col.signDate") : t("orders.col.downloadedDate")}
           </div>
-          <div className="flex items-center justify-center sticky top-0 z-20 whitespace-nowrap border-b border-r border-border-strong border-b-accent bg-table-head-bg px-2 py-2.5 text-center text-[10px] font-semibold uppercase tracking-normal text-table-head-text">
+          <div className="flex items-center justify-center sticky top-0 z-20 whitespace-nowrap border-b border-r border-border-strong bg-table-head-bg px-2 py-2.5 text-center text-[10px] font-semibold uppercase tracking-normal text-table-head-text">
             {t("orders.col.statusUpdatedAt")}
           </div>
           {showDescriptionCol && (
-            <div className="flex items-center justify-center sticky top-0 z-20 whitespace-nowrap border-b border-r border-border-strong border-b-accent bg-table-head-bg px-3 py-2.5 text-center text-[10px] font-semibold uppercase tracking-normal text-table-head-text">
+            <div className="flex items-center justify-center sticky top-0 z-20 whitespace-nowrap border-b border-r border-border-strong bg-table-head-bg px-3 py-2.5 text-center text-[10px] font-semibold uppercase tracking-normal text-table-head-text">
               {t("orders.col.description")}
             </div>
           )}
           {showOrder8821Col && (
-            <div className="flex items-center justify-center sticky top-0 z-20 whitespace-nowrap border-b border-r border-border-strong border-b-accent bg-table-head-bg px-1 py-2.5 text-center text-[10px] font-semibold uppercase tracking-normal text-table-head-text">
+            <div className="flex items-center justify-center sticky top-0 z-20 whitespace-nowrap border-b border-r border-border-strong bg-table-head-bg px-1 py-2.5 text-center text-[10px] font-semibold uppercase tracking-normal text-table-head-text">
               8821
             </div>
           )}
-          <div className="group/head sticky top-0 z-20 flex items-center justify-center gap-1 border-b border-r border-border-strong border-b-accent bg-table-head-bg px-2 py-2.5 text-[10px] font-semibold uppercase tracking-normal text-table-head-text">
+          <div className="group/head sticky top-0 z-20 flex items-center justify-center gap-1 border-b border-r border-border-strong bg-table-head-bg px-2 py-2.5 text-[10px] font-semibold uppercase tracking-normal text-table-head-text">
             <span className="min-w-0 flex-1 truncate text-center">
               {orderStatusColumn ? translateColumnLabel(language, orderStatusColumn.id, orderStatusColumn.label) : t("col.header.orderStatus")}
             </span>
@@ -773,10 +773,10 @@ export default function OrdersPage() {
               />
             )}
           </div>
-          <div className="flex items-center justify-center sticky top-0 z-20 whitespace-nowrap border-b border-r border-border-strong border-b-accent bg-table-head-bg px-3 py-2.5 text-center text-[10px] font-semibold uppercase tracking-normal text-table-head-text">
+          <div className="flex items-center justify-center sticky top-0 z-20 whitespace-nowrap border-b border-r border-border-strong bg-table-head-bg px-3 py-2.5 text-center text-[10px] font-semibold uppercase tracking-normal text-table-head-text">
             {t("orders.col.assign")}
           </div>
-          <div className="sticky top-0 z-20 border-b border-b-accent bg-table-head-bg px-2 py-2.5" />
+          <div className="sticky top-0 z-20 border-b bg-table-head-bg px-2 py-2.5" />
 
           {rows.map((row, i) => {
             const c: CaseRecord = row.case;

@@ -55,13 +55,13 @@ export default function PermissionsPage() {
         <table className="w-full min-w-max text-sm">
           <thead>
             <tr>
-              <th className="sticky top-0 z-10 border-b-2 border-r border-border-strong border-b-accent bg-table-head-bg px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-normal text-table-head-text">
+              <th className="sticky top-0 z-10 border-b border-r border-border-strong bg-table-head-bg px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-normal text-table-head-text">
                 {t("permissions.feature")}
               </th>
               {ASSIGNABLE_ROLES.map((role) => (
                 <th
                   key={role}
-                  className="sticky top-0 z-10 border-b-2 border-b-accent bg-table-head-bg px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-normal text-table-head-text"
+                  className="sticky top-0 z-10 border-b bg-table-head-bg px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-normal text-table-head-text"
                 >
                   {ROLE_LABEL[language][role]}
                 </th>

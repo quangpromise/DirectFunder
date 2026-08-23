@@ -461,16 +461,16 @@ function ProcessorSelfReportGrid({ userId }: { userId: string }) {
       </div>
       <div className="flex-1 overflow-auto">
         <div className="grid text-sm" style={{ gridTemplateColumns }}>
-          <div className="sticky left-0 top-0 z-30 border-b-2 border-r border-border-strong border-b-accent bg-table-head-bg px-2 py-2 text-[10px] font-semibold uppercase text-table-head-text">
+          <div className="sticky left-0 top-0 z-30 border-b border-r border-border-strong bg-table-head-bg px-2 py-2 text-[10px] font-semibold uppercase text-table-head-text">
             {t("processorReport.tasksHeader")}
           </div>
-          <div className="sticky top-0 z-20 flex items-center justify-center border-b-2 border-r border-border-strong border-b-accent bg-accent-soft px-1 py-2 text-[10px] font-semibold text-table-head-text">
+          <div className="sticky top-0 z-20 flex items-center justify-center border-b border-r border-border-strong bg-accent-soft px-1 py-2 text-[10px] font-semibold text-table-head-text">
             {t("processorReport.totalHeader")}
           </div>
           {columns.map((col) => (
             <div
               key={col.key}
-              className={`sticky top-0 z-20 flex items-center justify-center border-b-2 border-r border-border-strong border-b-accent px-1 py-2 text-[10px] font-semibold text-table-head-text ${
+              className={`sticky top-0 z-20 flex items-center justify-center border-b border-r border-border-strong px-1 py-2 text-[10px] font-semibold text-table-head-text ${
                 col.kind === "week" ? "bg-accent-soft" : "bg-table-head-bg"
               }`}
             >
@@ -915,18 +915,18 @@ function ProcessorLeaderReportGrid() {
       </div>
       <div className="flex-1 overflow-auto">
         <div className="grid text-sm" style={{ gridTemplateColumns }}>
-          <div className="sticky left-0 top-0 z-30 border-b-2 border-r border-border-strong border-b-accent bg-table-head-bg px-2 py-2 text-[10px] font-semibold uppercase text-table-head-text">
+          <div className="sticky left-0 top-0 z-30 border-b border-r border-border-strong bg-table-head-bg px-2 py-2 text-[10px] font-semibold uppercase text-table-head-text">
             {t("processorReport.tasksHeader")}
           </div>
           {processors.map((p) => (
             <div
               key={p.id}
-              className="sticky top-0 z-20 flex items-center justify-center border-b-2 border-r border-border-strong border-b-accent bg-table-head-bg px-1 py-2 text-[10px] font-semibold text-table-head-text"
+              className="sticky top-0 z-20 flex items-center justify-center border-b border-r border-border-strong bg-table-head-bg px-1 py-2 text-[10px] font-semibold text-table-head-text"
             >
               {p.name}
             </div>
           ))}
-          <div className="sticky top-0 z-20 flex items-center justify-center border-b-2 border-r border-border-strong border-b-accent bg-accent-soft px-1 py-2 text-[10px] font-semibold text-table-head-text">
+          <div className="sticky top-0 z-20 flex items-center justify-center border-b border-r border-border-strong bg-accent-soft px-1 py-2 text-[10px] font-semibold text-table-head-text">
             {t("processorReport.totalHeader")}
           </div>
 
