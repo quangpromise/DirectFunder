@@ -19,10 +19,6 @@ export function letterFor(index: number): string {
   return columnIndexToLetter(index);
 }
 
-/** Toàn bộ chỉ số cột (0-33, A-AH) app có ghi/đọc — dùng để xoá sạch 1 dòng khi record bị
- * xoá (giới hạn phạm vi, không đụng cột nào ngoài danh sách này). */
-export const CPA_REVIEW_MANAGED_COLUMN_INDEXES: number[] = Object.keys(CPA_REVIEW_SHEET_COLUMN_MAP).map(Number);
-
 const COLUMN_BY_KEY = new Map(CPA_REVIEW_COLUMNS.map((c) => [c.key, c]));
 
 /** Xây danh sách cell cần ghi cho 1 dòng — ghi TOÀN BỘ A-AH mỗi lần (đơn giản/chắc chắn

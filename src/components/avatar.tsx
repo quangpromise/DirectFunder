@@ -17,6 +17,11 @@ export function Avatar({
     .toUpperCase();
 
   if (url) {
+    // avatarUrl luôn là data URI base64 (xem fileToAvatarDataUrl trong avatar-upload.tsx),
+    // không phải URL ảnh từ CDN/remote — next/image không tối ưu được gì cho data URI (đã
+    // nhúng sẵn trong payload, không có network request riêng để lazy-load/resize), nên giữ
+    // <img> thường thay vì đổi sang <Image> chỉ để hết warning.
+    // eslint-disable-next-line @next/next/no-img-element
     return (
       <img
         src={url}

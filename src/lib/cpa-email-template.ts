@@ -114,10 +114,6 @@ export function injectCpaReviewRowAfterSeeLine(html: string, rowNumber: string):
   return html;
 }
 
-/** Mẫu Subject mặc định khi Admin chưa cấu hình — {clientName} tự gộp Client trên + Client
- * dưới (nếu có) qua getAllClientNames(). */
-export const DEFAULT_SUBJECT_TEMPLATE = "[EC] {clientName} - {phone}";
-
 /** Mẫu Body mặc định khi Admin chưa cấu hình. */
 export const DEFAULT_BODY_TEMPLATE = [
   "<p>Dear Robert and Hannah,</p>",

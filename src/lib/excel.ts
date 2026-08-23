@@ -10,19 +10,6 @@ function loadXlsx(): Promise<typeof import("xlsx")> {
   return xlsxPromise;
 }
 
-/** Thứ tự cột cố định cho cả file mẫu tải xuống lẫn file Excel người dùng tải lên —
- * đổi thứ tự/tên ở đây thì cả 2 chiều (export/import) tự khớp theo nhau. */
-export const CASE_TEMPLATE_HEADERS = ["Client Name", "SSN", "Phone", "ZIP"] as const;
-
-export async function downloadCaseTemplate(): Promise<void> {
-  const XLSX = await loadXlsx();
-  const ws = XLSX.utils.aoa_to_sheet([[...CASE_TEMPLATE_HEADERS]]);
-  ws["!cols"] = CASE_TEMPLATE_HEADERS.map(() => ({ wch: 20 }));
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Cases");
-  XLSX.writeFile(wb, "direct-funder-case-template.xlsx");
-}
-
 /** Bản mẫu rút gọn cho tab Order (chỉ nhóm Support thấy) — 5 cột đúng với những gì
  * Support quản lý trên bảng Order, không có Case/Money/Agent/Processor vì Support không
  * phụ trách phân công/tiền. "Format Name" chỉ để tham khảo (tự tính từ Client Name khi

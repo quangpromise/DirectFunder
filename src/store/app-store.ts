@@ -2741,7 +2741,7 @@ export const useAppStore = create<AppState>()(
           // của cột, chỉ đổi định danh để khớp với ô render mới.
           if (Array.isArray(state.cases)) {
             state.cases = state.cases.map((c) => {
-              const { done, emailed, ...rest } = c as Record<string, unknown> & { done?: unknown; emailed?: unknown };
+              const { done: _done, emailed, ...rest } = c as Record<string, unknown> & { done?: unknown; emailed?: unknown };
               return {
                 ...rest,
                 order8821: typeof rest.order8821 === "boolean" ? rest.order8821 : Boolean(emailed),
