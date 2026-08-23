@@ -15,7 +15,6 @@ import { ConnectWebmailDialog } from "@/components/connect-webmail-dialog";
 import { useConfirm } from "@/components/confirm-dialog";
 import { PhoenixClock } from "@/components/phoenix-clock";
 import { NotificationBell } from "@/components/notification-bell";
-import { TranslateWidget } from "@/components/translate-widget";
 import { SmsInboxButton } from "@/components/sms-inbox-button";
 import { RulesPanel } from "@/components/rules-panel";
 import { LanguageSwitcher } from "@/components/language-switcher";
@@ -189,7 +188,6 @@ export function TopNav() {
             trên/menu mobile bên dưới) — không còn đặt riêng ở đây nữa. */}
         <div className="hidden items-center gap-2 md:flex">
           <ThemeSwitcher compact />
-          <TranslateWidget />
           <LanguageSwitcher compact />
         </div>
         <PhoenixClock />
@@ -314,7 +312,6 @@ export function TopNav() {
             <div className="mt-1 flex items-center gap-2 px-1">
               <LanguageSwitcher />
               <ThemeSwitcher />
-              <TranslateWidget />
             </div>
           </nav>
         </div>
