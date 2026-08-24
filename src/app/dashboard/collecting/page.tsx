@@ -91,7 +91,7 @@ export default function CollectingPage() {
           setDragColId(null);
         }}
         onDragEnd={() => opts.draggable && setDragColId(null)}
-        className={`group/head sticky top-0 z-20 flex items-center justify-center gap-1 border-b border-r border-border-strong bg-table-head-bg px-2 py-2.5 text-[10px] font-semibold uppercase tracking-normal text-table-head-text ${
+        className={`group/head sticky top-0 z-20 flex items-center justify-center gap-1 table-head-cell px-2 py-2.5 text-[10px] font-semibold uppercase tracking-normal text-table-head-text ${
           opts.draggable && canEditColumnFeature ? "cursor-grab" : ""
         } ${dragColId === col.id ? "opacity-40" : ""}`}
         style={{ left: opts.sticky, gridRow: "1", zIndex: opts.sticky !== undefined ? 30 : 20 }}
@@ -138,16 +138,16 @@ export default function CollectingPage() {
 
       {/* Bo góc + viền cho cả khối bảng (thêm 2026-08-24, làm mới layout kiểu Apple) — đồng
           bộ với bảng Hồ sơ/Orders/CPA Review. */}
-      <div className="flex-1 overflow-auto rounded-xl border border-border-strong">
+      <div className="flex-1 table-card">
         <div className="grid text-sm" style={{ gridTemplateColumns }}>
           {/* Header row */}
           <div
-            className="sticky top-0 z-30 border-b border-r border-border-strong bg-table-head-bg"
+            className="sticky top-0 z-30 table-head-cell"
             style={{ left: 0, gridRow: "1" }}
           />
           {firstColumn && renderColumnHeader(firstColumn, { sticky: FIRST_COL_LEFT, hideable: false })}
           {otherColumns.map((col) => renderColumnHeader(col, { draggable: true }))}
-          <div className="sticky top-0 z-20 border-b bg-table-head-bg" style={{ gridRow: "1" }} />
+          <div className="sticky top-0 z-20 table-head-cell border-b" style={{ gridRow: "1" }} />
 
           {/* Body rows */}
           {rows.length === 0 && (

@@ -439,7 +439,7 @@ export default function CpaReviewPage() {
       )}
 
       {view === "table" && (
-      <div className="mt-4 flex-1 overflow-auto rounded-xl border border-border-strong">
+      <div className="mt-4 flex-1 table-card">
         {/* border-separate (KHÔNG border-collapse) — bắt buộc để position:sticky trên
             <td>/<th> hoạt động đúng khi cuộn NGANG, tránh lỗi cột A-F "dính" luôn cả khi
             cuộn DỌC (trình duyệt tính sai containing-block của sticky khi border-collapse),

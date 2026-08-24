@@ -1142,15 +1142,15 @@ export default function CasesPage() {
       {/* Bo góc + viền cho cả khối bảng (thêm 2026-08-24, làm mới layout kiểu Apple — card
           rõ ràng thay vì bảng tràn viền) — cùng cách Orders/CPA Review đã dùng sẵn
           (rounded-xl border), giờ đồng bộ cho cả bảng Hồ sơ. */}
-      <div className="flex-1 overflow-auto rounded-xl border border-border-strong">
+      <div className="flex-1 table-card">
         <div className="grid text-sm" data-grid-root style={{ gridTemplateColumns }}>
           {/* Header row */}
           <div
-            className="sticky top-0 z-30 border-b border-r border-border-strong bg-table-head-bg"
+            className="sticky top-0 z-30 table-head-cell"
             style={{ left: 0, gridRow: "1" }}
           />
           <div
-            className="group/head sticky top-0 z-30 flex items-center justify-center gap-1 border-b border-r border-border-strong bg-table-head-bg px-2 py-2.5 text-[10px] font-semibold uppercase tracking-normal text-table-head-text"
+            className="group/head sticky top-0 z-30 flex items-center justify-center gap-1 table-head-cell px-2 py-2.5 text-[10px] font-semibold uppercase tracking-normal text-table-head-text"
             style={{ left: STATUS_LEFT, gridRow: "1" }}
           >
             <span className="min-w-0 flex-1 truncate text-center">
@@ -1169,7 +1169,7 @@ export default function CasesPage() {
             )}
           </div>
           <div
-            className="sticky top-0 z-30 flex items-center justify-center whitespace-nowrap border-b border-r border-border-strong bg-table-head-bg px-3 py-2.5 text-center text-[10px] font-semibold uppercase tracking-normal text-table-head-text"
+            className="sticky top-0 z-30 flex items-center justify-center whitespace-nowrap table-head-cell px-3 py-2.5 text-center text-[10px] font-semibold uppercase tracking-normal text-table-head-text"
             style={{ left: CLIENT_LEFT, gridRow: "1" }}
           >
             {t("col.header.clientName")}
@@ -1186,7 +1186,7 @@ export default function CasesPage() {
                 setDragColId(null);
               }}
               onDragEnd={() => setDragColId(null)}
-              className={`group/head sticky top-0 z-20 flex items-center justify-center gap-1 border-b border-r border-border-strong bg-table-head-bg px-2 py-2.5 text-[10px] font-semibold uppercase tracking-normal text-table-head-text ${
+              className={`group/head sticky top-0 z-20 flex items-center justify-center gap-1 table-head-cell px-2 py-2.5 text-[10px] font-semibold uppercase tracking-normal text-table-head-text ${
                 canEditColumnFeature ? "cursor-grab" : ""
               } ${dragColId === col.id ? "opacity-40" : ""}`}
               style={{ gridRow: "1" }}
@@ -1208,7 +1208,7 @@ export default function CasesPage() {
             </div>
           ))}
           <div
-            className="group/head sticky top-0 z-20 flex items-center justify-center gap-1 whitespace-nowrap border-b border-r border-border-strong bg-table-head-bg px-3 py-2.5 text-center text-[10px] font-semibold uppercase tracking-normal text-table-head-text"
+            className="group/head sticky top-0 z-20 flex items-center justify-center gap-1 whitespace-nowrap table-head-cell px-3 py-2.5 text-center text-[10px] font-semibold uppercase tracking-normal text-table-head-text"
             style={{ gridRow: "1" }}
           >
             <span>{t("col.header.agent")}</span>
@@ -1220,12 +1220,12 @@ export default function CasesPage() {
             )}
           </div>
           <div
-            className="sticky top-0 z-20 flex items-center justify-center whitespace-nowrap border-b border-r border-border-strong bg-table-head-bg px-3 py-2.5 text-center text-[10px] font-semibold uppercase tracking-normal text-table-head-text"
+            className="sticky top-0 z-20 flex items-center justify-center whitespace-nowrap table-head-cell px-3 py-2.5 text-center text-[10px] font-semibold uppercase tracking-normal text-table-head-text"
             style={{ gridRow: "1" }}
           >
             {t("col.header.processor")}
           </div>
-          <div className="sticky top-0 z-20 border-b bg-table-head-bg" style={{ gridRow: "1" }} />
+          <div className="sticky top-0 z-20 table-head-cell border-b" style={{ gridRow: "1" }} />
 
           {/* Body rows */}
           {filtered.map((row, rowIndex) => (

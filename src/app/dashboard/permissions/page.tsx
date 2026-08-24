@@ -51,17 +51,17 @@ export default function PermissionsPage() {
       {/* Bỏ giới hạn max-w-3xl + max-h-[65vh] cũ (chỉ chiếm 1 khối nhỏ giữa màn hình) —
           giờ chiếm full chiều rộng/cao màn hình giống bảng Hồ sơ/Order, cuộn theo
           <main className="overflow-auto"> ở layout ngoài (header dính sticky top-0). */}
-      <div className="mt-5 overflow-auto rounded-xl border border-border-strong">
+      <div className="mt-5 table-card">
         <table className="w-full min-w-max text-sm">
           <thead>
             <tr>
-              <th className="sticky top-0 z-10 border-b border-r border-border-strong bg-table-head-bg px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-normal text-table-head-text">
+              <th className="sticky top-0 z-10 table-head-cell px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-normal text-table-head-text">
                 {t("permissions.feature")}
               </th>
               {ASSIGNABLE_ROLES.map((role) => (
                 <th
                   key={role}
-                  className="sticky top-0 z-10 border-b bg-table-head-bg px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-normal text-table-head-text"
+                  className="sticky top-0 z-10 table-head-cell border-b px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-normal text-table-head-text"
                 >
                   {ROLE_LABEL[language][role]}
                 </th>

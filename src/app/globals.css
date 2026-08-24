@@ -247,6 +247,42 @@ body {
   animation: popover-in 160ms ease-out;
 }
 
+/* Class dùng CHUNG cho mọi bảng dữ liệu kiểu Excel trong app (Hồ sơ/Order/Collecting/CPA
+   Review/Permissions/For Processor..., thêm 2026-08-24 — theo yêu cầu "gom bảng lại, sửa 1
+   thay đổi tất cả" thay vì mỗi trang tự lặp lại y hệt 1 chuỗi Tailwind utility). Đặt trong
+   @layer components (giữa base và utilities) — ĐÚNG kiến trúc layer Tailwind định sẵn, khác
+   lỗi đã gặp+vá ở `*{border-color}` phía trên (rule unlayered đè mọi utility bất kể thứ tự) —
+   để nếu sau này 1 trang cụ thể cần override riêng bằng 1 utility class Tailwind (ở layer
+   utilities, cao hơn components), vẫn override được bình thường thay vì bị class chung này
+   khoá cứng.
+   Mỗi trang vẫn tự thêm các utility RIÊNG (sticky/z-index/flex/justify/px/whitespace...) bên
+   cạnh 2 class này — chỉ phần LẶP LẠI GIỐNG HỆT NHAU ở mọi bảng (viền, nền, bo góc, màu chữ
+   header) mới gom vào đây. */
+@layer components {
+  /* Khung ngoài cùng bọc bảng (scroll container) — bo góc + viền "card", thay cho
+     `overflow-auto rounded-xl border border-border-strong` lặp lại ở từng trang. */
+  .table-card {
+    overflow: auto;
+    border-radius: 0.75rem;
+    border: 1px solid var(--border-strong);
+  }
+
+  /* Ô header (mọi `<div>`/`<th>` header của bảng) — border/nền/màu chữ/kiểu chữ dùng chung,
+     thay cho chuỗi `border-b border-r border-border-strong bg-table-head-bg ... text-[10px]
+     font-semibold uppercase tracking-normal text-table-head-text` lặp lại hàng chục lần mỗi
+     trang. */
+  .table-head-cell {
+    border-bottom: 1px solid var(--border-strong);
+    border-right: 1px solid var(--border-strong);
+    background: var(--table-head-bg);
+    color: var(--table-head-text);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0;
+  }
+}
+
 /* Glow xanh dương-xanh lá cho <Spinner> (src/components/spinner.tsx) — filter drop-shadow
    nhẹ, khớp hiệu ứng phát sáng của vòng tròn loading Gemini. */
 .spinner-glow {
