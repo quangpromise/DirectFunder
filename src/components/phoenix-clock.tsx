@@ -37,20 +37,30 @@ function formatPhoenix(date: Date, locale: string): { time: string; period: stri
   return { time: `${hour}:${minute}`, period, weekdayDate, fullDate, seconds: date.getSeconds() };
 }
 
-const SIZE = 40;
-const CENTER = SIZE / 2;
-const RADIUS = 16;
-const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
+// Viên "capsule" dẹp 2 đầu trên/dưới (thêm 2026-08-24, sửa lại từ vòng tròn ban đầu — yêu cầu
+// "circle dẹp 2 đầu trên dưới, dài đủ để nhét giờ và AM,PM vào") — <rect rx=ry=PILL_H/2> tạo
+// đúng hình capsule: 2 cạnh trên/dưới THẲNG (dẹp), 2 đầu trái/phải BO TRÒN bán nguyệt. Đủ rộng
+// để "09:36 PM" nằm gọn 1 dòng bên trong, thay vì tách giờ:phút ra ngoài như bản vòng tròn cũ.
+const PILL_W = 66;
+const PILL_H = 22;
+const STROKE = 2;
+const RECT_X = STROKE / 2;
+const RECT_Y = STROKE / 2;
+const RECT_W = PILL_W - STROKE;
+const RECT_H = PILL_H - STROKE;
+const RECT_R = RECT_H / 2;
 
 /**
- * Vòng gauge tròn quanh giờ:phút (thêm 2026-08-24, lấy cảm hứng từ 1 mẫu đồng hồ dạng ring
- * gauge trên Pinterest, xem @clock.jpg) — viền ngoài track mờ cố định, cung sáng gradient
- * xanh chạy theo % giây trong phút hiện tại (0-59 -> 0-360°), kèm 1 chấm sáng ở đầu cung
- * (giống marker trong ảnh gốc). AM/PM (tự đổi "SA"/"CH" theo locale vi-VN) đặt NGAY GIỮA vòng
- * tròn (yêu cầu 2026-08-24, giống ảnh gốc "PM" nằm trong vòng gauge to). Bên cạnh ring xếp 2
- * dòng chữ: dòng trên = thứ + ngày/tháng/năm ngắn gọn, dòng dưới = giờ:phút + MST — cả 2 dòng
- * dùng `text-text-dim` (không phải `text-text-faint`) để đủ sáng dễ đọc trên nền pill tối,
- * theo phản hồi "chữ hơi tối" 2026-08-24. Hover xem đầy đủ thứ + ngày/tháng/năm trong tooltip.
+ * Viên capsule gauge quanh giờ:phút + AM/PM (thêm 2026-08-24, thiết kế lại từ bản vòng tròn
+ * cùng ngày — vòng tròn quá nhỏ để chứa cả giờ lẫn buổi AM/PM, phải tách "PM" vào giữa vòng
+ * còn "09:36" đặt riêng bên ngoài). Track viền mờ cố định + cung sáng gradient xanh chạy dọc
+ * theo chu vi capsule theo % giây trong phút hiện tại (dùng `pathLength=100` trên <rect> để
+ * chuẩn hoá chu vi về 100 đơn vị, khỏi phải tự tính chu vi hình bo tròn 2 đầu bằng tay) — bỏ
+ * hẳn chấm sáng marker cuối cung của bản vòng tròn cũ (không tính được điểm chính xác trên
+ * path capsule tuỳ biến mà không cần đo DOM thật, đổi lấy sự đơn giản/ổn định). "09:36 PM" giờ
+ * nằm gọn 1 dòng NGAY TRONG capsule. Bên cạnh capsule chỉ còn 1 dòng: thứ + ngày/tháng/năm
+ * ngắn gọn (dòng "giờ:phút + MST" cũ bỏ đi vì giờ đã nằm trong capsule) — dùng `text-text-dim`
+ * để đủ sáng dễ đọc trên nền pill tối. Hover xem đầy đủ thứ + ngày/tháng/năm trong tooltip.
  */
 export function PhoenixClock() {
   const [now, setNow] = useState<Date | null>(null);
@@ -71,57 +81,60 @@ export function PhoenixClock() {
   if (!now) return null;
   const { time, period, weekdayDate, fullDate, seconds } = formatPhoenix(now, locale);
   const progress = seconds / 60;
-  const dashOffset = CIRCUMFERENCE * (1 - progress);
-  // Góc bắt đầu ở 12h (top), chấm sáng đặt theo đúng vị trí cuối cung — SVG mặc định 0° ở
-  // 3h nên trừ 90° để quy về mốc 12h giống hướng vẽ cung (transform: rotate(-90deg) bên dưới).
-  const dotAngle = progress * 360 - 90;
-  const dotX = CENTER + RADIUS * Math.cos((dotAngle * Math.PI) / 180);
-  const dotY = CENTER + RADIUS * Math.sin((dotAngle * Math.PI) / 180);
+  // pathLength=100 chuẩn hoá chu vi capsule về 100 đơn vị (SVG 2, hỗ trợ tốt trên mọi trình
+  // duyệt hiện đại) — khỏi phải tự tính chu vi hình chữ nhật bo tròn 2 đầu bằng công thức tay.
+  const dashOffset = 100 * (1 - progress);
 
   return (
     <div
       className="hidden items-center gap-2 rounded-full border border-border bg-surface py-1 pl-1 pr-3 text-xs text-text-dim sm:flex"
       title={`${language === "en" ? "Phoenix, Arizona time (MST)" : "Giờ Phoenix, Arizona (MST)"} — ${fullDate}`}
     >
-      {/* AM/PM đặt NGAY GIỮA vòng tròn (yêu cầu 2026-08-24, giống ảnh gốc "PM" nằm trong vòng
-          gauge to) — phóng nhẹ ring lên 40px (từ 36px) để chữ 2 ký tự còn đọc được ở giữa,
-          overlay bằng <span> absolute thay vì <text> SVG (dễ chỉnh font/line-height khớp
-          phần chữ còn lại của app hơn). */}
-      <div className="relative shrink-0" style={{ width: SIZE, height: SIZE }}>
-        <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`}>
+      {/* Capsule dẹp 2 đầu trên/dưới (thêm 2026-08-24, thay cho vòng tròn cũ) — "09:36 PM" nằm
+          gọn 1 dòng ngay bên trong, overlay bằng <span> absolute thay vì <text> SVG (dễ chỉnh
+          font/line-height khớp phần chữ còn lại của app hơn). */}
+      <div className="relative shrink-0" style={{ width: PILL_W, height: PILL_H }}>
+        <svg width={PILL_W} height={PILL_H} viewBox={`0 0 ${PILL_W} ${PILL_H}`}>
           <defs>
             <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
               <stop offset="0%" stopColor="var(--accent-from)" />
               <stop offset="100%" stopColor="var(--accent-to)" />
             </linearGradient>
           </defs>
-          <circle cx={CENTER} cy={CENTER} r={RADIUS} fill="none" stroke="var(--border-strong)" strokeWidth={2.5} />
-          <circle
-            cx={CENTER}
-            cy={CENTER}
-            r={RADIUS}
+          <rect
+            x={RECT_X}
+            y={RECT_Y}
+            width={RECT_W}
+            height={RECT_H}
+            rx={RECT_R}
+            ry={RECT_R}
+            fill="none"
+            stroke="var(--border-strong)"
+            strokeWidth={STROKE}
+          />
+          <rect
+            x={RECT_X}
+            y={RECT_Y}
+            width={RECT_W}
+            height={RECT_H}
+            rx={RECT_R}
+            ry={RECT_R}
             fill="none"
             stroke={`url(#${gradientId})`}
-            strokeWidth={2.5}
+            strokeWidth={STROKE}
             strokeLinecap="round"
-            strokeDasharray={CIRCUMFERENCE}
+            pathLength={100}
+            strokeDasharray={100}
             strokeDashoffset={dashOffset}
-            transform={`rotate(-90 ${CENTER} ${CENTER})`}
             style={{ filter: "drop-shadow(0 0 3px rgba(58, 141, 209, 0.7))" }}
           />
-          <circle cx={dotX} cy={dotY} r={1.8} fill="var(--accent-from)" style={{ filter: "drop-shadow(0 0 2px rgba(58, 141, 209, 0.9))" }} />
         </svg>
-        <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-[9px] font-semibold uppercase leading-none text-text">
-          {period}
+        <span className="pointer-events-none absolute inset-0 flex items-center justify-center gap-1 leading-none text-text">
+          <span className="text-[11px] font-semibold tabular-nums">{time}</span>
+          <span className="text-[9px] font-semibold uppercase">{period}</span>
         </span>
       </div>
-      <div className="flex flex-col leading-tight">
-        <span className="whitespace-nowrap text-[10px] font-medium capitalize text-text-dim">{weekdayDate}</span>
-        <span className="whitespace-nowrap">
-          <span className="font-semibold tabular-nums text-text">{time}</span>{" "}
-          <span className="text-[10px] font-medium text-text-dim">MST</span>
-        </span>
-      </div>
+      <span className="whitespace-nowrap text-[10px] font-medium capitalize text-text-dim">{weekdayDate}</span>
     </div>
   );
 }
