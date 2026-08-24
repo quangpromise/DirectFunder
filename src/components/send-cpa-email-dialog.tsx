@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { upload } from "@vercel/blob/client";
 import { Mail, X, Paperclip, AlertCircle, Search } from "lucide-react";
 import { Spinner } from "@/components/spinner";
+import { SendingProgressToast } from "@/components/sending-progress-toast";
 import { CaseRecord, CpaEmailDefaults } from "@/lib/types";
 import { fileToDataUrl } from "@/lib/file-to-data-url";
 import {
@@ -105,6 +106,11 @@ export function SendCpaEmailDialog({
   const [files, setFiles] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<{ done: number; total: number } | null>(null);
+  /** % tiến độ THẬT của bước upload đính kèm lên Vercel Blob (thêm 2026-08-24, đo qua
+   * `onUploadProgress` của `upload()`) — null khi không ở bước upload (gửi thẳng base64, hoặc
+   * đã upload xong đang chờ server gửi mail — bước đó không đo được % thật nên hiện thanh
+   * trượt vô định thay vì bịa số). */
+  const [uploadPercent, setUploadPercent] = useState<number | null>(null);
   const [error, setError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const t = useT();
@@ -229,11 +235,16 @@ export function SendCpaEmailDialog({
         }
       } else {
         setUploadStatus(files.length > 0 ? { done: 0, total: files.length } : null);
+        let bytesDoneSoFar = 0;
         for (const file of files) {
           const blob = await upload(file.name, file, {
             access: "public",
             handleUploadUrl: "/api/cpa-email/blob-upload",
+            onUploadProgress: ({ loaded }) => {
+              setUploadPercent(totalBytes > 0 ? Math.min(100, ((bytesDoneSoFar + loaded) / totalBytes) * 100) : 0);
+            },
           });
+          bytesDoneSoFar += file.size;
           attachments.push({
             filename: file.name,
             contentType: file.type || "application/octet-stream",
@@ -242,6 +253,7 @@ export function SendCpaEmailDialog({
           setUploadStatus((s) => (s ? { done: s.done + 1, total: s.total } : s));
         }
         setUploadStatus(null);
+        setUploadPercent(null);
       }
       // Editor giữ HTML trong state qua onChange; text fallback lấy từ chính đoạn HTML
       // (đủ dùng — email client không đọc được HTML sẽ thấy văn bản thô, không cần bản
@@ -259,6 +271,7 @@ export function SendCpaEmailDialog({
       setError(err instanceof Error ? err.message : t("cpaEmail.attachmentUploadFailed"));
     } finally {
       setUploadStatus(null);
+      setUploadPercent(null);
       setSending(false);
     }
   }
@@ -456,13 +469,6 @@ export function SendCpaEmailDialog({
                 </div>
               </div>
 
-              {uploadStatus && (
-                <div className="mx-5 mt-3 flex items-center gap-1.5 rounded-lg border border-border bg-bg-elevated px-3 py-2 text-xs text-text-dim">
-                  <Spinner size={13} className="shrink-0" />
-                  {t("cpaEmail.uploadingAttachments", { done: uploadStatus.done, total: uploadStatus.total })}
-                </div>
-              )}
-
               {error && (
                 <div className="mx-5 mt-3 flex items-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300 light:text-red-700">
                   <AlertCircle size={13} className="shrink-0" />
@@ -496,6 +502,16 @@ export function SendCpaEmailDialog({
           </div>,
           document.body
         )}
+
+      {uploadStatus ? (
+        <SendingProgressToast
+          show
+          label={t("cpaEmail.uploadingAttachments", { done: uploadStatus.done, total: uploadStatus.total })}
+          progress={uploadPercent ?? undefined}
+        />
+      ) : (
+        <SendingProgressToast show={sending} label={t("cpaEmail.sending")} />
+      )}
     </div>
   );
 }

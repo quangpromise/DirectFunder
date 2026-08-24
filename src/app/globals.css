@@ -247,6 +247,18 @@ body {
   animation: popover-in 160ms ease-out;
 }
 
+/* Thanh trượt cho progress bar KHÔNG xác định % thật (chỉ báo "đang chạy", dùng cho các hành
+   động gửi/upload chỉ có 1 lần request-response, không đo được tiến độ thật) — dùng cho
+   SendingProgressToast (thêm 2026-08-24). */
+@keyframes progress-indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
+}
+
 /* Class dùng CHUNG cho mọi bảng dữ liệu kiểu Excel trong app (Hồ sơ/Order/Collecting/CPA
    Review/Permissions/For Processor..., thêm 2026-08-24 — theo yêu cầu "gom bảng lại, sửa 1
    thay đổi tất cả" thay vì mỗi trang tự lặp lại y hệt 1 chuỗi Tailwind utility). Đặt trong

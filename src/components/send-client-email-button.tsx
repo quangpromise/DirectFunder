@@ -8,6 +8,7 @@ import { REFUND_YEARS } from "@/lib/refund";
 import { fileToDataUrl } from "@/lib/file-to-data-url";
 import { ConnectWebmailDialog } from "@/components/connect-webmail-dialog";
 import { MailBodyEditor } from "@/components/mail-body-editor";
+import { SendingProgressToast } from "@/components/sending-progress-toast";
 
 type PreviewResult =
   | { ok: true; subject: string; bodyHtml: string; to: string[]; cc: string[] }
@@ -469,6 +470,8 @@ export function SendClientEmailButton({
           void attemptSend();
         }}
       />
+
+      <SendingProgressToast show={previewing || sending} label={t("refundEmail.sending")} />
     </>
   );
 }

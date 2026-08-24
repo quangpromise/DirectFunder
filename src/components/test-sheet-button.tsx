@@ -7,6 +7,7 @@ import { Search, X } from "lucide-react";
 import { useT } from "@/lib/i18n";
 import { REFUND_YEARS } from "@/lib/refund";
 import { SelectOption } from "@/lib/types";
+import { SendingProgressToast } from "@/components/sending-progress-toast";
 
 /** Dropdown chọn 1 trong các option của cột Status (dùng làm CRM Source, thêm 2026-08-16 —
  * cùng nguồn dữ liệu với dropdown CRM Source sẵn có trong tab CPA Review), có ô tìm kiếm —
@@ -317,6 +318,8 @@ export function TestSheetButton({
           </div>,
           document.body
         )}
+
+      <SendingProgressToast show={sending} label={t("testSheet.sending")} />
     </div>
   );
 }

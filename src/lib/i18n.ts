@@ -208,6 +208,7 @@ const dict: Record<Language, Record<string, string>> = {
     "sendActions.title": "Gửi dữ liệu",
 
     "sheet.sendBtn": "Gửi dòng dữ liệu lên Google Sheet",
+    "sheet.sending": "Đang gửi lên Google Sheet...",
     "sheet.sentHint": "Đã gửi — bấm để gửi lại",
     "sheet.confirmSend": "Gửi dòng dữ liệu hồ sơ này lên Google Sheet?",
     "sheet.confirmSendTitle": "Xác nhận gửi Google Sheet",
@@ -788,6 +789,7 @@ const dict: Record<Language, Record<string, string>> = {
     // Test Sheet button (gửi sang tab CPA Review)
     "testSheet.sentTitle": "Đã gửi sang tab CPA Review",
     "testSheet.notSentTitle": "Gửi sang tab CPA Review",
+    "testSheet.sending": "Đang gửi sang tab CPA Review...",
     "testSheet.resendConfirm": "Bạn có muốn gửi lại hồ sơ này sang tab CPA Review không?",
     "testSheet.resendTitle": "Gửi lại Test Sheet",
     "testSheet.confirmSend": "Gửi thông tin hồ sơ này sang tab CPA Review (tháng hiện tại)?",
@@ -1067,6 +1069,7 @@ const dict: Record<Language, Record<string, string>> = {
     "sendActions.title": "Send data",
 
     "sheet.sendBtn": "Send row to Google Sheet",
+    "sheet.sending": "Sending to Google Sheet...",
     "sheet.sentHint": "Sent — click to send again",
     "sheet.confirmSend": "Send this case's data to Google Sheet?",
     "sheet.confirmSendTitle": "Confirm Google Sheet send",
@@ -1647,6 +1650,7 @@ const dict: Record<Language, Record<string, string>> = {
     // Test Sheet button (send to CPA Review tab)
     "testSheet.sentTitle": "Sent to CPA Review tab",
     "testSheet.notSentTitle": "Send to CPA Review tab",
+    "testSheet.sending": "Sending to CPA Review tab...",
     "testSheet.resendConfirm": "Resend this case to the CPA Review tab?",
     "testSheet.resendTitle": "Resend Test Sheet",
     "testSheet.confirmSend": "Send this case's info to the CPA Review tab (current month)?",

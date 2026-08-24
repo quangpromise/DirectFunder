@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { Send, X } from "lucide-react";
 import { useT } from "@/lib/i18n";
 import { REFUND_YEARS } from "@/lib/refund";
+import { SendingProgressToast } from "@/components/sending-progress-toast";
 
 type SendResult = { ok: true } | { ok: false; error: string; needsGoogleAuth?: boolean };
 
@@ -176,6 +177,8 @@ export function SendToSheetButton({
           </div>,
           document.body
         )}
+
+      <SendingProgressToast show={sending} label={t("sheet.sending")} />
     </div>
   );
 }

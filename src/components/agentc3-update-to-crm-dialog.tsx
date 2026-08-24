@@ -4,6 +4,7 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 import { RefreshCw, X } from "lucide-react";
 import { Spinner } from "@/components/spinner";
+import { SendingProgressToast } from "@/components/sending-progress-toast";
 import { api } from "@/lib/api-client";
 import { REFUND_YEARS } from "@/lib/refund";
 import { todayIsoDate } from "@/lib/date-format";
@@ -434,6 +435,8 @@ export function AgentC3UpdateToCrmDialog({
         </div>,
         document.body
       )}
+
+      <SendingProgressToast show={saving} label={t("agentc3UpdateCrm.saving")} />
     </>
   );
 }
