@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Bold, Italic, Strikethrough, Type, Highlighter } from "lucide-react";
+import { Bold, Italic, Strikethrough, Type, Highlighter, Ban } from "lucide-react";
 
 const TEXT_COLORS = ["#e5e7eb", "#ef4444", "#f59e0b", "#22c55e", "#3b82f6", "#a855f7", "#000000"];
 const BG_COLORS = ["#fde047", "#fca5a5", "#86efac", "#93c5fd", "#d8b4fe", "#ffffff"];
@@ -12,7 +12,14 @@ const BG_COLORS = ["#fde047", "#fca5a5", "#86efac", "#93c5fd", "#d8b4fe", "#ffff
  * RichTextEditor/MailBodyEditor đã có. KHÁC MailBodyEditor (chỉ đổ `value` vào DOM 1 lần lúc
  * mount): editor này đồng bộ lại từ `value` MỖI KHI khác với DOM hiện tại (giống
  * RichTextEditor) — cần thiết vì nội dung nạp bất đồng bộ (fetch xong sau khi component đã
- * mount, xem MyNotesDialog), không phải set sẵn ngay từ đầu như soạn mail.
+ * mount, xem MyNotesDialog) VÀ vì giờ có nhiều tab, đổi tab active phải nạp lại đúng nội dung
+ * tab đó ngay (thêm 2026-08-24).
+ *
+ * Mỗi picker màu (thêm 2026-08-24) giờ có thêm: 1 nút "Mặc định" (bỏ hẳn màu đã áp — text dùng
+ * `foreColor` giá trị "inherit", nền dùng `hiliteColor`/`backColor` giá trị "transparent", cả
+ * 2 đều là cách chuẩn trình duyệt hỗ trợ để "gỡ" màu đã set qua execCommand) VÀ 1 ô
+ * `<input type="color">` để chọn màu TUỲ Ý ngoài palette có sẵn (native color picker của hệ
+ * điều hành/trình duyệt, không cần tự vẽ UI chọn màu).
  */
 export function MyNotesEditor({
   value,
@@ -32,13 +39,13 @@ export function MyNotesEditor({
   useEffect(() => {
     if (editorRef.current && editorRef.current.innerHTML !== value) {
       editorRef.current.innerHTML = value;
-      setIsEmpty(value.trim() === "");
+      setIsEmpty((editorRef.current.textContent ?? "").trim() === "");
     }
   }, [value]);
 
   function emit() {
     const html = editorRef.current?.innerHTML ?? "";
-    setIsEmpty(editorRef.current?.textContent?.trim() === "");
+    setIsEmpty((editorRef.current?.textContent ?? "").trim() === "");
     onChange(html);
   }
 
@@ -57,6 +64,12 @@ export function MyNotesEditor({
     }
     emit();
     setOpenPicker(null);
+  }
+
+  /** Gỡ màu đã áp, về lại mặc định — "inherit"/"transparent" là giá trị chuẩn trình duyệt
+   * hiểu để bỏ màu chữ/màu nền đã set qua execCommand (thêm 2026-08-24). */
+  function resetColor(kind: "text" | "bg") {
+    applyColor(kind, kind === "text" ? "inherit" : "transparent");
   }
 
   return (
@@ -103,7 +116,16 @@ export function MyNotesEditor({
             <Type size={14} />
           </button>
           {openPicker === "text" && (
-            <div className="absolute left-0 top-full z-10 mt-1 flex gap-1 rounded-lg border border-border bg-bg-elevated p-1.5 shadow-lg">
+            <div className="absolute left-0 top-full z-10 mt-1 flex items-center gap-1 rounded-lg border border-border bg-bg-elevated p-1.5 shadow-lg">
+              <button
+                type="button"
+                title={language === "vi" ? "Mặc định" : "Default"}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => resetColor("text")}
+                className="flex h-5 w-5 shrink-0 items-center justify-center rounded border border-border-strong text-text-faint transition hover:text-text"
+              >
+                <Ban size={12} />
+              </button>
               {TEXT_COLORS.map((color) => (
                 <button
                   key={color}
@@ -112,9 +134,21 @@ export function MyNotesEditor({
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => applyColor("text", color)}
                   style={{ backgroundColor: color }}
-                  className="h-5 w-5 rounded border border-border-strong"
+                  className="h-5 w-5 shrink-0 rounded border border-border-strong"
                 />
               ))}
+              <label
+                title={language === "vi" ? "Tuỳ chọn màu khác" : "Custom color"}
+                className="relative flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded border border-dashed border-border-strong text-[9px] font-semibold text-text-faint hover:text-text"
+              >
+                +
+                <input
+                  type="color"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onChange={(e) => applyColor("text", e.target.value)}
+                  className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                />
+              </label>
             </div>
           )}
         </div>
@@ -130,7 +164,16 @@ export function MyNotesEditor({
             <Highlighter size={14} />
           </button>
           {openPicker === "bg" && (
-            <div className="absolute left-0 top-full z-10 mt-1 flex gap-1 rounded-lg border border-border bg-bg-elevated p-1.5 shadow-lg">
+            <div className="absolute left-0 top-full z-10 mt-1 flex items-center gap-1 rounded-lg border border-border bg-bg-elevated p-1.5 shadow-lg">
+              <button
+                type="button"
+                title={language === "vi" ? "Mặc định" : "Default"}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => resetColor("bg")}
+                className="flex h-5 w-5 shrink-0 items-center justify-center rounded border border-border-strong text-text-faint transition hover:text-text"
+              >
+                <Ban size={12} />
+              </button>
               {BG_COLORS.map((color) => (
                 <button
                   key={color}
@@ -139,9 +182,21 @@ export function MyNotesEditor({
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => applyColor("bg", color)}
                   style={{ backgroundColor: color }}
-                  className="h-5 w-5 rounded border border-border-strong"
+                  className="h-5 w-5 shrink-0 rounded border border-border-strong"
                 />
               ))}
+              <label
+                title={language === "vi" ? "Tuỳ chọn màu khác" : "Custom color"}
+                className="relative flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded border border-dashed border-border-strong text-[9px] font-semibold text-text-faint hover:text-text"
+              >
+                +
+                <input
+                  type="color"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onChange={(e) => applyColor("bg", e.target.value)}
+                  className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                />
+              </label>
             </div>
           )}
         </div>

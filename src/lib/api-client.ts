@@ -23,6 +23,7 @@ import type {
   SmsMessageRecord,
   User,
 } from "./types";
+import type { MyNotesData } from "./my-notes";
 import { getSocketId } from "./pusher-client";
 
 class ApiError extends Error {}
@@ -223,12 +224,12 @@ export const api = {
     ),
 
   /** "My Notes" cá nhân — chỉ chính chủ tài khoản đọc/sửa được, xem GET/PATCH
-   * /api/me/notes. */
-  getMyNotes: () => request<{ myNotesHtml: string }>("/api/me/notes"),
-  saveMyNotes: (myNotesHtml: string) =>
-    request<{ ok: true; myNotesHtml: string }>("/api/me/notes", {
+   * /api/me/notes. Nhiều tab (thêm 2026-08-24) — xem MyNotesData trong src/lib/my-notes.ts. */
+  getMyNotes: () => request<MyNotesData>("/api/me/notes"),
+  saveMyNotes: (data: MyNotesData) =>
+    request<{ ok: true } & MyNotesData>("/api/me/notes", {
       method: "PATCH",
-      body: JSON.stringify({ myNotesHtml }),
+      body: JSON.stringify(data),
     }),
 
   /** Đẩy 1 dòng dữ liệu hồ sơ lên Google Sheet — xem POST /api/cases/[id]/send-to-sheet.

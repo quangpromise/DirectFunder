@@ -257,7 +257,7 @@ export default function CasesPage() {
   const sendCpaEmail = useAppStore((s) => s.sendCpaEmail);
   const markCpaEmailSent = useAppStore((s) => s.markCpaEmailSent);
   const lookupCpaReviewRow = useAppStore((s) => s.lookupCpaReviewRow);
-  const myNotesHtml = useAppStore((s) => s.myNotesHtml);
+  const myNotesData = useAppStore((s) => s.myNotesData);
   const fetchMyNotes = useAppStore((s) => s.fetchMyNotes);
   const saveMyNotes = useAppStore((s) => s.saveMyNotes);
   const sendCaseRowToSheet = useAppStore((s) => s.sendCaseRowToSheet);
@@ -760,7 +760,7 @@ export default function CasesPage() {
             </button>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <MyNotesDialog myNotesHtml={myNotesHtml} fetchMyNotes={fetchMyNotes} saveMyNotes={saveMyNotes} />
+            <MyNotesDialog myNotesData={myNotesData} fetchMyNotes={fetchMyNotes} saveMyNotes={saveMyNotes} />
             <ForProcessorButton />
             <EcQualificationBox />
           </div>
@@ -1025,7 +1025,7 @@ export default function CasesPage() {
                   </button>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  <MyNotesDialog myNotesHtml={myNotesHtml} fetchMyNotes={fetchMyNotes} saveMyNotes={saveMyNotes} />
+                  <MyNotesDialog myNotesData={myNotesData} fetchMyNotes={fetchMyNotes} saveMyNotes={saveMyNotes} />
                   <ForProcessorButton />
                   <EcQualificationBox />
                 </div>
