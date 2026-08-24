@@ -9,6 +9,52 @@ import { REFUND_YEARS } from "@/lib/refund";
 import { SelectOption } from "@/lib/types";
 import { SendingProgressToast } from "@/components/sending-progress-toast";
 
+/** 2 lựa chọn chèn nhanh vào Note (thêm 2026-08-24) — bấm vào thì TÊN lựa chọn (nguyên văn)
+ * trở thành 1 dòng trong Note tự dựng (xem buildAutoNote), bấm lại để bỏ dòng đó ra. */
+const NOTE_OPTIONS: { id: string; label: string }[] = [
+  { id: "no_amend", label: "No Amend" },
+  { id: "agent_guarantees_sc", label: "Agent guarantees SC" },
+];
+
+function formatMoney(n: number): string {
+  return `$${Math.round(n).toLocaleString("en-US")}`;
+}
+
+/** Note tự dựng lại mỗi lần render từ 2 nguồn (thêm 2026-08-24), theo đúng thứ tự: lựa chọn
+ * chèn nhanh trước, rồi tới khối INT/Tax của từng năm ĐÃ CHỌN có điền đủ cả 2 ô (sắp theo năm
+ * tăng dần) — mỗi khối 2 dòng đúng mẫu đã thống nhất. Chỉ dùng khi người dùng CHƯA tự gõ tay
+ * sửa Note (`noteDirty` false, xem displayedNote) — gõ tay 1 lần là tự dựng dừng hẳn, giống
+ * đúng cơ chế `noteDirty` đã dùng ở AgentC3UpdateToCrmDialog (buildConversationLogText). */
+function buildAutoNote(
+  selectedNoteOptions: string[],
+  selectedYears: string[],
+  refunds: Record<string, number>,
+  intDraft: Record<string, string>,
+  taxDraft: Record<string, string>
+): string {
+  const lines: string[] = [];
+  for (const opt of NOTE_OPTIONS) {
+    if (selectedNoteOptions.includes(opt.id)) lines.push(opt.label);
+  }
+  for (const year of [...selectedYears].sort()) {
+    const intParsed = Number(intDraft[year]);
+    const taxParsed = Number(taxDraft[year]);
+    const hasInt = Number.isFinite(intParsed) && intParsed > 0;
+    const hasTax = Number.isFinite(taxParsed) && taxParsed > 0;
+    // Hiện ngay khi gõ MỘT trong 2 ô (thêm 2026-08-24, theo phản hồi thực tế "nhập vào thì
+    // show luôn để nhận biết") — không chờ điền đủ cả 2 ô mới hiện như bản trước. Ô còn thiếu
+    // tạm tính là 0, dòng tự cập nhật đúng số ngay khi người dùng điền tiếp ô kia.
+    if (!hasInt && !hasTax) continue;
+    const intRaw = hasInt ? intParsed : 0;
+    const taxRaw = hasTax ? taxParsed : 0;
+    const refund = refunds[year] ?? 0;
+    const net = refund - taxRaw;
+    lines.push(`${year}: Amended 1099-INT (added ${formatMoney(intRaw)})`);
+    lines.push(`${formatMoney(refund)} - ${formatMoney(taxRaw)} Tax on INT= ${formatMoney(net)}`);
+  }
+  return lines.join("\n");
+}
+
 /** Dropdown chọn 1 trong các option của cột Status (dùng làm CRM Source, thêm 2026-08-16 —
  * cùng nguồn dữ liệu với dropdown CRM Source sẵn có trong tab CPA Review), có ô tìm kiếm —
  * hữu ích khi danh sách status dài. */
@@ -116,11 +162,26 @@ function CrmSourceSelect({
  * (có ô tìm kiếm, thêm 2026-08-16) + nút phụ "Mark as sent" (đánh dấu thủ công, KHÔNG tạo
  * dòng CPA Review thật). Bấm lại lúc đang xanh: popup xác nhận riêng "muốn gửi lại?" — đồng
  * ý mới xoá cpaReviewTestSentAt + quay về mặc định, giống hệt SendToSheetButton.
+ *
+ * Mỗi năm ĐÃ CHỌN có thêm 2 ô "INT"/"Tax" (thêm 2026-08-24) — điền đủ cả 2 ô cho 1 năm tự
+ * thêm 2 dòng đúng mẫu "{năm}: Amended 1099-INT (added $INT)" + "$refund - $tax on INT=
+ * $net" vào Note. Cạnh Note còn có 2 nút chip "No Amend"/"Agent guarantees SC" — bấm vào
+ * thêm/bớt đúng 1 dòng tên lựa chọn đó trong Note. Note tự dựng lại theo 2 nguồn này (xem
+ * buildAutoNote) cho tới khi người dùng tự gõ tay sửa (noteDirty) thì dừng tự dựng, giống
+ * đúng cơ chế Conversation Log ở AgentC3UpdateToCrmDialog.
+ *
+ * Thêm 3 ô FC Date/Processing Date/EL Date (thêm 2026-08-24) — điền sẵn từ đúng field cùng
+ * tên đã lưu trên Case (qua popup "Edit Hồ sơ") NẾU CÓ, sửa được tự do trước khi gửi, gửi kèm
+ * lên server ghi vào đúng cột tương ứng trên dòng CPA Review vừa tạo (xem
+ * buildCpaReviewCustomFromCase — giá trị gõ ở đây LUÔN ưu tiên hơn giá trị đã lưu trên Case).
  */
 export function TestSheetButton({
   caseId,
   cpaReviewTestSentAt,
   refunds,
+  fcDate,
+  processingDate,
+  elDate,
   crmSourceOptions,
   confirm,
   alertWarn,
@@ -130,6 +191,12 @@ export function TestSheetButton({
   caseId: string;
   cpaReviewTestSentAt: string | null;
   refunds: Record<string, number>;
+  /** FC Date/Processing Date/EL Date đã lưu trên Case (điền qua popup "Edit Hồ sơ") — dùng
+   * làm giá trị MẶC ĐỊNH cho 3 ô ngày ở popup chọn năm (thêm 2026-08-24), người dùng sửa được
+   * trước khi gửi, không bắt buộc phải đã có sẵn. */
+  fcDate: string | null;
+  processingDate: string | null;
+  elDate: string | null;
   /** Danh sách option của cột Status trên bảng Hồ sơ — dùng làm nguồn cho dropdown CRM
    * Source (thêm 2026-08-16), cùng nguồn dữ liệu với CRM Source trong tab CPA Review. */
   crmSourceOptions: SelectOption[];
@@ -139,7 +206,10 @@ export function TestSheetButton({
     caseId: string,
     reviewYears: string[],
     note?: string,
-    crmSource?: string
+    crmSource?: string,
+    fcDate?: string,
+    processingDate?: string,
+    elDate?: string
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
   markCaseCpaReviewTestSent: (caseId: string, action: "manual" | "clear") => Promise<void>;
 }) {
@@ -148,12 +218,27 @@ export function TestSheetButton({
   const [yearPickerOpen, setYearPickerOpen] = useState(false);
   const [selectedYears, setSelectedYears] = useState<string[]>([]);
   const [yearSearch, setYearSearch] = useState("");
+  const [intDraft, setIntDraft] = useState<Record<string, string>>({});
+  const [taxDraft, setTaxDraft] = useState<Record<string, string>>({});
+  const [selectedNoteOptions, setSelectedNoteOptions] = useState<string[]>([]);
   const [note, setNote] = useState("");
+  const [noteDirty, setNoteDirty] = useState(false);
   const [crmSource, setCrmSource] = useState("");
+  const [fcDateDraft, setFcDateDraft] = useState("");
+  const [processingDateDraft, setProcessingDateDraft] = useState("");
+  const [elDateDraft, setElDateDraft] = useState("");
   const t = useT();
+
+  // Note tự dựng từ lựa chọn chèn nhanh + khối INT/Tax từng năm cho tới khi người dùng tự gõ
+  // tay sửa (noteDirty) — xem buildAutoNote (thêm 2026-08-24).
+  const displayedNote = noteDirty ? note : buildAutoNote(selectedNoteOptions, selectedYears, refunds, intDraft, taxDraft);
 
   function toggleYear(year: string) {
     setSelectedYears((prev) => (prev.includes(year) ? prev.filter((y) => y !== year) : [...prev, year]));
+  }
+
+  function toggleNoteOption(id: string) {
+    setSelectedNoteOptions((prev) => (prev.includes(id) ? prev.filter((o) => o !== id) : [...prev, id]));
   }
 
   const filteredYears = yearSearch.trim()
@@ -171,8 +256,17 @@ export function TestSheetButton({
     }
     setSelectedYears([]);
     setYearSearch("");
+    setIntDraft({});
+    setTaxDraft({});
+    setSelectedNoteOptions([]);
     setNote("");
+    setNoteDirty(false);
     setCrmSource("");
+    // Điền sẵn từ Case (Edit Hồ sơ) nếu có — người dùng sửa được ngay trong popup trước khi
+    // gửi (thêm 2026-08-24).
+    setFcDateDraft(fcDate ?? "");
+    setProcessingDateDraft(processingDate ?? "");
+    setElDateDraft(elDate ?? "");
     setYearPickerOpen(true);
   }
 
@@ -185,7 +279,15 @@ export function TestSheetButton({
     if (!confirmed) return;
     setSending(true);
     try {
-      const result = await sendCaseRowToCpaReview(caseId, selectedYears, note, crmSource);
+      const result = await sendCaseRowToCpaReview(
+        caseId,
+        selectedYears,
+        displayedNote,
+        crmSource,
+        fcDateDraft,
+        processingDateDraft,
+        elDateDraft
+      );
       if (!result.ok) {
         await alertWarn(result.error, { title: t("testSheet.sendErrorTitle") });
       }
@@ -256,25 +358,63 @@ export function TestSheetButton({
                 {filteredYears.map((year) => {
                   const selected = selectedYears.includes(year);
                   return (
-                    <button
-                      key={year}
-                      type="button"
-                      onClick={() => toggleYear(year)}
-                      className={`flex flex-col items-center gap-0.5 rounded-lg border px-3 py-2.5 transition ${
-                        selected
-                          ? "border-accent bg-accent-soft"
-                          : "border-border bg-bg-elevated hover:border-accent hover:bg-accent-soft"
-                      }`}
-                    >
-                      <span className="text-sm font-semibold">{year}</span>
-                      <span
-                        className={`text-xs ${
-                          selected ? "font-semibold text-amber-600 light:text-amber-700" : "text-text-dim"
+                    <div key={year} className="flex flex-col gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => toggleYear(year)}
+                        className={`flex w-full flex-col items-center gap-0.5 rounded-lg border px-3 py-2.5 transition ${
+                          selected
+                            ? "border-accent bg-accent-soft"
+                            : "border-border bg-bg-elevated hover:border-accent hover:bg-accent-soft"
                         }`}
                       >
-                        ${(refunds?.[year] ?? 0).toLocaleString("en-US")}
-                      </span>
-                    </button>
+                        <span className="text-sm font-semibold">{year}</span>
+                        <span
+                          className={`text-xs ${
+                            selected ? "font-semibold text-amber-600 light:text-amber-700" : "text-text-dim"
+                          }`}
+                        >
+                          ${(refunds?.[year] ?? 0).toLocaleString("en-US")}
+                        </span>
+                      </button>
+                      {/* Ô INT/Tax riêng cho năm này (thêm 2026-08-24) — cùng chỗ nhận biết
+                          "amended 1099-INT" (INT) và số tiền thuế trừ ra khỏi refund (Tax) —
+                          điền đủ cả 2 ô tự thêm 2 dòng vào Note (xem buildAutoNote). */}
+                      {selected && (
+                        <div className="grid grid-cols-2 gap-1.5 rounded-lg border border-amber-500/60 bg-amber-500/10 p-1.5 light:border-amber-400 light:bg-amber-50">
+                          <div>
+                            <label className="block text-[10px] font-medium text-amber-700 light:text-amber-800">
+                              {t("testSheet.intLabel")}
+                            </label>
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={intDraft[year] ?? ""}
+                              onChange={(e) =>
+                                setIntDraft((prev) => ({ ...prev, [year]: e.target.value.replace(/[^\d.]/g, "") }))
+                              }
+                              placeholder="0"
+                              className="mt-1 w-full rounded-lg border border-border bg-bg-elevated px-2 py-1 text-xs text-text outline-none focus:border-accent"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-medium text-amber-700 light:text-amber-800">
+                              {t("testSheet.taxLabel")}
+                            </label>
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={taxDraft[year] ?? ""}
+                              onChange={(e) =>
+                                setTaxDraft((prev) => ({ ...prev, [year]: e.target.value.replace(/[^\d.]/g, "") }))
+                              }
+                              placeholder="0"
+                              className="mt-1 w-full rounded-lg border border-border bg-bg-elevated px-2 py-1 text-xs text-text outline-none focus:border-accent"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
                 {filteredYears.length === 0 && (
@@ -289,12 +429,70 @@ export function TestSheetButton({
                 </div>
               </label>
 
+              {/* FC Date/Processing Date/EL Date (thêm 2026-08-24) — điền sẵn từ Case (Edit
+                  Hồ sơ) nếu có, sửa được tự do trước khi gửi. */}
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                <div>
+                  <label className="mb-1 block text-xs text-text-dim">{t("clientProfile.fcDate")}</label>
+                  <input
+                    type="date"
+                    value={fcDateDraft}
+                    onChange={(e) => setFcDateDraft(e.target.value)}
+                    className="w-full rounded-lg border border-border bg-bg-elevated px-2 py-1.5 text-xs text-text outline-none focus:border-accent"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-text-dim">{t("clientProfile.processingDate")}</label>
+                  <input
+                    type="date"
+                    value={processingDateDraft}
+                    onChange={(e) => setProcessingDateDraft(e.target.value)}
+                    className="w-full rounded-lg border border-border bg-bg-elevated px-2 py-1.5 text-xs text-text outline-none focus:border-accent"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-text-dim">{t("clientProfile.elDate")}</label>
+                  <input
+                    type="date"
+                    value={elDateDraft}
+                    onChange={(e) => setElDateDraft(e.target.value)}
+                    className="w-full rounded-lg border border-border bg-bg-elevated px-2 py-1.5 text-xs text-text outline-none focus:border-accent"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-3">
+                <label className="mb-1 block text-xs text-text-dim">{t("testSheet.noteOptionsLabel")}</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {NOTE_OPTIONS.map((opt) => {
+                    const active = selectedNoteOptions.includes(opt.id);
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => toggleNoteOption(opt.id)}
+                        className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
+                          active
+                            ? "border-accent bg-accent-soft text-text"
+                            : "border-border bg-bg-elevated text-text-dim hover:border-accent"
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               <label className="mt-3 block text-xs text-text-dim">
                 {t("testSheet.noteLabel")}
                 <textarea
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                  rows={2}
+                  value={displayedNote}
+                  onChange={(e) => {
+                    setNote(e.target.value);
+                    setNoteDirty(true);
+                  }}
+                  rows={4}
                   placeholder={t("testSheet.notePlaceholder")}
                   className="mt-1 w-full resize-none rounded-lg border border-border bg-bg-elevated px-2.5 py-1.5 text-xs text-text outline-none focus:border-accent"
                 />

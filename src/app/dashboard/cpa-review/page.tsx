@@ -320,32 +320,30 @@ export default function CpaReviewPage() {
   return (
     <div className="flex h-full flex-col px-4 py-6 sm:px-6">
       {ConfirmDialogUI}
-      <div className="mb-3 flex items-center gap-1 rounded-lg border border-border bg-surface p-1 self-start">
-        <button
-          onClick={() => setView("table")}
-          className={`flex h-8 items-center gap-1.5 rounded-md px-3 text-sm font-medium transition ${
-            view === "table" ? "gradient-btn text-white" : "text-text-dim hover:text-text"
-          }`}
-        >
-          <Table2 size={14} />
-          {t("cpaReview.tab.data")}
-        </button>
-        <button
-          onClick={() => setView("report")}
-          className={`flex h-8 items-center gap-1.5 rounded-md px-3 text-sm font-medium transition ${
-            view === "report" ? "gradient-btn text-white" : "text-text-dim hover:text-text"
-          }`}
-        >
-          <BarChart3 size={14} />
-          {t("cpaReview.tab.report")}
-        </button>
-      </div>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold tracking-tight">{t("nav.cpaReview")}</h1>
-          <p className="mt-0.5 text-xs text-text-faint">
-            {view === "report" ? t("cpaReview.desc.report") : t("cpaReview.desc.table")}
-          </p>
+      {/* Bỏ hẳn tiêu đề "CPA Review" (thêm 2026-08-24, "bỏ chữ CPA Review luôn") + gộp bộ
+          chuyển tab Data/Report vào CHUNG 1 hàng với Search/bộ chọn tháng/các nút còn lại
+          (trước đây 2 hàng riêng: hàng tab rồi tới hàng tiêu đề+toolbar) để màn hình gọn lại,
+          bớt 1 hàng chiều cao. */}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-1 rounded-lg border border-border bg-surface p-1">
+          <button
+            onClick={() => setView("table")}
+            className={`flex h-8 items-center gap-1.5 rounded-md px-3 text-sm font-medium transition ${
+              view === "table" ? "gradient-btn text-white" : "text-text-dim hover:text-text"
+            }`}
+          >
+            <Table2 size={14} />
+            {t("cpaReview.tab.data")}
+          </button>
+          <button
+            onClick={() => setView("report")}
+            className={`flex h-8 items-center gap-1.5 rounded-md px-3 text-sm font-medium transition ${
+              view === "report" ? "gradient-btn text-white" : "text-text-dim hover:text-text"
+            }`}
+          >
+            <BarChart3 size={14} />
+            {t("cpaReview.tab.report")}
+          </button>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {view === "table" && (
@@ -395,6 +393,8 @@ export default function CpaReviewPage() {
           )}
         </div>
       </div>
+
+      {view === "report" && <p className="-mt-1 mb-3 text-xs text-text-faint">{t("cpaReview.desc.report")}</p>}
 
       {/* Báo cáo dùng `rows` (toàn bộ tháng đang chọn), KHÔNG dùng `filteredRows` — bộ lọc ở
           hàng "3" là khái niệm riêng của bảng dữ liệu, không nên âm thầm ảnh hưởng số liệu
@@ -461,7 +461,7 @@ export default function CpaReviewPage() {
                 return (
                   <th
                     key={`col-letter-${i}`}
-                    className="whitespace-nowrap border-b border-r border-border bg-table-head-bg px-2.5 py-1 text-center text-[10px] font-normal text-text-faint"
+                    className="whitespace-nowrap border-b border-r border-border bg-table-head-bg px-2.5 py-1 text-center text-[9px] font-normal text-text-faint"
                     style={stickyKey ? stickyColStyle(stickyKey, 30, 0) : headTopStyle(0, 20)}
                   >
                     {letterFor(i)}
@@ -479,7 +479,7 @@ export default function CpaReviewPage() {
                 đếm dòng (2 dòng tiêu đề = dòng 1, 2; dữ liệu bắt đầu dòng 3). */}
             <tr ref={row2Ref}>
               <th
-                className="border-b border-r border-border bg-table-head-bg text-center text-[10px] font-normal text-text-faint"
+                className="border-b border-r border-border bg-table-head-bg text-center text-[9px] font-normal text-text-faint"
                 style={gutterHeadStyle(headerOffset.row2)}
               >
                 1
@@ -488,7 +488,7 @@ export default function CpaReviewPage() {
                 <th
                   key={col.key}
                   rowSpan={2}
-                  className="whitespace-nowrap border-b border-r border-border bg-table-head-bg px-2 py-2 text-center text-[11px] font-semibold"
+                  className="whitespace-nowrap border-b border-r border-border bg-table-head-bg px-2 py-1.5 text-center text-[9px] font-semibold uppercase tracking-wide"
                   style={stickyColStyle(col.key, 30, headerOffset.row2)}
                 >
                   {/* Cột Intake Date: bỏ hẳn label chữ, chỉ hiện số tổng cộng số lượng (KHÔNG
@@ -510,7 +510,7 @@ export default function CpaReviewPage() {
                   key={`${year}-group`}
                   colSpan={4}
                   style={yearHeaderStyle(year, headerOffset.row2, 20)}
-                  className="whitespace-nowrap border-b border-r border-border px-2.5 py-2 text-center text-xs font-semibold"
+                  className="whitespace-nowrap border-b border-r border-border px-2 py-1.5 text-center text-[9px] font-semibold uppercase tracking-wide"
                 >
                   {year}
                 </th>,
@@ -518,7 +518,7 @@ export default function CpaReviewPage() {
                   key={`${year}-total`}
                   rowSpan={2}
                   style={yearHeaderStyle(year, headerOffset.row2, 20)}
-                  className="whitespace-nowrap border-b border-r border-border px-2.5 py-2 text-center text-xs font-semibold"
+                  className="whitespace-nowrap border-b border-r border-border px-2 py-1.5 text-center text-[9px] font-semibold uppercase tracking-wide"
                 >
                   Total
                   <span className="ml-1 font-semibold text-red-400">({totalCountByYear[year] ?? 0})</span>
@@ -528,7 +528,7 @@ export default function CpaReviewPage() {
                 <th
                   rowSpan={2}
                   style={headTopStyle(headerOffset.row2, 20)}
-                  className="whitespace-nowrap border-b border-r border-border bg-table-head-bg px-2.5 py-2 text-center text-xs font-semibold"
+                  className="whitespace-nowrap border-b border-r border-border bg-table-head-bg px-2 py-1.5 text-center text-[9px] font-semibold uppercase tracking-wide"
                 >
                   Note
                 </th>
@@ -537,7 +537,7 @@ export default function CpaReviewPage() {
                 <th
                   rowSpan={2}
                   style={headTopStyle(headerOffset.row2, 20)}
-                  className="whitespace-nowrap border-b border-r border-border bg-table-head-bg px-2.5 py-2 text-center text-xs font-semibold"
+                  className="whitespace-nowrap border-b border-r border-border bg-table-head-bg px-2 py-1.5 text-center text-[9px] font-semibold uppercase tracking-wide"
                 >
                   Processor
                 </th>
@@ -546,7 +546,7 @@ export default function CpaReviewPage() {
                 <th
                   rowSpan={2}
                   style={headTopStyle(headerOffset.row2, 20)}
-                  className="whitespace-nowrap border-b border-r border-border bg-table-head-bg px-2.5 py-2 text-center text-xs font-semibold"
+                  className="whitespace-nowrap border-b border-r border-border bg-table-head-bg px-2 py-1.5 text-center text-[9px] font-semibold uppercase tracking-wide"
                 >
                   Agent
                 </th>
@@ -556,7 +556,7 @@ export default function CpaReviewPage() {
                   key={col.key}
                   rowSpan={2}
                   style={headTopStyle(headerOffset.row2, 20)}
-                  className="whitespace-nowrap border-b border-r border-border bg-table-head-bg px-2.5 py-2 text-center text-xs font-semibold"
+                  className="whitespace-nowrap border-b border-r border-border bg-table-head-bg px-2 py-1.5 text-center text-[9px] font-semibold uppercase tracking-wide"
                 >
                   {col.label}
                 </th>
@@ -564,7 +564,7 @@ export default function CpaReviewPage() {
             </tr>
             <tr ref={row3Ref}>
               <th
-                className="border-b border-r border-border bg-table-head-bg text-center text-[10px] font-normal text-text-faint"
+                className="border-b border-r border-border bg-table-head-bg text-center text-[9px] font-normal text-text-faint"
                 style={gutterHeadStyle(headerOffset.row3)}
               >
                 2
@@ -573,28 +573,28 @@ export default function CpaReviewPage() {
                 <th
                   key={`${year}-date`}
                   style={yearHeaderStyle(year, headerOffset.row3, 20)}
-                  className="whitespace-nowrap border-b border-r border-border px-2.5 py-2 text-center text-xs font-semibold"
+                  className="whitespace-nowrap border-b border-r border-border px-2 py-1.5 text-center text-[9px] font-semibold uppercase tracking-wide"
                 >
                   Date
                 </th>,
                 <th
                   key={`${year}-status`}
                   style={yearHeaderStyle(year, headerOffset.row3, 20)}
-                  className="whitespace-nowrap border-b border-r border-border px-2.5 py-2 text-center text-xs font-semibold"
+                  className="whitespace-nowrap border-b border-r border-border px-2 py-1.5 text-center text-[9px] font-semibold uppercase tracking-wide"
                 >
                   Status
                 </th>,
                 <th
                   key={`${year}-amount`}
                   style={yearHeaderStyle(year, headerOffset.row3, 20)}
-                  className="whitespace-nowrap border-b border-r border-border px-2.5 py-2 text-center text-xs font-semibold"
+                  className="whitespace-nowrap border-b border-r border-border px-2 py-1.5 text-center text-[9px] font-semibold uppercase tracking-wide"
                 >
                   Amount
                 </th>,
                 <th
                   key={`${year}-adjustment`}
                   style={yearHeaderStyle(year, headerOffset.row3, 20)}
-                  className="whitespace-nowrap border-b border-r border-border px-2.5 py-2 text-center text-xs font-semibold"
+                  className="whitespace-nowrap border-b border-r border-border px-2 py-1.5 text-center text-[9px] font-semibold uppercase tracking-wide"
                 >
                   Other Refund
                 </th>,
@@ -607,7 +607,7 @@ export default function CpaReviewPage() {
             {showFilterRow && (
             <tr>
               <th
-                className="border-b border-r border-border bg-table-head-bg text-center text-[10px] font-normal text-text-faint"
+                className="border-b border-r border-border bg-table-head-bg text-center text-[9px] font-normal text-text-faint"
                 style={gutterHeadStyle(headerOffset.row4)}
               >
                 {hasActiveFilters ? (
@@ -724,7 +724,7 @@ export default function CpaReviewPage() {
                       không tính, "1"/"2"/"3" có tính) khớp đúng quy ước Sheet thật (dòng 1-3
                       dành cho tiêu đề, dữ liệu bắt đầu dòng 4), thêm 2026-08-15. */}
                   <div className="relative flex h-full w-full items-center justify-center">
-                    <span className="text-[11px] text-text-faint transition-opacity [tr:hover_&]:opacity-0">{i + 4}</span>
+                    <span className="text-[10px] text-text-faint transition-opacity [tr:hover_&]:opacity-0">{i + 4}</span>
                     {canDelete && (
                       <button
                         onClick={() => handleDelete(row.id)}
@@ -752,6 +752,7 @@ export default function CpaReviewPage() {
                           options={col.options}
                           editable
                           dense
+                          tinyDense
                           // Tên (khác 5 cột A-F còn lại) căn trái + màu xanh dương đậm khi có
                           // link tới hồ sơ gốc — yêu cầu 2026-08-14 ("ngoại trừ Head Table
                           // thì điều chỉnh Text sang trái... màu xanh dương đậm nếu có link").
@@ -815,15 +816,20 @@ export default function CpaReviewPage() {
                 })}
 
                 {showNoteColumn && (
-                  <Cell>
+                  <Cell verticalAlign="top">
                     {/* Gọn hơn (max-width) + tự xuống dòng khi chữ dài thay vì cắt bớt, theo
-                        yêu cầu 2026-08-14. */}
+                        yêu cầu 2026-08-14. Căn trái + căn đầu ô (thêm 2026-08-24, "luôn đầu
+                        dòng, không để center column") — khác mọi cột khác trong bảng này vốn
+                        căn giữa cả ngang lẫn dọc. */}
                     <div style={{ maxWidth: 220 }}>
                       <EditableCell
                         value={(row.custom.note as string | null) ?? null}
                         type="text"
                         editable
+                        dense
+                        tinyDense
                         wrap
+                        align="left"
                         multilineEdit
                         onCommit={(v) => updateCpaReviewCell(row.id, "note", v)}
                       />
@@ -836,6 +842,7 @@ export default function CpaReviewPage() {
                       users={processorUsers}
                       assignedTo={(row.custom.processorUserId as string) ?? null}
                       canAssign
+                      compact
                       onAssign={(uid) => updateCpaReviewCell(row.id, "processorUserId", uid)}
                     />
                   </Cell>
@@ -846,6 +853,7 @@ export default function CpaReviewPage() {
                       users={agentUsers}
                       assignedTo={(row.custom.agentUserId as string) ?? null}
                       canAssign
+                      compact
                       onAssign={(uid) => updateCpaReviewCell(row.id, "agentUserId", uid)}
                     />
                   </Cell>
@@ -858,6 +866,8 @@ export default function CpaReviewPage() {
                       type={col.type}
                       options={col.key === "crmSource" ? crmSourceOptions : col.options}
                       editable
+                      dense
+                      tinyDense
                       searchable={col.key === "crmSource"}
                       dateFormat={col.type === "date" ? "mmddyy" : undefined}
                       onCommit={(v) => updateCpaReviewCell(row.id, col.key, v)}
@@ -942,9 +952,19 @@ function ColumnVisibilityButton({
   );
 }
 
-function Cell({ children, className }: { children: React.ReactNode; className?: string }) {
+function Cell({
+  children,
+  className,
+  verticalAlign = "middle",
+}: {
+  children: React.ReactNode;
+  className?: string;
+  /** "top" dùng cho cột Note (thêm 2026-08-24) — chữ nhiều dòng bắt đầu ngay đầu ô thay vì
+   * dồn giữa theo chiều dọc khi hàng cao hơn nội dung. Mặc định "middle" như mọi cột khác. */
+  verticalAlign?: "top" | "middle";
+}) {
   return (
-    <td className={`group border-b border-r border-border p-0 align-middle ${className ?? ""}`}>
+    <td className={`group border-b border-r border-border p-0 ${verticalAlign === "top" ? "align-top" : "align-middle"} ${className ?? ""}`}>
       {children}
     </td>
   );
@@ -1041,21 +1061,22 @@ function YearCells({
           type="select"
           options={statusOptions}
           editable
+          tinyDense
           searchable
           onCommit={(v) => onChangeStatus(v as string)}
         />
       </Cell>
       <Cell className={tint}>
-        <EditableCell value={amount || null} type="currency" editable onCommit={(v) => onChangeAmount((v as number) || 0)} />
+        <EditableCell value={amount || null} type="currency" editable dense tinyDense onCommit={(v) => onChangeAmount((v as number) || 0)} />
       </Cell>
       <Cell className={tint}>
-        <EditableCell value={adjustment || null} type="currency" editable onCommit={(v) => onChangeAdjustment((v as number) || 0)} />
+        <EditableCell value={adjustment || null} type="currency" editable dense tinyDense onCommit={(v) => onChangeAdjustment((v as number) || 0)} />
       </Cell>
       <Cell className={tint}>
         {total > 0 ? (
-          <div className="px-2.5 py-1.5 text-xs text-text-dim">${total.toLocaleString("en-US")}</div>
+          <div className="px-1.5 py-2 text-[10px] font-semibold text-text">${total.toLocaleString("en-US")}</div>
         ) : (
-          <div className="px-2.5 py-1.5 text-xs text-text-faint">—</div>
+          <div className="px-1.5 py-2 text-[10px] font-semibold text-text-faint">—</div>
         )}
       </Cell>
     </>
@@ -1099,7 +1120,7 @@ function DateWithNote({
   return (
     <div className={`relative flex items-center ${hasNote ? "bg-amber-500/10" : ""}`}>
       <div className="min-w-0 flex-1">
-        <EditableCell value={value} type="date" editable dateFormat="mmddyy" onCommit={(v) => onChangeDate(v as string | null)} />
+        <EditableCell value={value} type="date" editable dense tinyDense dateFormat="mmddyy" onCommit={(v) => onChangeDate(v as string | null)} />
       </div>
       <button
         ref={triggerRef}

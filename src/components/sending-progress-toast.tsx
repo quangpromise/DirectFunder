@@ -9,11 +9,11 @@ import { createPortal } from "react-dom";
  * (SendToSheetButton/TestSheetButton còn ĐÓNG hẳn popup chọn năm trước khi gửi, không còn gì
  * hiện ra cho tới khi xong/lỗi), người dùng không biết app có đang chạy hay bị treo.
  *
- * Portal ra `document.body`, neo cố định giữa dưới màn hình (z-[200], cao hơn mọi popup
- * z-[100]) — không phụ thuộc popup nào đang mở/đóng, luôn hiện chừng nào `show` còn true.
- * Có `progress` (0-100, đo được thật — vd upload lên Vercel Blob qua `onUploadProgress`) thì
- * hiện thanh chạy đúng % + số %; không có thì hiện thanh trượt qua lại (indeterminate) chỉ để
- * báo "đang chạy", không bịa số %.
+ * Portal ra `document.body`, neo cố định GIỮA màn hình (z-[200], cao hơn mọi popup z-[100] —
+ * đổi từ góc dưới sang giữa 2026-08-24 theo phản hồi thực tế, dễ chú ý hơn) — không phụ thuộc
+ * popup nào đang mở/đóng, luôn hiện chừng nào `show` còn true. Có `progress` (0-100, đo được
+ * thật — vd upload lên Vercel Blob qua `onUploadProgress`) thì hiện thanh chạy đúng % + số %;
+ * không có thì hiện thanh trượt qua lại (indeterminate) chỉ để báo "đang chạy", không bịa số %.
  */
 export function SendingProgressToast({
   show,
@@ -28,7 +28,7 @@ export function SendingProgressToast({
   if (!show || typeof document === "undefined") return null;
 
   return createPortal(
-    <div className="pointer-events-none fixed inset-x-0 bottom-6 z-[200] flex justify-center px-4">
+    <div className="pointer-events-none fixed inset-0 z-[200] flex items-center justify-center px-4">
       <div className="popover pointer-events-auto w-full max-w-xs rounded-xl px-4 py-3 shadow-2xl shadow-black/60">
         <div className="flex items-center justify-between gap-2 text-xs font-medium text-text">
           <span className="truncate">{label}</span>

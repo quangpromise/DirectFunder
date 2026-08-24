@@ -5,7 +5,16 @@ import { useLanguage, translateOptionLabel } from "@/lib/i18n";
 import { useAppStore } from "@/store/app-store";
 import { darkenHex, withAlpha } from "@/lib/color";
 
-export function OptionBadge({ option }: { option: SelectOption }) {
+export function OptionBadge({
+  option,
+  small,
+}: {
+  option: SelectOption;
+  /** 9px thay vì 10px mặc định — dùng riêng cho tab "CPA Review" (thêm 2026-08-24, sau khi
+   * 10px vẫn được yêu cầu gọn thêm). Mặc định false, không ảnh hưởng mọi badge Status/select
+   * khác trong app. */
+  small?: boolean;
+}) {
   const { language } = useLanguage();
   const theme = useAppStore((s) => s.theme);
   // Màu option (option.bg/option.color) là pastel chọn để đọc được trên nền TỐI — ở
@@ -16,7 +25,7 @@ export function OptionBadge({ option }: { option: SelectOption }) {
   const color = isLight ? darkenHex(option.color, 0.4) : option.color;
   return (
     <span
-      className="inline-flex max-w-full items-center truncate rounded-full border px-2 py-0.5 text-[10px] font-medium"
+      className={`inline-flex max-w-full items-center truncate rounded-full border px-2 py-0.5 font-medium ${small ? "text-[9px]" : "text-[10px]"}`}
       style={{ backgroundColor: bg, color, borderColor: color + "4d" }}
     >
       {translateOptionLabel(language, option.id, option.label)}

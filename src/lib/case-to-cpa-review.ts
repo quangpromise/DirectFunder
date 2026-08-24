@@ -21,13 +21,20 @@ function joinPair(a: string | null | undefined, b: string | null | undefined): s
  * đó" với "refund năm đó = 0". `note` (thêm 2026-08-15) — ô nhập tay tự do ở popup chọn năm,
  * đổ thẳng vào cột "Note" của dòng CPA Review vừa tạo — bỏ trống nếu không gõ gì. `crmSource`
  * (thêm 2026-08-16) — dropdown chọn 1 option của cột Status (cùng nguồn dữ liệu với dropdown
- * CRM Source sẵn có trong tab CPA Review), trước đó luôn để trống.
+ * CRM Source sẵn có trong tab CPA Review), trước đó luôn để trống. `fcDate`/`processingDate`/
+ * `elDate` (thêm 2026-08-24) — 3 ô ngày ở popup "Test Sheet", MẶC ĐỊNH lấy từ đúng field cùng
+ * tên đã lưu trên Case (điền qua popup "Edit Hồ sơ") nếu có, nhưng người dùng sửa được ngay
+ * trong popup trước khi gửi — giá trị người dùng gõ (nếu có) LUÔN ưu tiên hơn giá trị đã lưu
+ * trên Case.
  */
 export function buildCpaReviewCustomFromCase(
   c: CaseRecord,
   reviewYears: string[],
   note?: string,
-  crmSource?: string
+  crmSource?: string,
+  fcDate?: string,
+  processingDate?: string,
+  elDate?: string
 ): Record<string, string | number | boolean | null> {
   const custom: Record<string, string | number | boolean | null> = {
     intakeDate: todayIsoDate(),
@@ -39,9 +46,9 @@ export function buildCpaReviewCustomFromCase(
     // Agent chỉ lấy slot 1 (assignedTo) — KHÔNG kèm assignedTo2, theo đúng yêu cầu.
     processorUserId: c.assignedProcessor,
     agentUserId: c.assignedTo,
-    fcDate: c.fcDate ?? "NA",
-    processingDate: c.processingDate ?? "NA",
-    elDate: c.elDate ?? "NA",
+    fcDate: fcDate?.trim() || c.fcDate || "NA",
+    processingDate: processingDate?.trim() || c.processingDate || "NA",
+    elDate: elDate?.trim() || c.elDate || "NA",
   };
   if (c.clientLink) custom.nameLink = c.clientLink;
   if (note && note.trim()) custom.note = note.trim();

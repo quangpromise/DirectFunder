@@ -15,6 +15,7 @@ export function AssignMenu({
   assignedTo,
   canAssign,
   onAssign,
+  compact,
 }: {
   users: User[];
   assignedTo: string | null;
@@ -26,6 +27,11 @@ export function AssignMenu({
    * mất khỏi BẢNG CỦA HỌ do canViewCase lọc theo đúng field này — đây chỉ là thay đổi
    * hiển thị theo quyền xem, dữ liệu hồ sơ vẫn còn nguyên cho Manager/Accounting/Support. */
   onAssign: (userId: string | null) => void;
+  /** Chữ nhỏ/đậm hơn (10px, khớp `tinyDense` của EditableCell) + avatar nhỏ hơn — dùng cho
+   * các cột Processor/Agent của tab "CPA Review" (thêm 2026-08-24) để đồng bộ độ nhỏ gọn với
+   * các cột khác trong cùng bảng. Mặc định false, không ảnh hưởng mọi nơi khác đang dùng
+   * AssignMenu (Hồ sơ/Order/Collecting...). */
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState({ x: 0, y: 0, maxHeight: 320 });
@@ -77,11 +83,17 @@ export function AssignMenu({
   if (!canAssign) {
     return assignedUser ? (
       <div className="flex min-w-0 items-center justify-center gap-1.5 px-2">
-        <Avatar name={assignedUser.name} color={assignedUser.avatarColor} url={assignedUser.avatarUrl} size={22} />
-        <span className="min-w-0 flex-1 truncate text-center text-xs text-text-dim">{assignedUser.name}</span>
+        <Avatar name={assignedUser.name} color={assignedUser.avatarColor} url={assignedUser.avatarUrl} size={compact ? 16 : 22} />
+        <span className={`min-w-0 flex-1 truncate text-center ${compact ? "text-[10px] font-semibold text-text" : "text-xs text-text-dim"}`}>
+          {assignedUser.name}
+        </span>
       </div>
     ) : (
-      <div className="flex w-full items-center justify-center px-2 text-center text-xs text-text-faint">{t("assign.notAssigned")}</div>
+      <div
+        className={`flex w-full items-center justify-center px-2 text-center ${compact ? "text-[10px] font-semibold" : "text-xs"} text-text-faint`}
+      >
+        {t("assign.notAssigned")}
+      </div>
     );
   }
 
@@ -102,16 +114,18 @@ export function AssignMenu({
         ref={triggerRef}
         onClick={openMenu}
         title={assignedUser?.name}
-        className="flex w-full min-w-0 items-center justify-center gap-1.5 rounded-md px-2 py-1 text-xs transition hover:bg-surface-hover"
+        className={`flex w-full min-w-0 items-center justify-center gap-1.5 rounded-md px-2 py-1 transition hover:bg-surface-hover ${
+          compact ? "text-[10px] font-semibold" : "text-xs"
+        }`}
       >
         {assignedUser ? (
           <>
-            <Avatar name={assignedUser.name} color={assignedUser.avatarColor} url={assignedUser.avatarUrl} size={22} />
-            <span className="min-w-0 flex-1 truncate text-center text-text-dim">{assignedUser.name}</span>
+            <Avatar name={assignedUser.name} color={assignedUser.avatarColor} url={assignedUser.avatarUrl} size={compact ? 16 : 22} />
+            <span className={`min-w-0 flex-1 truncate text-center ${compact ? "text-text" : "text-text-dim"}`}>{assignedUser.name}</span>
           </>
         ) : (
           <>
-            <UserPlus size={14} className="shrink-0 text-text-faint" />
+            <UserPlus size={compact ? 12 : 14} className="shrink-0 text-text-faint" />
             <span className="min-w-0 flex-1 truncate text-center text-text-faint">{t("assign.assign")}</span>
           </>
         )}

@@ -27,6 +27,9 @@ export async function POST(request: Request, ctx: RouteContext<"/api/cases/[id]/
   const reviewYears = Array.isArray(body?.reviewYears) ? body.reviewYears.filter((y: unknown) => typeof y === "string") : [];
   const note = typeof body?.note === "string" ? body.note : "";
   const crmSource = typeof body?.crmSource === "string" ? body.crmSource : "";
+  const fcDate = typeof body?.fcDate === "string" ? body.fcDate : "";
+  const processingDate = typeof body?.processingDate === "string" ? body.processingDate : "";
+  const elDate = typeof body?.elDate === "string" ? body.elDate : "";
   const manual = body?.manual === true;
   const clear = body?.clear === true;
 
@@ -51,7 +54,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/cases/[id]/
   if (!row) return NextResponse.json({ error: "Không tìm thấy hồ sơ" }, { status: 404 });
 
   const caseRecord = toCaseRecord(row);
-  const custom = buildCpaReviewCustomFromCase(caseRecord, reviewYears, note, crmSource);
+  const custom = buildCpaReviewCustomFromCase(caseRecord, reviewYears, note, crmSource, fcDate, processingDate, elDate);
   const month = currentMonthKey();
   // Luôn tạo 1 dòng MỚI — kể cả gửi nhiều lần cho CÙNG hồ sơ với năm khác nhau, mỗi lần
   // gửi vẫn là 1 dòng CPA Review riêng (yêu cầu 2026-08-15, "khác năm thì tạo dòng mới,

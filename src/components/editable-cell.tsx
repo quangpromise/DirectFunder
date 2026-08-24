@@ -53,6 +53,7 @@ export function EditableCell({
   options,
   onCommit,
   dense,
+  tinyDense,
   wrap,
   breakOnSpace,
   dateFormat,
@@ -72,6 +73,11 @@ export function EditableCell({
    * BỘ với cách SSN/Phone/Client Name đã đổi (xem ssn-cell.tsx/client-name-cell.tsx). Mặc
    * định false để không ảnh hưởng các cột khác (Description, cột tuỳ chỉnh...). */
   dense?: boolean;
+  /** Chỉ có tác dụng khi `dense` đã bật — thu nhỏ thêm 1 nấc nữa (10px thay vì 11px), dùng
+   * riêng cho tab "CPA Review" (thêm 2026-08-24, sau khi 11px vẫn được yêu cầu gọn thêm) —
+   * KHÔNG đổi kích thước mặc định của `dense` ở nơi khác (Zip/Case/Money trên bảng Hồ sơ),
+   * tránh ảnh hưởng ngoài phạm vi yêu cầu. Mặc định false. */
+  tinyDense?: boolean;
   /** Cho phép xuống dòng tự nhiên khi chữ dài quá bề rộng cột (thay vì cắt bớt + "…") — vd
    * cột Note của tab "CPA Review" (thêm 2026-08-14). Mặc định false (giữ nguyên hành vi
    * `truncate` một dòng cho mọi cột khác trong app). */
@@ -157,6 +163,7 @@ export function EditableCell({
         editable={editable}
         onCommit={onCommit}
         searchable={searchable}
+        small={tinyDense}
       />
     );
   }
@@ -188,7 +195,7 @@ export function EditableCell({
     return (
       <div
         className={`w-full ${alignClass} ${viewTextClass} ${
-          dense ? "px-1.5 py-2 text-[11px] font-semibold" : "px-2.5 py-2 text-xs"
+          dense ? `px-1.5 py-2 ${tinyDense ? "text-[10px]" : "text-[11px]"} font-semibold` : "px-2.5 py-2 text-xs"
         } ${colorClass ?? (dense ? "text-text" : "text-text-dim")}`}
         title={displayText || undefined}
       >
@@ -288,7 +295,7 @@ export function EditableCell({
       }}
       {...{ [CELL_NAV_ATTR]: "1" }}
       className={`w-full rounded-md ${alignClass} transition hover:bg-surface-hover ${viewTextClass} ${
-        dense ? "px-1.5 py-2 text-[11px] font-semibold" : "px-2.5 py-2 text-xs"
+        dense ? `px-1.5 py-2 ${tinyDense ? "text-[10px]" : "text-[11px]"} font-semibold` : "px-2.5 py-2 text-xs"
       } ${colorClass ?? (dense ? "text-text" : "")}`}
       title={displayText || undefined}
     >
@@ -303,12 +310,15 @@ function SelectCell({
   editable,
   onCommit,
   searchable,
+  small,
 }: {
   value: string | null;
   options: SelectOption[];
   editable: boolean;
   onCommit: (value: Value) => void;
   searchable?: boolean;
+  /** Truyền thẳng xuống `OptionBadge` (thêm 2026-08-24, xem prop `tinyDense` của EditableCell). */
+  small?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState({ x: 0, y: 0, maxHeight: 320 });
@@ -344,9 +354,9 @@ function SelectCell({
   }, [open, searchable]);
 
   const badge = current ? (
-    <OptionBadge option={current} />
+    <OptionBadge option={current} small={small} />
   ) : (
-    <span className="text-xs text-text-faint">—</span>
+    <span className={`text-text-faint ${small ? "text-[10px]" : "text-xs"}`}>—</span>
   );
 
   if (!editable) {

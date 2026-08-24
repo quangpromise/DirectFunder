@@ -1721,6 +1721,9 @@ function RowCells({
                     caseId={row.id}
                     cpaReviewTestSentAt={row.cpaReviewTestSentAt}
                     refunds={row.refunds}
+                    fcDate={row.fcDate}
+                    processingDate={row.processingDate}
+                    elDate={row.elDate}
                     crmSourceOptions={caseStatusOptionsForCrmSource(columns)}
                     confirm={confirm}
                     alertWarn={alertWarn}
