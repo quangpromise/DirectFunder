@@ -73,7 +73,12 @@ export function AgentC3ImportDialog() {
   const [batchRunning, setBatchRunning] = useState(false);
   const [batchDone, setBatchDone] = useState(0);
 
-  const agentUsers = users.filter((u) => u.role === "agent");
+  // "agent_leader" cũng đảm nhận được slot Agent trên hồ sơ (cùng điều kiện `agentUsers` ở
+  // cases/page.tsx, và server đã khớp CẢ role này — xem POST /api/agentc3-import/fetch) — bỏ
+  // sót role này khiến <select> không có <option> cho agent_leader đã khớp đúng, hiện trống dù
+  // `fields.agentUserId` thực ra đã đúng (lỗi thật gặp trên production: CRM khớp đúng "Linda"
+  // — agent_leader — nhưng dropdown hiện "—" như chưa khớp gì).
+  const agentUsers = users.filter((u) => u.role === "agent" || u.role === "agent_leader");
   const statusOptions = columns.find((c) => c.id === "status")?.options ?? [];
   const links = linksText
     .split(/\r?\n/)

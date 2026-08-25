@@ -128,6 +128,37 @@ Nếu CRM đổi cấu trúc HTML trong tương lai (đổi id), `fetchAgentC3Cu
   nhận không khớp nhầm giữa các status khác (vd "Processing" vs "Pre-processing" vẫn tách biệt
   đúng nhờ chỉ so 2 từ đầu).
 
+## Bug thật đã gặp trên production + đã sửa: dropdown Agent trong dialog thiếu role `agent_leader` (2026-08-26)
+
+Người dùng báo hồ sơ CRM `BY306045` (Agent thật là "Linda", role `agent_leader` trên
+production) "Nhập từ CRM" không lấy được Agent 1. Điều tra qua script độc lập gọi thẳng
+`fetchAgentC3Customer()` + so khớp với danh sách user production: **server-side matching hoàn
+toàn đúng** (`POST /api/agentc3-import/fetch` đã fix bug tương tự này từ 2026-08-25, xem commit
+`de85f57` — có include cả `agent_leader` khi tra `agentUsers` từ DB) — `matchedAgentUserId` trả
+về đúng ID của Linda.
+
+**Bug thật nằm ở FRONTEND**: `AgentC3ImportDialog` (`src/components/agentc3-import-dialog.tsx`)
+có 1 biến `agentUsers` RIÊNG (khác biến cùng tên phía server) dùng để build danh sách
+`<option>` cho dropdown "Agent" — biến này CHỈ lọc `role === "agent"`, quên `agent_leader`.
+Hệ quả: `fields.agentUserId` (state React) vẫn đúng = ID của Linda (từ
+`preview.matchedAgentUserId`), nhưng `<select value={fields.agentUserId}>` không có `<option>`
+nào khớp ID đó (vì Linda bị lọc khỏi danh sách) → trình duyệt tự hiện option ĐẦU TIÊN ("—")
+thay vì tên Linda — **nhìn như chưa khớp gì**, dù dữ liệu thật bên dưới vẫn đúng. Đã sửa thành
+`users.filter((u) => u.role === "agent" || u.role === "agent_leader")` — khớp đúng pattern
+`agentUsers` đã dùng ở `cases/page.tsx:684` (nguồn tham chiếu khi fix bug tương tự phía server
+hôm 2026-08-25).
+
+**Bài học**: khi thêm 1 role mới được phép đảm nhận 1 slot nào đó (ở đây là Agent Leader đảm
+nhận slot Agent), phải rà soát ĐỦ mọi nơi lọc theo role cho đúng slot đó — bug 2026-08-25 chỉ
+sửa phía server (nơi TÍNH ra id khớp), bug này lộ ra ở phía CLIENT (nơi HIỂN THỊ id đó thành
+tên) — 2 lớp khác nhau, sửa 1 bên không tự động sửa bên kia. `grep -rn 'role === "agent"'`
+không đủ (miss `agentUsers` local trong dialog này nếu chỉ tìm đúng cụm `["agent", "agent_leader"]`)
+— nên tìm rộng theo TỪNG FILE có liên quan tới "Agent"/`agentUserId`, không chỉ theo 1 pattern
+cố định.
+
+Không có bảng Prisma/schema nào bị đụng — chỉ 1 dòng filter phía client, không cần bước
+production nào ngoài deploy code.
+
 ## Field dùng chung được tách ra để tái dùng
 
 `splitNameLastWord()` (tách "Nguyen Van A" → First "Nguyen Van", Last "A") vốn là hàm private
