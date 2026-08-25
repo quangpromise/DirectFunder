@@ -83,7 +83,10 @@ export async function POST(request: NextRequest) {
   const statusColumn = columns.find((c) => c.id === "status");
   const matchedStatusId = matchStatusId(raw.status, statusColumn?.options);
 
-  const agentUsers = await prisma.user.findMany({ where: { role: "agent" }, select: { id: true, name: true } });
+  // "agent_leader" cũng đảm nhận được slot Agent trên hồ sơ (xem `agentUsers` trong
+  // cases/page.tsx dùng cùng điều kiện) — bỏ sót role này khiến auto-match CRM thất bại cho
+  // mọi Agent Leader dù tên khớp chính xác (lỗi thật gặp trên production 2026-08-25).
+  const agentUsers = await prisma.user.findMany({ where: { role: { in: ["agent", "agent_leader"] } }, select: { id: true, name: true } });
   const matchedAgentUserId =
     raw.agentName.trim() && agentUsers.find((u) => u.name.trim().toLowerCase() === raw.agentName.trim().toLowerCase())?.id
       ? agentUsers.find((u) => u.name.trim().toLowerCase() === raw.agentName.trim().toLowerCase())!.id
