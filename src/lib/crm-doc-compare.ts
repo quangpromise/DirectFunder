@@ -1,6 +1,7 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import * as cheerio from "cheerio";
 import { withAiRetry } from "@/lib/ai-retry";
+import { summarizeCapitalGains, formatCapitalGainsSummaryBlock, stripCapitalGainsRecordsFromText } from "@/lib/wit-capital-gains";
 
 /**
  * So sánh WIT / TTS trong popup "Get Files" — chat hỏi-đáp tự do, KHÔNG dùng cơ chế regex cố
@@ -129,7 +130,7 @@ Bạn sẽ nhận toàn văn TRÍCH TỪ các tài liệu PDF do người dùng 
 
 QUY TẮC CHIỀU SO SÁNH BẮT BUỘC: LUÔN LẤY WIT LÀM GỐC — duyệt qua TỪNG khoản thu nhập/khấu trừ XUẤT HIỆN TRÊN WIT (mỗi mã W-2/1099-INT/1099-DIV/1099-MISC/1099-NEC/1099-G/1099-R/5498...), rồi kiểm tra xem TTS CÓ ghi nhận khoản đó hay không. TUYỆT ĐỐI KHÔNG so chiều ngược lại — nếu TTS có 1 khoản mà WIT KHÔNG có, BỎ QUA khoản đó, không đưa vào bảng (vì WIT chỉ là dữ liệu bên thứ ba báo cáo, không phải danh sách đầy đủ mọi thu nhập). Với MỖI khoản có trên WIT nhưng KHÔNG thấy trên TTS: bắt buộc ghi trong note (a) khoản đó thuộc biểu mẫu nào (vd "1099-INT — Lãi ngân hàng"), và (b) DỰA THEO KIẾN THỨC THUẾ CỦA BẠN, loại thu nhập này có BẮT BUỘC phải khai trên Form 1040 hay không, kèm lý do ngắn gọn (vd "Lãi ngân hàng — LUÔN bắt buộc khai dù ngân hàng không gửi 1099-INT (dưới $10)"; "Trợ cấp thất nghiệp (1099-G) — bắt buộc khai, là thu nhập chịu thuế"; "Đóng góp HSA (5498-SA) — thường KHÔNG cần khai nếu trong hạn mức, chỉ mang tính thông tin").
 
-QUY TẮC RIÊNG cho khoản 1099-B (bán chứng khoán/cổ phiếu) trên WIT: nếu 1 khoản 1099-B trên WIT có ĐỦ CẢ 3 giá trị "Gross Proceeds", "Cost Basis", và "Wash Sale Loss Disallowed" (dù tên gọi trên WIT có thể viết tắt/khác chút, vd "Wash Sale Disallowed"), KHÔNG dùng thẳng "Gross Proceeds" làm giá trị cột "wit" — mà PHẢI TỰ TÍNH lãi/lỗ thực theo công thức: Gain = Gross Proceeds + Wash Sale Loss Disallowed − Cost Basis, rồi dùng ĐÚNG con số Gain này làm giá trị cột "wit" khi đối chiếu với TTS (dòng thu nhập lãi vốn). Nếu 1 khoản 1099-B THIẾU 1 trong 3 giá trị trên (vd không có Wash Sale, hoặc không có Cost Basis) thì KHÔNG áp dụng công thức này — coi "Wash Sale Loss Disallowed" bằng 0 nếu thiếu (không ảnh hưởng), nhưng nếu thiếu hẳn "Cost Basis" thì dùng nguyên "Gross Proceeds" làm giá trị wit như bình thường (không tự bịa Cost Basis). Trong note PHẢI ghi rõ công thức đã dùng và 3 số gốc (vd "Gain = $12,000 (Gross Proceeds) + $500 (Wash Sale Disallowed) − $10,000 (Cost Basis) = $2,500").
+QUY TẮC RIÊNG cho 1099-B (bán chứng khoán/cổ phiếu) và 1099-DA (bán tài sản số/crypto) trên WIT: mỗi file WIT có thể chứa RẤT NHIỀU giao dịch 1099-B/1099-DA riêng lẻ (có hồ sơ thật lên tới hàng trăm giao dịch) — TUYỆT ĐỐI KHÔNG tự đọc từng dòng rồi cộng lại (dễ sai/timeout với số lượng lớn). Thay vào đó, nếu khối WIT có kèm phần "[TÍNH TOÁN SẴN - Cộng dồn 1099-B/1099-DA trên WIT (đã tính bằng code, KHÔNG được tự cộng lại)]", PHẢI DÙNG THẲNG con số "Gain" đã tính sẵn ở đó làm giá trị cột "wit" cho category "Capital Gains (1099-B)" và/hoặc "Capital Gains (1099-DA)" khi đối chiếu với TTS (dòng thu nhập lãi vốn) — không tự tính lại từ đầu. Nếu phần đó ghi "1099-DA ... KHÔNG báo cáo giá vốn ... KHÔNG tính được Gain chính xác", ghi rõ trong note rằng chỉ có Proceeds tham khảo, không có Gain chính xác do thiếu giá vốn (đây là hạn chế THẬT của báo cáo IRS, không phải lỗi thiếu dữ liệu). Nếu KHÔNG thấy khối "[TÍNH TOÁN SẴN...]" nào trong WIT, nghĩa là không có giao dịch 1099-B/1099-DA nào — bỏ qua category này hoàn toàn, không suy đoán.
 
 Luôn trả lời bằng 1 DANH SÁCH DÒNG (không phải văn xuôi) — mỗi dòng gồm: category (tên khoản), wit (số/giá trị trên WIT, "—" nếu không có/không áp dụng), tts (số/giá trị trên TTS, "—" nếu không có/không áp dụng), note (ghi chú ngắn — nêu RÕ chênh lệch nếu có, vd "WIT vs TTS lệch $2", "WIT vs TTS khớp", giải thích cách suy luận nếu là ước tính gián tiếp, và nêu rõ nghĩa vụ khai 1040 theo quy tắc ở trên khi khoản WIT bị thiếu ở TTS). Nếu TTS không có sẵn, để "—" ở cột đó, không suy đoán. Nếu câu hỏi chỉ liên quan 1 khoản, trả về đúng 1 dòng. Nếu câu hỏi yêu cầu liệt kê nhiều khoản, trả nhiều dòng (áp dụng đúng quy tắc lấy WIT làm gốc ở trên khi liệt kê). Không bịa số liệu — chỉ dùng đúng số xuất hiện trong các văn bản được cung cấp. Category/note viết tiếng Việt trừ khi người dùng hỏi bằng tiếng Anh.
 
@@ -166,9 +167,19 @@ interface AskParams {
 }
 
 function buildDocumentsBlock(params: AskParams): string {
+  // Cộng dồn 1099-B/1099-DA bằng regex (chính xác 100%, xem wit-capital-gains.ts) TỪ TEXT GỐC
+  // TRƯỚC khi cắt — KHÔNG bắt AI tự đọc + cộng hàng trăm dòng số liệu (lỗi thật gặp trên
+  // production: 195-249 giao dịch 1099-B/1099-DA trong 1 file WIT khiến AI tự tính SAI, có ca
+  // lệch tới 7.6 lần). Sau đó CẮT BỎ nguyên văn các giao dịch đã tính xong khỏi text gửi AI —
+  // riêng bước cộng sẵn KHÔNG ĐỦ để hết timeout, vì các giao dịch này thường chiếm >90% dung
+  // lượng 1 file WIT thật (vd 195K/217K ký tự) — phải cắt hẳn mới giảm đủ kích thước prompt.
+  const capitalGainsSummary = summarizeCapitalGains(params.wit.map((w) => w.text));
+  const capitalGainsBlock = capitalGainsSummary
+    ? `\n\n[TÍNH TOÁN SẴN - Cộng dồn 1099-B/1099-DA trên WIT (đã tính bằng code, KHÔNG được tự cộng lại)]\n${formatCapitalGainsSummaryBlock(capitalGainsSummary)}`
+    : "";
   const witBlock =
     params.wit.length > 0
-      ? params.wit.map((w) => `[WIT - ${w.label}]\n${w.text}`).join("\n\n")
+      ? params.wit.map((w) => `[WIT - ${w.label}]\n${stripCapitalGainsRecordsFromText(w.text)}`).join("\n\n") + capitalGainsBlock
       : `[WIT]\n(Không có tài liệu này)`;
   return [witBlock, params.tts ? `[TTS - ${params.tts.label}]\n${params.tts.text}` : `[TTS]\n(Không có tài liệu này)`].join("\n\n");
 }

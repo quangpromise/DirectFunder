@@ -523,6 +523,56 @@ khác biệt so với 2 biến thể đã biết) thay vì đoán mò sửa lạ
       quan. **Không cần bước production nào** (không đổi schema/feature-permission) — chỉ cần
       deploy code.
 
+15. **(2026-08-27, cùng ngày, sau mục #14) Tự tách/cộng dồn 1099-B và 1099-DA BẰNG CODE thay vì
+    bắt AI tự đọc + cộng — module mới `src/lib/wit-capital-gains.ts`** — người dùng hỏi "tại sao
+    khi đọc WIT đầu W&I không thể tổng hợp tiền proceeds, cost basis và wash sale của 1099-B
+    hoặc 1099-DA". Debug trực tiếp với 2 hồ sơ CRM thật:
+    - `BY306702` (2024, THIEN T NGUYEN, WIT Merrill Lynch): **195 giao dịch 1099-B riêng lẻ**
+      trong 1 file. Yêu cầu AI tự cộng → request **TIMEOUT thật** (quá 50s). Tính tay bằng regex
+      → Gain thật = **$24,557.00** (Tổng Proceeds $1,097,696 + Tổng Wash Sale $84,358 − Tổng
+      Cost or Basis $1,157,497).
+    - `BY4849` (2025, VIVIAN TO, WIT Robinhood): **249 giao dịch 1099-B** — trước đây (mục #6,
+      lúc còn dùng model `gemini-3.6-flash`) AI TỰ tính ra "$382,909.50", trong khi số ĐÚNG (tính
+      lại bằng regex) là **$50,000.00** — **sai lệch 7.6 LẦN**, bằng chứng cụ thể AI không đáng
+      tin cậy khi tự cộng hàng loạt giao dịch quy mô lớn, bất kể model/prompt viết rõ đến đâu.
+    - **Nguyên nhân gốc thứ 2**: field tên thật trên WIT là `"Cost or Basis:"` (có chữ "or" ở
+      giữa) — KHÁC "Cost Basis" 2 từ dính liền đã dùng trong `CHAT_SYSTEM_INSTRUCTION` các bản
+      trước (mục #6). Field "Wash Sale Loss Disallowed:" đúng như đã dùng.
+    - **Nguyên nhân gốc thứ 3**: 1099-DA (bán tài sản số/crypto, form IRS mới) CHƯA TỪNG được
+      nhắc trong prompt trước đây (chỉ nói "1099-B") — cấu trúc THẬT của 1099-DA khác hẳn: phần
+      lớn KHÔNG có field "Cost or Basis" dạng số tiền (ghi rõ *"...Cost or Other Basis is NOT
+      being reported to the IRS"* — sàn crypto thường không biết giá vốn thật, nhất là khi
+      chuyển ví/sàn khác) — chỉ có "Proceeds", không tính được Gain chính xác.
+
+    **Cách sửa (giải pháp đúng, không phải vá prompt)**: viết `src/lib/wit-capital-gains.ts` —
+    tách TỪNG giao dịch 1099-B/1099-DA theo ranh giới `"Form 1099-B"`/`"Form 1099-DA"` (tiêu đề
+    lặp lại ở đầu MỖI giao dịch, xác nhận 1:1 qua debug thật — KHÔNG dùng regex "3 field trong 1
+    cửa sổ ký tự cố định" vì khoảng cách giữa Proceeds/Cost or Basis/Wash Sale khác nhau tuỳ
+    broker), trích 3 field trong PHẠM VI từng giao dịch, cộng dồn bằng `summarizeCapitalGains()`
+    (tách riêng bucket 1099-B, 1099-DA "covered" có giá vốn, 1099-DA "noncovered" chỉ có
+    Proceeds). Route/`crm-doc-compare.ts` gọi hàm này TRƯỚC khi build prompt, chèn kết quả vào 1
+    khối `"[TÍNH TOÁN SẴN - Cộng dồn 1099-B/1099-DA trên WIT (đã tính bằng code, KHÔNG được tự
+    cộng lại)]"` — sửa `CHAT_SYSTEM_INSTRUCTION` bắt AI **DÙNG THẲNG** con số Gain đã tính sẵn ở
+    đó, không tự đọc/cộng lại.
+    **Bug thật đã tự gặp lúc verify (rất quan trọng, đọc trước khi tưởng chỉ cần thêm khối tính
+    sẵn là đủ)**: sau khi thêm khối "[TÍNH TOÁN SẴN...]" nhưng VẪN gửi kèm nguyên văn toàn bộ
+    195 giao dịch gốc, request **VẪN TIMEOUT** — vì các giao dịch 1099-B/1099-DA chiếm >90%
+    dung lượng 1 file WIT thật (vd 195K/217K ký tự), vấn đề không chỉ là "AI có phải tự cộng hay
+    không" mà còn là **THỜI GIAN GEMINI ĐỌC HẾT INPUT khổng lồ**. Đã sửa thêm
+    `stripCapitalGainsRecordsFromText()` (cùng file) — CẮT HẲN nguyên văn các giao dịch đã tính
+    xong khỏi text gửi AI (giữ nguyên mọi thu nhập khác: W-2/1099-INT/1099-DIV/1099-R/1099-NEC/
+    1099-MISC/5498...), chèn 1 dòng đánh dấu ngắn tại vị trí đã cắt.
+    **Đã verify sống đầy đủ, cả 2 lớp (tính đúng + tốc độ)**:
+    - `summarizeCapitalGains()` độc lập: `BY306702` ra đúng $24,557.00 (khớp 100% số tính tay);
+      `BY4849` ra $50,000.00 (1099-B) + $152,319.00 Proceeds (1099-DA noncovered).
+    - `askCompareDocs()` đầy đủ (sau khi thêm `stripCapitalGainsRecordsFromText`): `BY306702`
+      (195 giao dịch) chỉ mất **1.4 giây** (trước đó timeout >50s), AI trả đúng `$24,557.00`
+      khớp TTS giả lập. `BY4849` (249 giao dịch 1099-B + nhiều 1099-DA) mất **~3 giây**, AI trả
+      đúng 2 dòng riêng biệt (1099-B `$50,000.00`, 1099-DA `$152,319.00 (Proceeds)` kèm giải
+      thích rõ giới hạn thiếu giá vốn) — không còn gộp nhầm/sai số.
+    `tsc --noEmit`/`eslint` sạch. **Không cần bước production nào** (không đổi schema/feature-
+    permission) — chỉ cần deploy code.
+
 ## 4. Giới hạn đã biết
 
 - Không có OCR/fallback nếu CRM đổi định dạng PDF hoàn toàn khác — Gemini vẫn đọc được text lộn
