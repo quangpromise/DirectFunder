@@ -279,12 +279,21 @@ function toApiHistory(entries: ChatEntry[]): CompareChatMessage[] {
 }
 
 /** Đọc số đầu tiên trong 1 chuỗi giá trị AI trả về (vd "$68,069.00" -> 68069, "—"/"Single" ->
- * null) — dùng để tính cột "Chênh lệch". Bỏ dấu phẩy ngăn cách nghìn, giữ dấu chấm thập phân. */
+ * null) — dùng để tính cột "Chênh lệch". Bỏ dấu phẩy ngăn cách nghìn, giữ dấu chấm thập phân.
+ * Xác định dấu âm/dương RIÊNG khỏi vị trí chữ số (thêm 2026-08-27, sửa bug đã tự phát hiện khi
+ * verify quy tắc màu Capital Gain/Loss âm): dấu "-" đứng NGAY TRƯỚC chữ số (vd "-500") thì regex
+ * cũ bắt được, nhưng AI thường trả tiền âm dạng "-$900.00" (dấu trừ đứng trước "$", CÁCH chữ số
+ * 1 ký tự) hoặc ký hiệu kế toán "($900.00)" — cả 2 dạng này regex cũ BỎ MẤT dấu trừ, đọc nhầm
+ * thành số dương. Giờ tách riêng: tìm chữ số trước, rồi xét phần TRƯỚC chữ số đó có "-" hoặc "("
+ * hay không để quyết định âm/dương. */
 function parseAmountLike(value: string): number | null {
-  const m = /-?\d[\d,]*(\.\d+)?/.exec(value);
+  const m = /\d[\d,]*(\.\d+)?/.exec(value);
   if (!m) return null;
-  const n = Number(m[0].replace(/,/g, ""));
-  return Number.isFinite(n) ? n : null;
+  const magnitude = Number(m[0].replace(/,/g, ""));
+  if (!Number.isFinite(magnitude)) return null;
+  const prefix = value.slice(0, m.index);
+  const isNegative = prefix.includes("-") || prefix.includes("(");
+  return isNegative ? -magnitude : magnitude;
 }
 
 /** Kết quả tính cột "Chênh lệch": `magnitude` là số hiện ra (cách nhau xa nhất trừ gần nhất,
@@ -318,7 +327,12 @@ function computeDiff(row: AiCompareRow, columns: CompareColumns): DiffResult | n
   if (values.length < 2) return null;
   const max = Math.max(...values);
   const min = Math.min(...values);
-  const witIsHighest = witVal === null ? null : witVal === max && max !== min;
+  let witIsHighest = witVal === null ? null : witVal === max && max !== min;
+  // Capital Gain/Loss (1099-B): nếu WIT VÀ mọi cột đang so đều là số ÂM (cùng thể hiện 1 khoản
+  // LỖ), luôn tô xanh dù WIT là giá trị "cao nhất" (ít âm nhất) theo phép so max/min thường —
+  // vì với 1 khoản lỗ, "WIT ít âm hơn 1040/TTS" không mang ý nghĩa rủi ro khai thiếu thu nhập
+  // như với khoản thu nhập dương (thêm 2026-08-27 theo yêu cầu người dùng).
+  if (witIsHighest === true && values.every((v) => v < 0)) witIsHighest = false;
   return { magnitude: max - min, witIsHighest };
 }
 

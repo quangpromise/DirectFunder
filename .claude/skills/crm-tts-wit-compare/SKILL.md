@@ -391,6 +391,35 @@ khác biệt so với 2 biến thể đã biết) thay vì đoán mò sửa lạ
    đã hết 20 request/ngày hôm đó (dấu hiệu duy nhất người dùng cần để biết, không cần hỏi lại
    log Vercel nữa).
 
+6. **(2026-08-27) Quy tắc tính Gain cho khoản 1099-B (bán chứng khoán) trên WIT** — theo yêu
+   cầu "nếu có Gross Proceeds và Cost Basis và Wash Sale Disallowed thì lấy Gross Proceeds +
+   Wash Sale Disallowed rồi trừ Cost Basis". Thêm 1 đoạn quy tắc riêng trong
+   `CHAT_SYSTEM_INSTRUCTION` (`crm-doc-compare.ts`): khi 1 khoản 1099-B trên WIT có ĐỦ cả 3 giá
+   trị này, model KHÔNG dùng thẳng Gross Proceeds làm giá trị cột "wit" mà tự tính
+   `Gain = Gross Proceeds + Wash Sale Loss Disallowed − Cost Basis` rồi dùng số Gain đó để đối
+   chiếu với 1040/TTS, ghi rõ công thức + 3 số gốc trong note. Thiếu Cost Basis → không áp dụng
+   công thức (dùng nguyên Gross Proceeds, không tự bịa Cost Basis); thiếu Wash Sale → coi bằng
+   0. Đã verify sống qua `askCompareDocs()` (script tạm, dữ liệu WIT giả lập Gross
+   Proceeds=$12,000/Cost Basis=$10,000/Wash Sale=$500) — cột wit ra đúng "$2,500" (không phải
+   "$12,000"), note ghi đúng công thức 3 số gốc, khớp đúng dòng Schedule D $2,500 giả lập trên
+   1040.
+
+7. **(2026-08-27, cùng ngày) Màu cột "Chênh lệch" khi cả WIT và 1040/TTS đều ÂM (Capital
+   Gain/Loss lỗ)** — theo yêu cầu "nếu cả WIT và TTS/1040 đều là số âm... thì màu lệch sẽ là màu
+   xanh". `computeDiff()` (`crm-tts-wit-check-button.tsx`) thêm 1 override: nếu MỌI giá trị đang
+   so (WIT + các cột đã chọn) đều < 0, ép `witIsHighest = false` (xanh) dù WIT có là giá trị
+   "cao nhất" (ít âm nhất) theo phép so max/min bình thường — vì với 1 khoản LỖ, "WIT ít âm hơn"
+   không mang ý nghĩa rủi ro khai thiếu thu nhập như khoản thu nhập dương.
+   **Đã tự phát hiện thêm 1 bug có sẵn từ trước khi verify quy tắc này**: `parseAmountLike()`
+   dùng regex `-?\d[\d,]*...` — dấu "-" chỉ khớp nếu đứng NGAY TRƯỚC chữ số, nhưng AI thường trả
+   tiền âm dạng `"-$900.00"` (dấu trừ cách chữ số 1 ký tự do đứng trước "$") hoặc ký hiệu kế toán
+   `"($900.00)"` — cả 2 dạng này bị đọc nhầm thành SỐ DƯƠNG (mất dấu trừ), khiến toàn bộ logic
+   phát hiện "cả 2 đều âm" (và cả logic tô đỏ/xanh cũ) sai âm thầm với mọi khoản lỗ trước đây.
+   Đã sửa: tách rời việc tìm chữ số khỏi việc xét dấu — tìm phần TRƯỚC chữ số có chứa "-" hoặc
+   "(" hay không để quyết định âm/dương, không còn dựa vào regex "-" đứng liền kề chữ số. Đã
+   verify độc lập qua script tạm (sao y logic, không import trực tiếp vì hàm không export) với 6
+   case (cả 2 âm dạng "-$"/dạng ngoặc kế toán/cả 2 dương/mixed/bằng nhau) — tất cả đúng kỳ vọng.
+
 ## 4. Giới hạn đã biết
 
 - Không có OCR/fallback nếu CRM đổi định dạng PDF hoàn toàn khác — Gemini vẫn đọc được text lộn
