@@ -33,13 +33,11 @@ export interface CompareChatMessage {
   content: string;
 }
 
-/** 1 dòng bảng AI trả về — LUÔN đủ 3 cột giá trị (WIT/1040/TTS, thêm 2026-08-26 theo yêu cầu
- * "thêm các trường so sánh giữa WIT và 1040, 1040 và TTS") dạng STRING vì câu hỏi tự do có thể
- * ra kết quả không phải số thuần. */
+/** 1 dòng bảng AI trả về — dạng STRING vì câu hỏi tự do có thể ra kết quả không phải số thuần.
+ * Chỉ còn 2 cột giá trị WIT/TTS (đã bỏ 1040, 2026-08-27 theo yêu cầu "chỉ check TTS và WIT"). */
 export interface AiCompareRow {
   category: string;
   wit: string;
-  taxReturn: string;
   tts: string;
   note: string;
 }
@@ -54,12 +52,11 @@ export interface DocSelection {
 /** Store action ký sinh (`compareTtsWitChat` trong app-store.ts) — chat hỏi-đáp tự do dùng
  * Gemini API free tier, trả về DẠNG BẢNG (structured output — xem
  * `.claude/skills/crm-tts-wit-compare/SKILL.md`, người dùng đã xác nhận chấp nhận đánh đổi dữ
- * liệu bị Google dùng để train). Người dùng CHỌN CHÍNH XÁC file nào qua 3 trường select (đổi
- * 2026-08-26 — không còn tự lấy theo năm), `wit` là mảng tối đa 2 file (Taxpayer + Spouse).
- * `caseId` đã đóng gói sẵn ở call site (`cases/page.tsx`). */
+ * liệu bị Google dùng để train). Người dùng CHỌN CHÍNH XÁC file nào qua 2 trường select (TTS/
+ * WIT — đã bỏ 1040, 2026-08-27), `wit` là mảng tối đa 2 file (Taxpayer + Spouse). `caseId` đã
+ * đóng gói sẵn ở call site (`cases/page.tsx`). */
 export type CompareTtsWitChatFn = (payload: {
   tts?: DocSelection | null;
-  taxReturn?: DocSelection | null;
   wit?: DocSelection[];
   message: string;
   history: CompareChatMessage[];
@@ -88,8 +85,9 @@ export function CrmTtsWitCheckButton({
   clientName: string;
   /** null nếu lỗi (đã tự alertWarn ở nơi gọi) -> không mở popup. */
   onCheck: () => Promise<CrmTtsWitResult | null>;
-  /** Chat hỏi-đáp tự do "So sánh WIT / 1040 Tax Return / TTS" (Gemini API free tier) — xem
-   * `.claude/skills/crm-tts-wit-compare/SKILL.md`. Bảng regex cố định cũ đã bỏ. */
+  /** Chat hỏi-đáp tự do "So sánh WIT / TTS" (Gemini API free tier, đã bỏ 1040 khỏi so sánh
+   * 2026-08-27) — xem `.claude/skills/crm-tts-wit-compare/SKILL.md`. Bảng regex cố định cũ đã
+   * bỏ. */
   onCompareChat: CompareTtsWitChatFn;
 }) {
   const [checking, setChecking] = useState(false);
@@ -233,10 +231,10 @@ function OtherDocSection({ clientName, doc }: { clientName: string; doc: CrmTtsW
   );
 }
 
-/** 3 cột giá trị của bảng — cờ bật/tắt theo ĐÚNG lựa chọn lúc gửi câu hỏi đó (thêm 2026-08-27
- * theo yêu cầu "bảng phân tích chỉ hiện các cột được chọn") — lưu riêng cho từng lượt trả lời
- * vì lựa chọn có thể đổi giữa các lượt hỏi trong cùng 1 phiên chat. */
-type CompareColumns = { wit: boolean; taxReturn: boolean; tts: boolean };
+/** 2 cột giá trị của bảng (WIT/TTS, đã bỏ 1040) — cờ bật/tắt theo ĐÚNG lựa chọn lúc gửi câu hỏi
+ * đó (thêm 2026-08-27 theo yêu cầu "bảng phân tích chỉ hiện các cột được chọn") — lưu riêng cho
+ * từng lượt trả lời vì lựa chọn có thể đổi giữa các lượt hỏi trong cùng 1 phiên chat. */
+type CompareColumns = { wit: boolean; tts: boolean };
 
 /** 1 tin nhắn trong state UI — khác `CompareChatMessage` (dây API): tin user giữ text thô, tin
  * assistant giữ SẴN mảng rows đã parse (không phải chuỗi) để render bảng trực tiếp, không phải
@@ -270,7 +268,7 @@ function parseAmountLike(value: string): number | null {
 
 /** Kết quả tính cột "Chênh lệch": `magnitude` là số hiện ra (cách nhau xa nhất trừ gần nhất,
  * giữ nguyên cách tính cũ), `witIsHighest` quyết định MÀU (thêm 2026-08-27 theo yêu cầu "WIT
- * lớn hơn TTS/1040 thì đỏ, WIT nhỏ hơn thì xanh như khớp") — `true` khi cột WIT có chọn VÀ giá
+ * lớn hơn TTS thì đỏ, WIT nhỏ hơn thì xanh như khớp") — `true` khi cột WIT có chọn VÀ giá
  * trị WIT là giá trị LỚN NHẤT trong các cột đang so (WIT báo thu nhập nhiều hơn tờ khai/IRS đã
  * ghi nhận = rủi ro khai thiếu, tô đỏ); `false` khi WIT không phải giá trị lớn nhất (WIT bằng
  * hoặc nhỏ hơn — tô xanh, coi như ổn); `null` khi không chọn cột WIT (không có gốc so sánh theo
@@ -287,10 +285,6 @@ interface DiffResult {
 function computeDiff(row: AiCompareRow, columns: CompareColumns): DiffResult | null {
   const witVal = columns.wit ? parseAmountLike(row.wit) : null;
   const others: number[] = [];
-  if (columns.taxReturn) {
-    const n = parseAmountLike(row.taxReturn);
-    if (n !== null) others.push(n);
-  }
   if (columns.tts) {
     const n = parseAmountLike(row.tts);
     if (n !== null) others.push(n);
@@ -302,7 +296,7 @@ function computeDiff(row: AiCompareRow, columns: CompareColumns): DiffResult | n
   let witIsHighest = witVal === null ? null : witVal === max && max !== min;
   // Capital Gain/Loss (1099-B): nếu WIT VÀ mọi cột đang so đều là số ÂM (cùng thể hiện 1 khoản
   // LỖ), luôn tô xanh dù WIT là giá trị "cao nhất" (ít âm nhất) theo phép so max/min thường —
-  // vì với 1 khoản lỗ, "WIT ít âm hơn 1040/TTS" không mang ý nghĩa rủi ro khai thiếu thu nhập
+  // vì với 1 khoản lỗ, "WIT ít âm hơn TTS" không mang ý nghĩa rủi ro khai thiếu thu nhập
   // như với khoản thu nhập dương (thêm 2026-08-27 theo yêu cầu người dùng).
   if (witIsHighest === true && values.every((v) => v < 0)) witIsHighest = false;
   return { magnitude: max - min, witIsHighest };
@@ -312,9 +306,9 @@ function formatDiff(diff: number): string {
   return diff.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-/** Bảng nhỏ cho 1 lượt trả lời của AI — CHỈ hiện đúng cột (WIT/1040/TTS) đã chọn lúc hỏi (thêm
+/** Bảng nhỏ cho 1 lượt trả lời của AI — CHỈ hiện đúng cột (WIT/TTS) đã chọn lúc hỏi (thêm
  * 2026-08-27 theo yêu cầu "bảng phân tích chỉ hiện các cột được chọn"), cộng 1 cột "Chênh lệch"
- * tự tính + tô màu THEO HƯỚNG WIT (đỏ = WIT cao hơn TTS/1040 — rủi ro khai thiếu, xanh = WIT
+ * tự tính + tô màu THEO HƯỚNG WIT (đỏ = WIT cao hơn TTS — rủi ro khai thiếu, xanh = WIT
  * bằng/thấp hơn hoặc không chọn cột WIT — coi như ổn, thêm 2026-08-27) để không phải tự dò
  * từng cột. */
 function AiRowsTable({ rows, columns, wrap }: { rows: AiCompareRow[]; columns: CompareColumns; wrap?: boolean }) {
@@ -330,7 +324,6 @@ function AiRowsTable({ rows, columns, wrap }: { rows: AiCompareRow[]; columns: C
           <tr className="bg-bg-elevated text-[10px] uppercase tracking-wide text-text-faint">
             <th className="px-2 py-1 text-left font-semibold">{t("crmCompare.colCategory")}</th>
             {columns.wit && <th className="px-2 py-1 text-right font-semibold">WIT</th>}
-            {columns.taxReturn && <th className="px-2 py-1 text-right font-semibold">1040</th>}
             {columns.tts && <th className="px-2 py-1 text-right font-semibold">TTS</th>}
             <th className="px-2 py-1 text-right font-semibold">{t("crmCompare.colDiff")}</th>
             <th className="px-2 py-1 text-left font-semibold">{t("crmCompare.colNote")}</th>
@@ -347,7 +340,6 @@ function AiRowsTable({ rows, columns, wrap }: { rows: AiCompareRow[]; columns: C
               <tr key={i} className="border-t border-border">
                 <td className={`${cellCls} font-medium`}>{row.category}</td>
                 {columns.wit && <td className={`${cellCls} text-right tabular-nums`}>{row.wit}</td>}
-                {columns.taxReturn && <td className={`${cellCls} text-right tabular-nums`}>{row.taxReturn}</td>}
                 {columns.tts && <td className={`${cellCls} text-right tabular-nums`}>{row.tts}</td>}
                 <td
                   className={`whitespace-nowrap px-2 py-1.5 text-right font-semibold tabular-nums ${
@@ -384,16 +376,16 @@ function buildDocOptions(docsByYear: Record<CrmDocYear, CrmTtsWitDoc[]>): DocSel
   return options;
 }
 
-/** Chat "So sánh WIT / 1040 Tax Return / TTS" (Gemini API free tier) — DUY NHẤT cơ chế so sánh
- * trong popup (thêm 2026-08-25, bảng regex cố định ban đầu đã BỎ 2026-08-26 — xem
- * `.claude/skills/crm-tts-wit-compare/SKILL.md`). Đặt ở ĐẦU popup. Đổi kiến trúc 2026-08-26
- * theo yêu cầu "3 trường select cho 3 loại TTS/WIT/1040... khi có trường nào được chọn thì ask
- * AI so sánh 2 trường đó": KHÔNG còn chọn theo "năm" (tự lấy bản mới nhất) — 3 trường CHỌN
- * CHÍNH XÁC file nào (TTS/1040 single-select, WIT multi-select tối đa 2 vì có Taxpayer+Spouse),
- * options liệt kê MỌI file có trong CẢ 3 năm kèm tên người. Cần chọn ÍT NHẤT 2/3 loại tài liệu
- * mới bấm Gửi được. Trả lời của AI hiện DẠNG BẢNG (structured output) với ĐỦ 3 cột giá trị
- * WIT/1040/TTS — loại nào không chọn tự hiện "—". Không lưu DB, chỉ tồn tại trong state React
- * lúc popup đang mở. */
+/** Chat "So sánh WIT / TTS" (Gemini API free tier) — DUY NHẤT cơ chế so sánh trong popup (thêm
+ * 2026-08-25, bảng regex cố định ban đầu đã BỎ 2026-08-26 — xem
+ * `.claude/skills/crm-tts-wit-compare/SKILL.md`). Đặt ở ĐẦU popup. **Đã bỏ 1040 khỏi so sánh
+ * (2026-08-27)** theo yêu cầu "bỏ tính năng và dropdown so sánh với 1040, chỉ check TTS và
+ * WIT" — chỉ còn 2 trường CHỌN CHÍNH XÁC file nào (TTS single-select, WIT multi-select tối đa 2
+ * vì có Taxpayer+Spouse), options liệt kê MỌI file có trong CẢ 3 năm kèm tên người. Cần chọn ĐỦ
+ * CẢ 2 loại tài liệu mới bấm Gửi được. Trả lời của AI hiện DẠNG BẢNG (structured output) với 2
+ * cột giá trị WIT/TTS. Bảng file "1040 Tax Return" (link tải/xem gốc) VẪN GIỮ NGUYÊN bên dưới
+ * popup — chỉ tính năng SO SÁNH bằng AI mới bỏ 1040, không phải toàn bộ. Không lưu DB, chỉ tồn
+ * tại trong state React lúc popup đang mở. */
 function CompareChatSection({
   result,
   onCompareChat,
@@ -408,18 +400,15 @@ function CompareChatSection({
   const t = useT();
   const ttsOptions = buildDocOptions(result.tts);
   const witOptions = buildDocOptions(result.wit);
-  const taxReturnOptions = buildDocOptions(result.taxReturns);
 
   const [ttsUrl, setTtsUrl] = useState("");
-  const [taxReturnUrl, setTaxReturnUrl] = useState("");
   const [witUrls, setWitUrls] = useState<string[]>([]);
   const [messages, setMessages] = useState<ChatEntry[]>([]);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
 
-  const selectedTypeCount = (ttsUrl ? 1 : 0) + (taxReturnUrl ? 1 : 0) + (witUrls.length > 0 ? 1 : 0);
-  const ready = selectedTypeCount >= 2;
+  const ready = Boolean(ttsUrl) && witUrls.length > 0;
 
   function toggleWit(url: string) {
     setWitUrls((prev) => {
@@ -432,7 +421,7 @@ function CompareChatSection({
   async function handleSend() {
     if (!ready || sending) return;
     const message = draft.trim() || t("crmCompareChat.defaultMessage");
-    const columns: CompareColumns = { wit: witUrls.length > 0, taxReturn: Boolean(taxReturnUrl), tts: Boolean(ttsUrl) };
+    const columns: CompareColumns = { wit: witUrls.length > 0, tts: Boolean(ttsUrl) };
     setDraft("");
     setError("");
     setSending(true);
@@ -440,9 +429,8 @@ function CompareChatSection({
     setMessages((prev) => [...prev, { role: "user", text: message }]);
     try {
       const ttsSel = ttsOptions.find((o) => o.url === ttsUrl) ?? null;
-      const taxReturnSel = taxReturnOptions.find((o) => o.url === taxReturnUrl) ?? null;
       const witSel = witOptions.filter((o) => witUrls.includes(o.url));
-      const res = await onCompareChat({ tts: ttsSel, taxReturn: taxReturnSel, wit: witSel, message, history });
+      const res = await onCompareChat({ tts: ttsSel, wit: witSel, message, history });
       if (res.ok) {
         setMessages((prev) => [...prev, { role: "assistant", rows: res.rows, columns }]);
         onAnalysis({ rows: res.rows, columns });
@@ -458,7 +446,7 @@ function CompareChatSection({
     <div>
       <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-text-faint">{t("crmCompareChat.title")}</div>
 
-      <div className="mb-2 grid grid-cols-3 gap-2">
+      <div className="mb-2 grid grid-cols-2 gap-2">
         <div>
           <div className="mb-1 text-[10px] uppercase tracking-wide text-text-faint">TTS</div>
           <select
@@ -509,22 +497,6 @@ function CompareChatSection({
               </div>
             </details>
           )}
-        </div>
-
-        <div>
-          <div className="mb-1 text-[10px] uppercase tracking-wide text-text-faint">1040</div>
-          <select
-            value={taxReturnUrl}
-            onChange={(e) => setTaxReturnUrl(e.target.value)}
-            className="w-full rounded-md border border-border bg-bg-elevated px-1.5 py-1 text-xs text-text"
-          >
-            <option value="">—</option>
-            {taxReturnOptions.map((o) => (
-              <option key={o.url} value={o.url}>
-                {o.label}
-              </option>
-            ))}
-          </select>
         </div>
       </div>
 

@@ -34,14 +34,13 @@ async function fetchEntry(sel: DocSelection | null | undefined): Promise<Selecte
   return { label: sel.label, text };
 }
 
-/** Chat "So sánh WIT / 1040 Tax Return / TTS" — xem
- * `.claude/skills/crm-tts-wit-compare/SKILL.md`. Đổi kiến trúc 2026-08-26: KHÔNG còn chọn theo
- * "năm" (tự lấy bản mới nhất) — người dùng CHỌN CHÍNH XÁC file nào qua 3 trường select ở UI
- * (TTS/1040 single-select, WIT multi-select tối đa 2 file vì có Taxpayer+Spouse), client gửi
+/** Chat "So sánh WIT / TTS" — xem `.claude/skills/crm-tts-wit-compare/SKILL.md`. Người dùng
+ * CHỌN CHÍNH XÁC file nào qua 2 trường select ở UI (TTS single-select, WIT multi-select tối đa
+ * 2 file vì có Taxpayer+Spouse — đã bỏ "1040 Tax Return" khỏi so sánh 2026-08-27), client gửi
  * thẳng `{url, label}` của từng file đã chọn. Route CHỈ tải/trích/gọi model — không tự tra CRM
  * lại như route cũ (không cần `year`/`customerId` nữa). Dùng Gemini (`gemini-3.5-flash-lite`,
- * free tier ~1.500 request/ngày — xem `askCompareDocs`/crm-doc-compare.ts, đã gỡ Groq dự phòng
- * 2026-08-27). Trả về `rows` (structured output).
+ * free tier ~1.500 request/ngày — xem `askCompareDocs`/crm-doc-compare.ts). Trả về `rows`
+ * (structured output).
  * Không lưu DB — chat chỉ tồn tại trong state React lúc popup đang mở. */
 export async function POST(request: NextRequest) {
   const me = await requireUser();
@@ -50,21 +49,18 @@ export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => null)) as {
     caseId?: string;
     tts?: DocSelection | null;
-    taxReturn?: DocSelection | null;
     wit?: DocSelection[];
     message?: string;
     history?: CompareChatMessage[];
   } | null;
   const { caseId, message } = body ?? {};
   const tts = body?.tts ?? null;
-  const taxReturn = body?.taxReturn ?? null;
   const wit = Array.isArray(body?.wit) ? body.wit.slice(0, 2) : []; // tối đa 2 file (Taxpayer + Spouse)
   if (!caseId || !message?.trim()) {
     return NextResponse.json({ ok: false, error: "Thiếu caseId/message" }, { status: 400 });
   }
-  const selectedTypeCount = (tts ? 1 : 0) + (taxReturn ? 1 : 0) + (wit.length > 0 ? 1 : 0);
-  if (selectedTypeCount < 2) {
-    return NextResponse.json({ ok: false, error: "Chọn ít nhất 2 loại tài liệu (TTS/WIT/1040) để so sánh" }, { status: 400 });
+  if (!tts || wit.length === 0) {
+    return NextResponse.json({ ok: false, error: "Chọn đủ TTS và WIT để so sánh" }, { status: 400 });
   }
   // Giữ ngắn — mỗi lượt chat đều gửi lại toàn bộ text các tài liệu, lịch sử dài không cần
   // thiết và tốn token; chỉ giữ 6 tin gần nhất (3 cặp hỏi-đáp).
@@ -80,15 +76,10 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const [ttsEntry, taxReturnEntry, witEntries] = await Promise.all([
-      fetchEntry(tts),
-      fetchEntry(taxReturn),
-      Promise.all(wit.map((w) => fetchEntry(w))),
-    ]);
+    const [ttsEntry, witEntries] = await Promise.all([fetchEntry(tts), Promise.all(wit.map((w) => fetchEntry(w)))]);
 
     const rows = await askCompareDocs({
       wit: witEntries.filter((e): e is NonNullable<typeof e> => e !== null),
-      taxReturn: taxReturnEntry,
       tts: ttsEntry,
       history,
       message: message.trim(),

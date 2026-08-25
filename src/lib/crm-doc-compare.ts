@@ -3,27 +3,27 @@ import * as cheerio from "cheerio";
 import { withAiRetry } from "@/lib/ai-retry";
 
 /**
- * So sánh WIT / "1040 Tax Return" / TTS trong popup "Get Files" — chat hỏi-đáp tự do, KHÔNG
- * dùng cơ chế regex cố định nữa (bảng regex ban đầu, chỉ so WIT-TTS, đã BỎ theo yêu cầu
- * 2026-08-26 — xem lịch sử quyết định trong `.claude/skills/crm-tts-wit-compare/SKILL.md`).
+ * So sánh WIT / TTS trong popup "Get Files" — chat hỏi-đáp tự do, KHÔNG dùng cơ chế regex cố
+ * định nữa (bảng regex ban đầu, chỉ so WIT-TTS, đã BỎ theo yêu cầu 2026-08-26 — xem lịch sử
+ * quyết định trong `.claude/skills/crm-tts-wit-compare/SKILL.md`).
  *
- * **Kiến trúc: CHỈ Gemini (2026-08-27, cùng ngày, bản CUỐI — đã gỡ Groq)** — lịch sử:
+ * **Kiến trúc: CHỈ Gemini, CHỈ WIT+TTS (2026-08-27, cùng ngày, bản CUỐI)** — lịch sử:
  * 1. Ban đầu dùng Gemini free tier — hoá ra chỉ 20 request/NGÀY cho `gemini-3.6-flash`, tính
  *    theo Google Cloud PROJECT (không phải theo API key) — tạo key mới/project mới vẫn dính
  *    quota thấp y hệt (đã xác nhận thật qua lỗi RESOURCE_EXHAUSTED).
- * 2. Đổi hẳn sang Groq — phát hiện Groq free tier giới hạn ~8.000 token/PHÚT/request (model hỗ
- *    trợ structured output strict), quá nhỏ cho file "1040 Tax Return" thật (100K+ ký tự ≈
- *    30-50K token) — request bị từ chối thẳng (413).
- * 3. Đổi sang HYBRID: ưu tiên Gemini, hết quota TỰ ĐỘNG chuyển Groq. `extractForm1040Pages()`
- *    rút gọn "1040 Tax Return" xuống 2 trang gốc trước khi gửi (áp dụng cả 2 provider — sửa sau
- *    khi gặp `504` thật do gửi nguyên văn 30-100+ trang cho Gemini, xem SKILL.md).
+ * 2. Đổi hẳn sang Groq — phát hiện Groq free tier giới hạn ~8.000 token/PHÚT/request, quá nhỏ
+ *    cho file "1040 Tax Return" thật (100K+ ký tự ≈ 30-50K token) — request bị từ chối (413).
+ * 3. Đổi sang HYBRID Gemini+Groq, rút gọn "1040 Tax Return" xuống 2 trang gốc trước khi gửi.
  * 4. Nghiên cứu + đổi model Gemini chính từ `gemini-3.6-flash` (20 request/ngày) sang
- *    `gemini-3.5-flash-lite` (~1.500 request/ngày, gấp 75 lần, verify sống hoạt động đúng) —
- *    xem mục lịch sử #11 SKILL.md.
- * 5. **(2026-08-27, cùng ngày) GỠ HẲN Groq** — với quota Gemini ~1.500/ngày, fallback gần như
- *    không bao giờ cần tới nữa; gỡ bớt 1 provider giúp code đơn giản hơn hẳn (không còn 2 bộ
- *    schema/2 định dạng message/2 lớp lỗi payload-too-large). Nếu Gemini hết quota, lỗi
- *    `AiRateLimitError` (429) ném thẳng ra ngoài — route trả rõ "đang bị giới hạn tốc độ".
+ *    `gemini-3.5-flash-lite` (~1.500 request/ngày, gấp 75 lần) — quota đủ rộng rãi nên GỠ HẲN
+ *    Groq (2026-08-27, cùng ngày) — xem mục lịch sử #11/#12 SKILL.md.
+ * 5. **(2026-08-27, cùng ngày) GỠ HẲN "1040 Tax Return" khỏi so sánh** — theo yêu cầu "bỏ tính
+ *    năng và dropdown so sánh với 1040, chỉ check TTS và WIT". Xoá `extractForm1040Pages()`/
+ *    `isForm1040Page()` (không còn cần rút gọn 1040 vì không còn đọc 1040 nữa), rút ngắn
+ *    `CHAT_SYSTEM_INSTRUCTION`/schema chỉ còn 2 cột WIT/TTS. Bảng file "1040 Tax Return" (link
+ *    tải/xem gốc trên CRM) VẪN GIỮ NGUYÊN ở UI (`DocGroup` trong `crm-tts-wit-check-button.tsx`)
+ *    — chỉ tính năng SO SÁNH BẰNG AI mới bỏ 1040, người dùng vẫn mở/tải file 1040 gốc bình
+ *    thường để tự đọc.
  *
  * Chạy SERVER-ONLY (`extractPdfText` cần Node thật cho `pdfjs-dist`; các hàm gọi model cần
  * giấu API key).
@@ -31,10 +31,8 @@ import { withAiRetry } from "@/lib/ai-retry";
 
 /** Trích text từ 1 file PDF (bytes) — dùng `pdfjs-dist` bản "legacy" CJS, chạy Node thật ở
  * server (KHÁC Notice Splitter đã chuyển hẳn sang client — tính năng này bắt buộc chạy server
- * vì cần cookie session CRM). TTS/WIT/1040 trên CRM đã xác nhận là PDF dạng TEXT thật (không
- * phải ảnh scan) — trích sạch, không cần OCR. Nối các trang bằng "\n" — RANH GIỚI NÀY được
- * `extractForm1040Pages()` dựa vào để tách lại từng trang, đừng đổi ký tự nối nếu không cập
- * nhật hàm đó theo. */
+ * vì cần cookie session CRM). TTS/WIT trên CRM đã xác nhận là PDF dạng TEXT thật (không phải
+ * ảnh scan) — trích sạch, không cần OCR. Nối các trang bằng "\n". */
 export async function extractPdfText(buffer: Buffer): Promise<string> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports -- pdfjs-dist legacy build là CJS, import động để tránh Turbopack cố bundle tĩnh (đã đánh dấu serverExternalPackages, xem next.config.ts)
   const pdfjsLib = require("pdfjs-dist/legacy/build/pdf.js");
@@ -61,72 +59,17 @@ function looksLikePdf(buffer: Buffer): boolean {
  * `InvalidPDFException: Invalid PDF structure` nếu cố parse HTML bằng `pdfjs`, khiến cả lượt so
  * sánh lỗi ngay từ bước đọc file, TRƯỚC KHI kịp gọi Gemini). Hàm này tự nhận diện định dạng qua
  * magic bytes rồi chọn đường trích đúng — route gọi hàm NÀY (không gọi thẳng `extractPdfText`)
- * cho MỌI tài liệu chọn từ dropdown TTS/WIT/1040. */
+ * cho MỌI tài liệu chọn từ dropdown TTS/WIT. */
 export async function extractDocumentText(buffer: Buffer): Promise<string> {
   if (looksLikePdf(buffer)) return extractPdfText(buffer);
   const $ = cheerio.load(buffer.toString("utf-8"));
   return $("body").text().replace(/\s+/g, " ").trim();
 }
 
-/** 1 trang được coi là "Form 1040 gốc" (KHÔNG phải Schedule/Form khác đính kèm).
- *
- * **Sửa lại hoàn toàn 2026-08-27 (bug thật gặp trên production với hồ sơ `BY4849`)**: bản đầu
- * chỉ xét 250 KÝ TỰ ĐẦU trang, giả định `pdfjs` trích text THEO ĐÚNG THỨ TỰ ĐỌC THỊ GIÁC —
- * SAI với 1 số phần mềm khai thuế thật (đã xác nhận qua debug trực tiếp file PDF thật): cụm
- * "U.S. Individual Income Tax Return" của trang 1 THẬT nằm GIỮA trang (sau hàng loạt label
- * "Presidential Election Campaign", "Filing Status"...), không phải đầu trang — check theo
- * `head` bỏ sót hoàn toàn. Tệ hơn, số trang trong cụm "Form 1040 (năm) Page 2" của trang 2 THẬT
- * còn bị MẤT HẲN chữ số "2" khỏi text trích được (`pdfjs` không capture được, có thể do render
- * qua vị trí đặc biệt) — cụm `/Page\s*2/` không bao giờ khớp. Đồng thời việc loại "SCHEDULE ..."
- * cũng SAI vì check `^\s*SCHEDULE` đòi hỏi "SCHEDULE" phải là từ đầu tiên, nhưng PDF thật có
- * "OMB No. 1545-0074  SCHEDULE 1  (Form 1040)..." — "OMB No." đứng trước.
- *
- * **Cách sửa**: quét TOÀN TRANG (không chỉ đầu trang) tìm cụm văn bản CHÍNH THỨC CỦA IRS (luôn
- * xuất hiện NGUYÊN VĂN trên form dù thứ tự trích có xáo trộn, vì đây là boilerplate IRS bắt
- * buộc mọi phần mềm khai thuế phải in đúng) — trang 1 nhận qua "U.S. Individual Income Tax
- * Return" (tiêu đề duy nhất của chính Form 1040, Schedule/Form khác không có), trang 2 nhận qua
- * TỔ HỢP ≥2 cụm chỉ xuất hiện ở trang 2 chính thức (không dựa vào số trang nữa): "Standard
- * deduction for-", "Third Party Designee", "Amount from line 11a (adjusted gross income)". Loại
- * Schedule/Form đính kèm bằng cách tìm cụm "SCHEDULE {mã} ... (Form 1040)" ở BẤT KỲ ĐÂU trong
- * trang (không chỉ đầu). KHÔNG loại theo "có nhắc tới mã Form khác" (vd "Form 8919", "Form
- * 8995") — bug đã tự gặp khi verify: chính trang 1 Form 1040 THẬT cũng tự nhắc tới các mã form
- * đó ngay trong mô tả dòng của nó (vd dòng 1g "Wages from Form 8919, line 6", dòng 13a
- * "Qualified business income deduction from Form 8995..."), nên check kiểu đó tự loại nhầm luôn
- * chính trang 1/2 thật — chỉ dựa vào SCHEDULE + cụm boilerplate độc quyền của trang 1040 chính
- * là đủ phân biệt, không cần lớp loại trừ phụ này. */
-function isForm1040Page(pageText: string): boolean {
-  const isAttachmentSchedule = /SCHEDULE\s+[A-Z0-9-]{1,4}\b[\s\S]{0,150}\(\s*Form\s*1040\s*\)/i.test(pageText);
-  if (isAttachmentSchedule) return false;
-
-  if (/U\.S\.\s*Individual\s+Income\s+Tax\s+Return/i.test(pageText)) return true;
-
-  const page2Markers = [
-    /Standard\s+deduction\s+for-/i,
-    /Third\s+Party\s+Designee/i,
-    /Amount\s+from\s+line\s+11a\s*\(adjusted\s+gross\s+income\)/i,
-  ];
-  return page2Markers.filter((re) => re.test(pageText)).length >= 2;
-}
-
-/** Rút gọn text đã trích của "1040 Tax Return" xuống ĐÚNG 2 trang Form 1040 gốc (bỏ mọi
- * Schedule/Form/worksheet đính kèm) — CRM thường gộp chung 30-100+ trang schedule/worksheet/tờ
- * khai state vào 1 file duy nhất, gửi nguyên văn từng gây timeout thật (504, vượt 60s giới hạn
- * cứng của Vercel Hobby). Không mất thông tin cần thiết cho việc so sánh (Wages/Interest/
- * Dividends/AGI... đều nằm trên chính 2 trang Form 1040). Nếu không nhận diện được trang nào
- * (PDF lạ/đổi định dạng), fallback về 2 "trang" ĐẦU (an toàn hơn gửi trắng, dù có thể không phải
- * đúng Form 1040) — không bao giờ trả về rỗng nếu input có nội dung. */
-function extractForm1040Pages(fullText: string): string {
-  const pages = fullText.split("\n");
-  const matched = pages.filter(isForm1040Page);
-  if (matched.length > 0) return matched.join("\n\n");
-  return pages.slice(0, 2).join("\n\n");
-}
-
 export class AiProviderConfigError extends Error {}
 
-/** Gemini xử lý chậm bất thường (mạng/model, không phải do kích thước tài liệu — đã verify
- * sống với file WIT thật 500K+ ký tự chỉ mất ~9s) từng gây `504` thô (Vercel tự cắt kết nối ở
- * 60s giới hạn cứng, không có JSON lỗi nào để đọc) — lỗi thật gặp trên production 2026-08-27.
+/** Gemini xử lý chậm bất thường (mạng/model) từng gây `504` thô (Vercel tự cắt kết nối ở 60s
+ * giới hạn cứng, không có JSON lỗi nào để đọc) — lỗi thật gặp trên production 2026-08-27.
  * `withTimeout()` chủ động huỷ SỚM HƠN mốc đó (50s) và ném lỗi rõ ràng thay vì để Vercel cắt
  * ngang trong im lặng. */
 export class AiTimeoutError extends Error {}
@@ -168,37 +111,29 @@ export interface CompareChatMessage {
   content: string;
 }
 
-/** 1 dòng trong bảng AI trả về — LUÔN đủ 3 cột giá trị (WIT/1040/TTS, thêm 2026-08-26 theo yêu
- * cầu "thêm các trường so sánh giữa WIT và 1040, 1040 và TTS") để người dùng tự nhìn ra chênh
- * lệch giữa BẤT KỲ cặp nào trong 3 tài liệu, không chỉ WIT-TTS như bảng cũ. Dạng STRING (không
- * ép `number`) vì câu hỏi tự do có thể ra kết quả không phải số thuần (vd "—" khi tài liệu đó
- * không có dữ liệu để so). */
+/** 1 dòng trong bảng AI trả về — 2 cột giá trị WIT/TTS (đã bỏ 1040, 2026-08-27 theo yêu cầu
+ * "chỉ check TTS và WIT") dạng STRING vì câu hỏi tự do có thể ra kết quả không phải số thuần. */
 export interface AiCompareRow {
   category: string;
   wit: string;
-  taxReturn: string;
   tts: string;
   note: string;
 }
 
 const CHAT_SYSTEM_INSTRUCTION = `Bạn là trợ lý đối chiếu tài liệu thuế IRS cho nhân viên xử lý hồ sơ tax refund.
-Bạn sẽ nhận toàn văn TRÍCH TỪ các tài liệu PDF do người dùng CHỦ ĐỘNG CHỌN (qua dropdown/checkbox — mỗi khối có tiêu đề kèm năm + tên người, vd "[WIT - 2025 - Sanchez, Jose E]"). 1 số loại tài liệu có thể KHÔNG được chọn — nếu vậy sẽ ghi rõ "(Không có tài liệu này)". WIT có thể có 2 KHỐI RIÊNG BIỆT (2 tiêu đề "[WIT - ...]" khác nhau) nếu người dùng chọn cả Taxpayer lẫn Spouse — hồ sơ đồng khai chung 1 tờ 1040/TTS nhưng MỖI NGƯỜI có 1 file WIT riêng, khi so sánh WIT với 1040/TTS hãy CỘNG DỒN cả 2 khối WIT lại trước khi đối chiếu (trừ khi câu hỏi chỉ hỏi riêng 1 người). Khối "[1040 Tax Return - ...]" chỉ chứa ĐÚNG 2 trang chính thức của Form 1040 (không kèm Schedule/worksheet khác):
+Bạn sẽ nhận toàn văn TRÍCH TỪ các tài liệu PDF do người dùng CHỦ ĐỘNG CHỌN (qua dropdown/checkbox — mỗi khối có tiêu đề kèm năm + tên người, vd "[WIT - 2025 - Sanchez, Jose E]"). 1 loại tài liệu có thể KHÔNG được chọn — nếu vậy sẽ ghi rõ "(Không có tài liệu này)". WIT có thể có 2 KHỐI RIÊNG BIỆT (2 tiêu đề "[WIT - ...]" khác nhau) nếu người dùng chọn cả Taxpayer lẫn Spouse — hồ sơ đồng khai chung 1 tờ TTS nhưng MỖI NGƯỜI có 1 file WIT riêng, khi so sánh hãy CỘNG DỒN cả 2 khối WIT lại trước khi đối chiếu (trừ khi câu hỏi chỉ hỏi riêng 1 người):
 - "WIT" (Wage and Income Transcript): dữ liệu do BÊN THỨ BA (chủ lao động, ngân hàng, đơn vị chi trả...) tự báo cáo thẳng cho IRS qua W-2/1098/1099/5498 — KHÔNG phải dữ liệu từ tờ khai của khách hàng.
-- "1040 Tax Return": bản PDF tờ khai 1040 THẬT đã chuẩn bị/nộp (do văn phòng/khách hàng tải lên CRM) — đây là "nguồn gốc" của tờ khai, trước khi IRS xử lý.
 - "TTS" (Tax Return Transcript / Record of Account): dữ liệu IRS đã XỬ LÝ VÀ GHI NHẬN từ tờ khai, gồm AGI/Taxable income, các dòng thu nhập chi tiết (Wages/Interest/Dividends...), và bảng TRANSACTIONS theo mã (mã 150 = tờ khai đã nộp, mã 806 = số thuế đã khấu trừ W-2/1099 được ghi nhận — khớp trực tiếp với "Federal income tax withheld" trên WIT).
 
-Ý nghĩa từng cặp đối chiếu:
-- WIT vs 1040 Tax Return: kiểm tra tờ khai đã chuẩn bị có khai ĐỦ/ĐÚNG thu nhập bên thứ ba báo cáo hay chưa (khai thiếu = rủi ro bị IRS truy thu).
-- 1040 Tax Return vs TTS: kiểm tra IRS xử lý/ghi nhận tờ khai có ĐÚNG với bản đã nộp hay không (lệch = lỗi nhập liệu/e-file, hoặc IRS tự điều chỉnh).
-- WIT vs TTS: đối chiếu gián tiếp qua 1040 — hữu ích khi không có bản 1040 Tax Return.
+Ý nghĩa đối chiếu WIT vs TTS: kiểm tra IRS xử lý/ghi nhận tờ khai có ĐỦ/ĐÚNG với dữ liệu bên thứ ba báo cáo hay không (khai thiếu = rủi ro bị IRS truy thu; lệch = lỗi nhập liệu/e-file, hoặc IRS tự điều chỉnh).
 
-QUY TẮC CHIỀU SO SÁNH BẮT BUỘC cho 2 cặp "WIT vs 1040 Tax Return" và "WIT vs TTS": LUÔN LẤY WIT LÀM GỐC — duyệt qua TỪNG khoản thu nhập/khấu trừ XUẤT HIỆN TRÊN WIT (mỗi mã W-2/1099-INT/1099-DIV/1099-MISC/1099-NEC/1099-G/1099-R/5498...), rồi kiểm tra xem 1040 Tax Return/TTS (tuỳ đang so cặp nào) CÓ ghi nhận khoản đó hay không. TUYỆT ĐỐI KHÔNG so chiều ngược lại — nếu 1040/TTS có 1 khoản mà WIT KHÔNG có, BỎ QUA khoản đó, không đưa vào bảng (vì WIT chỉ là dữ liệu bên thứ ba báo cáo, không phải danh sách đầy đủ mọi thu nhập). Với MỖI khoản có trên WIT nhưng KHÔNG thấy trên 1040/TTS: bắt buộc ghi trong note (a) khoản đó thuộc biểu mẫu nào (vd "1099-INT — Lãi ngân hàng"), và (b) DỰA THEO KIẾN THỨC THUẾ CỦA BẠN, loại thu nhập này có BẮT BUỘC phải khai trên Form 1040 hay không, kèm lý do ngắn gọn (vd "Lãi ngân hàng — LUÔN bắt buộc khai dù ngân hàng không gửi 1099-INT (dưới $10)"; "Trợ cấp thất nghiệp (1099-G) — bắt buộc khai, là thu nhập chịu thuế"; "Đóng góp HSA (5498-SA) — thường KHÔNG cần khai nếu trong hạn mức, chỉ mang tính thông tin"). Cặp "1040 Tax Return vs TTS" (không liên quan WIT) KHÔNG áp dụng quy tắc 1 chiều này — vẫn so 2 chiều bình thường như trước.
+QUY TẮC CHIỀU SO SÁNH BẮT BUỘC: LUÔN LẤY WIT LÀM GỐC — duyệt qua TỪNG khoản thu nhập/khấu trừ XUẤT HIỆN TRÊN WIT (mỗi mã W-2/1099-INT/1099-DIV/1099-MISC/1099-NEC/1099-G/1099-R/5498...), rồi kiểm tra xem TTS CÓ ghi nhận khoản đó hay không. TUYỆT ĐỐI KHÔNG so chiều ngược lại — nếu TTS có 1 khoản mà WIT KHÔNG có, BỎ QUA khoản đó, không đưa vào bảng (vì WIT chỉ là dữ liệu bên thứ ba báo cáo, không phải danh sách đầy đủ mọi thu nhập). Với MỖI khoản có trên WIT nhưng KHÔNG thấy trên TTS: bắt buộc ghi trong note (a) khoản đó thuộc biểu mẫu nào (vd "1099-INT — Lãi ngân hàng"), và (b) DỰA THEO KIẾN THỨC THUẾ CỦA BẠN, loại thu nhập này có BẮT BUỘC phải khai trên Form 1040 hay không, kèm lý do ngắn gọn (vd "Lãi ngân hàng — LUÔN bắt buộc khai dù ngân hàng không gửi 1099-INT (dưới $10)"; "Trợ cấp thất nghiệp (1099-G) — bắt buộc khai, là thu nhập chịu thuế"; "Đóng góp HSA (5498-SA) — thường KHÔNG cần khai nếu trong hạn mức, chỉ mang tính thông tin").
 
-QUY TẮC RIÊNG cho khoản 1099-B (bán chứng khoán/cổ phiếu) trên WIT: nếu 1 khoản 1099-B trên WIT có ĐỦ CẢ 3 giá trị "Gross Proceeds", "Cost Basis", và "Wash Sale Loss Disallowed" (dù tên gọi trên WIT có thể viết tắt/khác chút, vd "Wash Sale Disallowed"), KHÔNG dùng thẳng "Gross Proceeds" làm giá trị cột "wit" — mà PHẢI TỰ TÍNH lãi/lỗ thực theo công thức: Gain = Gross Proceeds + Wash Sale Loss Disallowed − Cost Basis, rồi dùng ĐÚNG con số Gain này làm giá trị cột "wit" khi đối chiếu với 1040 Tax Return (dòng Capital gain/loss, Schedule D/Form 8949) hoặc TTS (dòng thu nhập lãi vốn). Nếu 1 khoản 1099-B THIẾU 1 trong 3 giá trị trên (vd không có Wash Sale, hoặc không có Cost Basis) thì KHÔNG áp dụng công thức này — coi "Wash Sale Loss Disallowed" bằng 0 nếu thiếu (không ảnh hưởng), nhưng nếu thiếu hẳn "Cost Basis" thì dùng nguyên "Gross Proceeds" làm giá trị wit như bình thường (không tự bịa Cost Basis). Trong note PHẢI ghi rõ công thức đã dùng và 3 số gốc (vd "Gain = $12,000 (Gross Proceeds) + $500 (Wash Sale Disallowed) − $10,000 (Cost Basis) = $2,500").
+QUY TẮC RIÊNG cho khoản 1099-B (bán chứng khoán/cổ phiếu) trên WIT: nếu 1 khoản 1099-B trên WIT có ĐỦ CẢ 3 giá trị "Gross Proceeds", "Cost Basis", và "Wash Sale Loss Disallowed" (dù tên gọi trên WIT có thể viết tắt/khác chút, vd "Wash Sale Disallowed"), KHÔNG dùng thẳng "Gross Proceeds" làm giá trị cột "wit" — mà PHẢI TỰ TÍNH lãi/lỗ thực theo công thức: Gain = Gross Proceeds + Wash Sale Loss Disallowed − Cost Basis, rồi dùng ĐÚNG con số Gain này làm giá trị cột "wit" khi đối chiếu với TTS (dòng thu nhập lãi vốn). Nếu 1 khoản 1099-B THIẾU 1 trong 3 giá trị trên (vd không có Wash Sale, hoặc không có Cost Basis) thì KHÔNG áp dụng công thức này — coi "Wash Sale Loss Disallowed" bằng 0 nếu thiếu (không ảnh hưởng), nhưng nếu thiếu hẳn "Cost Basis" thì dùng nguyên "Gross Proceeds" làm giá trị wit như bình thường (không tự bịa Cost Basis). Trong note PHẢI ghi rõ công thức đã dùng và 3 số gốc (vd "Gain = $12,000 (Gross Proceeds) + $500 (Wash Sale Disallowed) − $10,000 (Cost Basis) = $2,500").
 
-Luôn trả lời bằng 1 DANH SÁCH DÒNG (không phải văn xuôi) — mỗi dòng gồm: category (tên khoản), wit (số/giá trị trên WIT, "—" nếu không có/không áp dụng), taxReturn (số/giá trị trên bản 1040 Tax Return, "—" nếu không có/không áp dụng), tts (số/giá trị trên TTS, "—" nếu không có/không áp dụng), note (ghi chú ngắn — nêu RÕ chênh lệch giữa cặp nào nếu có, vd "1040 vs TTS lệch $2", "WIT vs 1040 khớp", giải thích cách suy luận nếu là ước tính gián tiếp, và nêu rõ nghĩa vụ khai 1040 theo quy tắc ở trên khi khoản WIT bị thiếu ở 1040/TTS). Nếu 1 tài liệu không có sẵn, để "—" ở đúng cột đó, không suy đoán. Nếu câu hỏi chỉ liên quan 1 khoản, trả về đúng 1 dòng. Nếu câu hỏi yêu cầu liệt kê nhiều khoản, trả nhiều dòng (áp dụng đúng quy tắc lấy WIT làm gốc ở trên khi liệt kê). Không bịa số liệu — chỉ dùng đúng số xuất hiện trong các văn bản được cung cấp. Category/note viết tiếng Việt trừ khi người dùng hỏi bằng tiếng Anh.
+Luôn trả lời bằng 1 DANH SÁCH DÒNG (không phải văn xuôi) — mỗi dòng gồm: category (tên khoản), wit (số/giá trị trên WIT, "—" nếu không có/không áp dụng), tts (số/giá trị trên TTS, "—" nếu không có/không áp dụng), note (ghi chú ngắn — nêu RÕ chênh lệch nếu có, vd "WIT vs TTS lệch $2", "WIT vs TTS khớp", giải thích cách suy luận nếu là ước tính gián tiếp, và nêu rõ nghĩa vụ khai 1040 theo quy tắc ở trên khi khoản WIT bị thiếu ở TTS). Nếu TTS không có sẵn, để "—" ở cột đó, không suy đoán. Nếu câu hỏi chỉ liên quan 1 khoản, trả về đúng 1 dòng. Nếu câu hỏi yêu cầu liệt kê nhiều khoản, trả nhiều dòng (áp dụng đúng quy tắc lấy WIT làm gốc ở trên khi liệt kê). Không bịa số liệu — chỉ dùng đúng số xuất hiện trong các văn bản được cung cấp. Category/note viết tiếng Việt trừ khi người dùng hỏi bằng tiếng Anh.
 
-Luôn trả lời bằng JSON đúng khuôn dạng: {"rows": [{"category": "...", "wit": "...", "taxReturn": "...", "tts": "...", "note": "..."}]}.`;
+Luôn trả lời bằng JSON đúng khuôn dạng: {"rows": [{"category": "...", "wit": "...", "tts": "...", "note": "..."}]}.`;
 
 const GEMINI_RESPONSE_SCHEMA = {
   type: Type.ARRAY,
@@ -207,18 +142,16 @@ const GEMINI_RESPONSE_SCHEMA = {
     properties: {
       category: { type: Type.STRING },
       wit: { type: Type.STRING },
-      taxReturn: { type: Type.STRING },
       tts: { type: Type.STRING },
       note: { type: Type.STRING },
     },
-    required: ["category", "wit", "taxReturn", "tts", "note"],
+    required: ["category", "wit", "tts", "note"],
   },
 };
 
-/** 1 tài liệu cụ thể người dùng đã CHỌN qua dropdown/checkbox (thêm 2026-08-26 theo yêu cầu "3
- * trường select cho 3 loại TTS/WIT/1040... list tất cả tên đang có") — `label` đã gồm sẵn năm +
- * tên người (vd "2025 - Sanchez, Jose E"), dùng trực tiếp làm tiêu đề khối trong prompt, KHÔNG
- * cần truyền `year` riêng nữa (mỗi tài liệu tự mang năm của chính nó, có thể khác năm nhau nếu
+/** 1 tài liệu cụ thể người dùng đã CHỌN qua dropdown/checkbox — `label` đã gồm sẵn năm + tên
+ * người (vd "2025 - Sanchez, Jose E"), dùng trực tiếp làm tiêu đề khối trong prompt, KHÔNG cần
+ * truyền `year` riêng nữa (mỗi tài liệu tự mang năm của chính nó, có thể khác năm nhau nếu
  * người dùng cố tình chọn lệch — hiếm nhưng không cấm). */
 export interface SelectedDocEntry {
   label: string;
@@ -227,7 +160,6 @@ export interface SelectedDocEntry {
 
 interface AskParams {
   wit: SelectedDocEntry[];
-  taxReturn: SelectedDocEntry | null;
   tts: SelectedDocEntry | null;
   history: CompareChatMessage[];
   message: string;
@@ -238,11 +170,7 @@ function buildDocumentsBlock(params: AskParams): string {
     params.wit.length > 0
       ? params.wit.map((w) => `[WIT - ${w.label}]\n${w.text}`).join("\n\n")
       : `[WIT]\n(Không có tài liệu này)`;
-  return [
-    witBlock,
-    params.taxReturn ? `[1040 Tax Return - ${params.taxReturn.label}]\n${params.taxReturn.text}` : `[1040 Tax Return]\n(Không có tài liệu này)`,
-    params.tts ? `[TTS - ${params.tts.label}]\n${params.tts.text}` : `[TTS]\n(Không có tài liệu này)`,
-  ].join("\n\n");
+  return [witBlock, params.tts ? `[TTS - ${params.tts.label}]\n${params.tts.text}` : `[TTS]\n(Không có tài liệu này)`].join("\n\n");
 }
 
 function parseRowsFromJsonText(text: string): AiCompareRow[] {
@@ -254,14 +182,23 @@ function parseRowsFromJsonText(text: string): AiCompareRow[] {
       (r): r is AiCompareRow => Boolean(r) && typeof r === "object" && typeof (r as AiCompareRow).category === "string"
     );
   } catch {
-    return [{ category: "—", wit: "—", taxReturn: "—", tts: "—", note: text.slice(0, 300) }];
+    return [{ category: "—", wit: "—", tts: "—", note: text.slice(0, 300) }];
   }
 }
 
-/** Gọi Gemini — nhận `params` đã được `askCompareDocs()` rút gọn "1040 Tax Return" xuống 2
- * trang gốc từ trước (xem `extractForm1040Pages()`), tránh vượt 60s giới hạn cứng của Vercel với
- * tài liệu CRM gộp 30-100+ trang. */
-async function askGemini(params: AskParams): Promise<AiCompareRow[]> {
+/** So sánh WIT/TTS đã chọn, trả về DẠNG BẢNG (structured output), qua Gemini
+ * (`gemini-3.5-flash-lite`, free tier ~1.500 request/ngày). Nếu Gemini hết quota (429 dai dẳng
+ * kể cả sau retry ngắn), `AiRateLimitError` ném thẳng ra ngoài — route bắt riêng để trả thông
+ * báo rõ ràng. `history` là các lượt chat TRƯỚC (không gồm `message` mới nhất, `content` của
+ * lượt assistant là JSON rows đã stringify — gửi lại nguyên văn cho model làm ngữ cảnh, model
+ * đọc hiểu được JSON bình thường); mỗi lượt gửi lại toàn bộ text các tài liệu đã chọn (không có
+ * cơ chế lưu context phía server cho luồng đơn giản này). `wit` là MẢNG (WIT có thể chọn 2 file
+ * vì có 2 người khai, Taxpayer + Spouse) — route gọi hàm này chịu trách nhiệm tải/trích trước,
+ * hàm này chỉ lắp ráp prompt + gọi model. */
+export async function askCompareDocs(params: AskParams): Promise<AiCompareRow[]> {
+  if (!isGeminiConfigured()) {
+    throw new AiProviderConfigError("Chưa cấu hình GEMINI_API_KEY");
+  }
   const ai = getGeminiClient();
   const documentsBlock = buildDocumentsBlock(params);
   const contents = [
@@ -276,10 +213,7 @@ async function askGemini(params: AskParams): Promise<AiCompareRow[]> {
         // "gemini-3.6-flash" (bản trước) chỉ 20 request/NGÀY cho free tier (đã xác nhận thật qua
         // lỗi RESOURCE_EXHAUSTED thật trên production) — đổi sang "gemini-3.5-flash-lite"
         // (2026-08-27, nghiên cứu + verify sống): free tier ~1.500 request/ngày (gấp 75 lần),
-        // vẫn hỗ trợ đầy đủ responseSchema/structured output, đủ dùng cho tác vụ đối chiếu số
-        // liệu WIT/1040/TTS (không cần suy luận phức tạp như model flagship). "gemini-2.5-flash"/
-        // "gemini-2.5-flash-lite" đã ngừng cấp cho user mới (xác nhận thật 2026-08-25/27 — gọi API
-        // trả lỗi 404 kèm khuyến nghị đổi sang bản 3.5/3.6).
+        // vẫn hỗ trợ đầy đủ responseSchema/structured output.
         model: "gemini-3.5-flash-lite",
         contents,
         config: {
@@ -293,28 +227,4 @@ async function askGemini(params: AskParams): Promise<AiCompareRow[]> {
     "Gemini xử lý quá lâu — thử lại, hoặc chọn ít tài liệu hơn (vd bớt 1 file WIT)."
   );
   return parseRowsFromJsonText(response.text ?? "[]");
-}
-
-/** So sánh các tài liệu ĐÃ CHỌN (WIT/1040 Tax Return/TTS), trả về DẠNG BẢNG (structured output),
- * qua Gemini (`gemini-3.5-flash-lite`, free tier ~1.500 request/ngày — đủ rộng rãi nên đã GỠ
- * Groq dự phòng, 2026-08-27). Nếu Gemini hết quota (429 dai dẳng kể cả sau retry ngắn),
- * `AiRateLimitError` ném thẳng ra ngoài — route bắt riêng để trả thông báo rõ ràng. `history` là
- * các lượt chat TRƯỚC (không gồm `message` mới nhất, `content` của lượt assistant là JSON rows
- * đã stringify — gửi lại nguyên văn cho model làm ngữ cảnh, model đọc hiểu được JSON bình
- * thường); mỗi lượt gửi lại toàn bộ text các tài liệu đã chọn (không có cơ chế lưu context phía
- * server cho luồng đơn giản này). `wit` là MẢNG (thêm 2026-08-26 — WIT có thể chọn 2 file vì có
- * 2 người khai, Taxpayer + Spouse) — route gọi hàm này chịu trách nhiệm tải/trích trước, hàm này
- * chỉ lắp ráp prompt + gọi model. */
-export async function askCompareDocs(rawParams: AskParams): Promise<AiCompareRow[]> {
-  if (!isGeminiConfigured()) {
-    throw new AiProviderConfigError("Chưa cấu hình GEMINI_API_KEY");
-  }
-  // Rút gọn "1040 Tax Return" xuống 2 trang gốc TRƯỚC khi gọi Gemini — CRM gộp chung 30-100+
-  // trang Schedule/worksheet vào 1 file, gửi nguyên văn từng gây timeout thật (504, vượt 60s
-  // giới hạn cứng của Vercel Hobby).
-  const params: AskParams = {
-    ...rawParams,
-    taxReturn: rawParams.taxReturn ? { ...rawParams.taxReturn, text: extractForm1040Pages(rawParams.taxReturn.text) } : null,
-  };
-  return askGemini(params);
 }

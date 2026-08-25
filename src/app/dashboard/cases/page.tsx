@@ -1536,12 +1536,11 @@ function RowCells({
   compareTtsWitChat: (payload: {
     caseId: string;
     tts?: { url: string; label: string } | null;
-    taxReturn?: { url: string; label: string } | null;
     wit?: { url: string; label: string }[];
     message: string;
     history: { role: "user" | "assistant"; content: string }[];
   }) => Promise<
-    | { ok: true; rows: { category: string; wit: string; taxReturn: string; tts: string; note: string }[] }
+    | { ok: true; rows: { category: string; wit: string; tts: string; note: string }[] }
     | { ok: false; error: string }
   >;
   deleteRow: (caseId: string, deletedByUserId: string) => void;

@@ -1,20 +1,22 @@
 ---
 name: crm-tts-wit-compare
-description: How TTS (Tax Return Transcript / Record of Account), WIT (Wage & Income Transcript), and "1040 Tax Return" documents from the external CRM tax.agentc3.com are structured, and how the "Get Files" popup's AI chat ("So sánh WIT / 1040 / TTS (AI)") compares any pair of them using Gemini free tier (gemini-3.5-flash-lite, ~1,500 req/day) with structured output — Groq fallback was tried and removed 2026-08-27. Read this before touching src/lib/crm-doc-compare.ts, the compare-tts-wit-chat API route, or the compare UI inside src/components/crm-tts-wit-check-button.tsx — or before extending/debugging that feature.
+description: How TTS (Tax Return Transcript / Record of Account) and WIT (Wage & Income Transcript) documents from the external CRM tax.agentc3.com are structured, and how the "Get Files" popup's AI chat ("So sánh WIT / TTS (AI)") compares them using Gemini free tier (gemini-3.5-flash-lite, ~1,500 req/day) with structured output — Groq fallback and "1040 Tax Return" comparison were both tried and removed 2026-08-27 (the raw "1040 Tax Return" file-links section itself, unrelated to AI comparison, still exists). Read this before touching src/lib/crm-doc-compare.ts, the compare-tts-wit-chat API route, or the compare UI inside src/components/crm-tts-wit-check-button.tsx — or before extending/debugging that feature.
 ---
 
-# So sánh WIT / 1040 Tax Return / TTS trong popup "Get Files" (cột "Doc CRM")
+# So sánh WIT / TTS trong popup "Get Files" (cột "Doc CRM")
 
 Tính năng nằm trong popup có sẵn của nút "Get Files" (`CrmTtsWitCheckButton`, xem thêm lịch sử
 tính năng đọc link TTS/WIT/1040/Other ở phần cuối `.claude/rules/deployment-database-sync.md`).
-Đọc file này trước khi làm/sửa phần so sánh.
+Popup vẫn hiện 4 khối link TTS/WIT/"1040 Tax Return"/Other để tải/xem file gốc (không đổi) —
+chỉ tính năng SO SÁNH BẰNG AI ở đây mới CHỈ còn WIT/TTS. Đọc file này trước khi làm/sửa phần so
+sánh.
 
-**Trạng thái hiện tại (2026-08-27, cập nhật cuối — ĐÃ GỠ GROQ)**: CHỈ CÒN 1 cơ chế so sánh —
-khung chat `CompareChatSection` ("So sánh WIT / 1040 / TTS (AI)"), đặt Ở ĐẦU popup (trước cả 3
-khối link TTS/WIT/1040/Other), dùng **DUY NHẤT Gemini** (`gemini-3.5-flash-lite`, free tier
-~1.500 request/ngày) trả về DẠNG BẢNG (structured output) với ĐỦ 3 cột giá trị **WIT | 1040 |
-TTS** cho mỗi hạng mục — cho phép người dùng tự nhìn ra chênh lệch giữa BẤT KỲ cặp nào trong 3
-tài liệu (WIT-1040, 1040-TTS, WIT-TTS), không chỉ WIT-TTS như thiết kế ban đầu.
+**Trạng thái hiện tại (2026-08-27, cập nhật cuối — ĐÃ GỠ GROQ VÀ ĐÃ GỠ 1040 KHỎI SO SÁNH)**: CHỈ
+CÒN 1 cơ chế so sánh — khung chat `CompareChatSection` ("So sánh WIT / TTS (AI)"), đặt Ở ĐẦU
+popup (trước 4 khối link TTS/WIT/1040/Other), dùng **DUY NHẤT Gemini** (`gemini-3.5-flash-lite`,
+free tier ~1.500 request/ngày) trả về DẠNG BẢNG (structured output) với 2 cột giá trị **WIT |
+TTS** cho mỗi hạng mục. Bản đầu (2026-08-26) từng có 3 cột WIT/1040/TTS — người dùng yêu cầu bỏ
+hẳn 1040 khỏi so sánh 2026-08-27 (xem mục lịch sử #14), CHỈ còn WIT-TTS.
 
 **Lịch sử kiến trúc AI provider (đọc theo thứ tự để hiểu vì sao đi qua nhiều bước)**: Gemini
 model flagship (`gemini-3.6-flash`, 20 req/ngày) → phát hiện quá thấp → đổi hẳn sang Groq →
@@ -179,72 +181,54 @@ Gemini đọc đúng và đối chiếu đúng cả 3 nguồn.
    - `extractPdfText(buffer)` — `pdfjs-dist` bản `legacy/build/pdf.js`, server-only (cần
      `serverExternalPackages: ["pdfjs-dist"]` trong `next.config.ts`, gotcha cũ về
      `require("canvas")` — xem comment trong file đó, KHÔNG xoá đoạn alias client-side đã có
-     sẵn cho Notice Splitter). Dùng chung cho cả 3 loại tài liệu. **Nối các trang bằng `"\n"`**
-     (`pages.join("\n")`) — ranh giới này `extractForm1040Pages()` DỰA VÀO để tách lại từng
-     trang, đừng đổi ký tự nối nếu không cập nhật hàm đó theo.
+     sẵn cho Notice Splitter). Dùng chung cho cả TTS/WIT. Nối các trang bằng `"\n"`.
    - `SelectedDocEntry = {label, text}` — 1 tài liệu CỤ THỂ người dùng đã chọn, `label` đã gồm
      sẵn năm + tên người (vd `"2025 - Sanchez, Jose E"`, xây ở client) dùng thẳng làm tiêu đề
-     khối trong prompt — KHÔNG còn truyền `year` riêng (mỗi tài liệu tự mang năm của chính nó).
-   - `askCompareDocs({wit: SelectedDocEntry[], taxReturn: SelectedDocEntry | null, tts:
-     SelectedDocEntry | null, history, message}): Promise<AiCompareRow[]>` — hàm DUY NHẤT route
-     gọi. Rút gọn `taxReturn.text` qua `extractForm1040Pages()` TRƯỚC KHI gọi Gemini (CRM gộp
-     chung 30-100+ trang schedule/worksheet vào 1 file, gửi nguyên văn từng gây `504` thật do
-     vượt 60s giới hạn cứng Vercel — xem mục lịch sử #8), rồi gọi thẳng `askGemini(params)`. WIT/
-     TTS KHÔNG rút gọn. **Không còn try/catch fallback provider nào** (đơn giản hoá 2026-08-27
-     sau khi gỡ Groq) — lỗi từ Gemini (kể cả `AiRateLimitError` 429) ném thẳng ra route.
-   - `askGemini(params)` — dùng `@google/genai` (`GoogleGenAI` client, đọc `GEMINI_API_KEY`) —
-     `ai.models.generateContent({model: "gemini-3.5-flash-lite", contents, config:
-     {systemInstruction, responseMimeType: "application/json", responseSchema}})` — **structured
-     output** (`responseSchema` = `Type.ARRAY` of `Type.OBJECT{category, wit, taxReturn, tts,
-     note}`). Model **đổi 2026-08-27** từ `gemini-3.6-flash` (flagship, chỉ 20 request/NGÀY free
-     tier — xác nhận thật) sang `gemini-3.5-flash-lite` (free tier ~1.500 request/ngày, gấp 75
-     lần, vẫn hỗ trợ đầy đủ structured output — xem mục lịch sử #11). `contents` là mảng
-     `{role: "user"|"model", parts: [{text}]}` — SDK dùng `"model"` cho lượt AI.
-   - `extractForm1040Pages(fullText)`/`isForm1040Page(pageText)` — tách `fullText` lại thành
-     từng trang qua `split("\n")` (khớp ranh giới `extractPdfText` đã nối). **Viết lại hoàn toàn
-     2026-08-27** (bug thật — xem mục lịch sử #10): KHÔNG còn chỉ xét đầu trang hay dựa vào số
-     trang — quét TOÀN TRANG tìm cụm boilerplate IRS chính thức: trang 1 qua
-     `"U.S. Individual Income Tax Return"` (ở BẤT KỲ ĐÂU trong trang), trang 2 qua TỔ HỢP ≥2
-     trong 3 cụm riêng của trang 2 (`"Standard deduction for-"`/`"Third Party Designee"`/
-     `"Amount from line 11a (adjusted gross income)"`). Loại Schedule qua tìm
-     `"SCHEDULE {mã} ... (Form 1040)"` ở bất kỳ đâu trong trang (KHÔNG loại theo "có nhắc mã Form
-     khác" — chính trang 1/2 thật cũng tự nhắc "Form 8919"/"Form 8995" trong mô tả dòng của nó).
-     Không khớp trang nào → fallback lấy 2 "trang" ĐẦU (an toàn hơn gửi rỗng, dù có thể không
-     đúng thật là Form 1040 nếu PDF đổi cấu trúc hoàn toàn khác).
+     khối trong prompt.
+   - `askCompareDocs({wit: SelectedDocEntry[], tts: SelectedDocEntry | null, history, message}):
+     Promise<AiCompareRow[]>` — hàm DUY NHẤT route gọi, KHÔNG còn rút gọn/xử lý gì trước khi gọi
+     Gemini (đã bỏ hẳn `taxReturn`/`extractForm1040Pages`/`isForm1040Page` — mục lịch sử #14,
+     những hàm này CHỈ tồn tại để xử lý "1040 Tax Return", nay không cần nữa). Gọi thẳng
+     `ai.models.generateContent()` với `@google/genai` (`GoogleGenAI` client, đọc
+     `GEMINI_API_KEY`) — `model: "gemini-3.5-flash-lite"`, `responseSchema` = `Type.ARRAY` of
+     `Type.OBJECT{category, wit, tts, note}` (**chỉ 2 cột giá trị**, không còn `taxReturn`).
+     Model **đổi 2026-08-27** từ `gemini-3.6-flash` (flagship, chỉ 20 request/NGÀY free tier —
+     xác nhận thật) sang `gemini-3.5-flash-lite` (free tier ~1.500 request/ngày, gấp 75 lần —
+     xem mục lịch sử #11). `contents` là mảng `{role: "user"|"model", parts: [{text}]}` — SDK
+     dùng `"model"` cho lượt AI. Bọc `withTimeout()` (50s, mục lịch sử #13) rồi `withAiRetry()`
+     (`ai-retry.ts`, retry 429 ngắn hạn).
    - `parseRowsFromJsonText(text)` — parse mảng rows trần `[...]` từ Gemini (vẫn chấp nhận thêm
-     hình dạng `{rows:[...]}` phòng hờ model trả sai định dạng, không phải vì còn Groq).
+     hình dạng `{rows:[...]}` phòng hờ model trả sai định dạng).
    - `isGeminiConfigured()`/`AiProviderConfigError` — thiếu `GEMINI_API_KEY` thì route tự trả
      501 rõ ràng ("Chưa cấu hình GEMINI_API_KEY"), không crash app.
-   - `withAiRetry()`/`AiRateLimitError` (`src/lib/ai-retry.ts`, tên vẫn TRUNG LẬP theo provider
-     dù giờ chỉ còn 1 nơi dùng — không đổi lại tên, phòng hờ cần thêm provider khác sau này) —
-     tự retry tối đa 2 lần (1.5s rồi 3s) trước khi ném `AiRateLimitError` (429) ra ngoài route.
 2. **Route `POST /api/agentc3-import/compare-tts-wit-chat`** — nhận `{caseId, tts?: {url,label},
-   taxReturn?: {url,label}, wit?: {url,label}[], message, history}` — client gửi THẲNG URL +
-   label của từng file ĐÃ CHỌN (route KHÔNG tự tra `fetchTtsWitDatesByYear` nữa, KHÁC route
-   `check-latest-tts` — route này chỉ tải/trích/gọi `askCompareDocs()` theo đúng URL nhận được).
+   wit?: {url,label}[], message, history}` — client gửi THẲNG URL + label của từng file ĐÃ CHỌN
+   (route KHÔNG tự tra `fetchTtsWitDatesByYear` nữa, KHÁC route `check-latest-tts` — route này
+   chỉ tải/trích/gọi `askCompareDocs()` theo đúng URL nhận được).
    `fetchAgentC3FileBytes()` tự validate URL thuộc domain CRM (chặn SSRF) — không cần thêm lớp
    kiểm tra nào khác vì `canViewCase` đã gate quyền xem hồ sơ, và session CRM vốn dùng chung 1
    tài khoản công ty (không phải ranh giới riêng tư giữa các case). `wit` giới hạn `.slice(0,2)`
-   (tối đa 2 file). **Validate 400** nếu số loại tài liệu có chọn (đếm `tts`/`taxReturn`/
-   `wit.length>0` — mỗi loại tính 1, không tính số file) < 2 — thông báo "Chọn ít nhất 2 loại
-   tài liệu (TTS/WIT/1040) để so sánh". `history` giữ tối đa 6 tin gần nhất — không lưu DB. Bắt
-   `AiProviderConfigError` (501) và `AiRateLimitError` (429, Gemini hết quota).
+   (tối đa 2 file). **Validate 400** nếu THIẾU 1 trong 2 (`!tts || wit.length === 0`) — thông
+   báo "Chọn đủ TTS và WIT để so sánh" (đổi từ "chọn ≥2/3 loại" khi còn 1040, mục lịch sử #14).
+   `history` giữ tối đa 6 tin gần nhất — không lưu DB. Bắt `AiProviderConfigError` (501),
+   `AiRateLimitError` (429, Gemini hết quota), `AiTimeoutError` (504, xử lý quá lâu).
 3. **UI** (`CompareChatSection` trong `crm-tts-wit-check-button.tsx`, ĐẶT Ở ĐẦU popup — trước
-   `<div className="mt-4 grid grid-cols-2 ...">` chứa `DocGroup` TTS/WIT) — **3 trường chọn tài
+   `<div className="mt-4 grid grid-cols-2 ...">` chứa `DocGroup` TTS/WIT) — **2 trường chọn tài
    liệu** (`buildDocOptions()` duyệt CẢ 3 năm 2023-2025, gộp thành 1 danh sách phẳng
    `{url, label}[]`, label = `"{năm} - {tên người hoặc ngày}"`):
    - TTS: `<select>` đơn (1 file).
    - WIT: dropdown dạng `<details>` CHỈ MỞ KHI BẤM (không hiện sẵn), tick tối đa 2
      (`toggleWit()` tự khoá checkbox thứ 3 trở đi khi đã chọn đủ 2, không cảnh báo — chỉ
      disable).
-   - 1040: `<select>` đơn (1 file).
-   Nút Gửi/input chỉ bật khi `selectedTypeCount >= 2` (đếm SỐ LOẠI đã chọn ≥1 file, không phải
-   tổng số file). Gõ trống rồi bấm Gửi → dùng `t("crmCompareChat.defaultMessage")` làm câu hỏi
-   mặc định ("So sánh các tài liệu đã chọn, liệt kê chênh lệch chi tiết."). State UI dùng type
-   `ChatEntry` riêng (KHÁC `CompareChatMessage` dây API) — tin user giữ `text` thô, tin assistant
-   giữ SẴN `rows: AiCompareRow[]` + `columns` (cột nào đã chọn lúc hỏi) đã parse — bảng kết quả
-   ĐẦY ĐỦ chỉ hiện ở popup "Kết quả phân tích AI" RIÊNG cạnh popup chính (khung chat trong popup
-   "Doc CRM" giờ CHỈ hiện lại câu đã hỏi, không lặp lại bảng — xem mục 7 lịch sử quyết định).
+   Nút Gửi/input chỉ bật khi `ready = Boolean(ttsUrl) && witUrls.length > 0` (BẮT BUỘC cả 2, đổi
+   2026-08-27 từ "chọn ≥2/3 loại" khi còn 1040 — mục lịch sử #14). Gõ trống rồi bấm Gửi → dùng
+   `t("crmCompareChat.defaultMessage")` làm câu hỏi mặc định ("So sánh các tài liệu đã chọn,
+   liệt kê chênh lệch chi tiết."). State UI dùng type `ChatEntry` riêng (KHÁC `CompareChatMessage`
+   dây API) — tin user giữ `text` thô, tin assistant giữ SẴN `rows: AiCompareRow[]` + `columns`
+   (cột nào đã chọn lúc hỏi) đã parse — bảng kết quả ĐẦY ĐỦ chỉ hiện ở popup "Kết quả phân tích
+   AI" RIÊNG cạnh popup chính (khung chat trong popup "Doc CRM" giờ CHỈ hiện lại câu đã hỏi,
+   không lặp lại bảng — xem mục 7 lịch sử quyết định). Bảng file "1040 Tax Return" (link tải/
+   xem gốc, `DocGroup`) VẪN GIỮ NGUYÊN riêng biệt bên dưới, không liên quan khung chat này.
 
 **Biến môi trường**: CHỈ CẦN `GEMINI_API_KEY` (đã gỡ `GROQ_API_KEY` 2026-08-27 — nếu vẫn còn để
 trong `.env.local`/Vercel Environment Variables, vô hại (không đọc tới) nhưng nên dọn cho gọn):
@@ -511,6 +495,33 @@ khác biệt so với 2 biến thể đã biết) thay vì đoán mò sửa lạ
     lại lỗi timeout LẶP LẠI nhiều lần (không phải 1 lần đơn lẻ), cần điều tra sâu hơn (có thể do
     1 combo tài liệu cụ thể lớn hơn hẳn ca đã test, hoặc Gemini free tier có độ trễ cao hơn vào
     giờ cao điểm).
+
+14. **(2026-08-27, cùng ngày, sau mục #13) GỠ HẲN "1040 Tax Return" khỏi tính năng so sánh —
+    chỉ còn WIT + TTS** — người dùng yêu cầu thẳng "bỏ tính năng và dropdown so sánh với 1040,
+    chỉ check TTS và WIT". Đây là thay đổi PHẠM VI (không phải bug/hiệu năng như mục #10/#13),
+    làm gọn hẳn tính năng vì 1040 vốn là nguồn phức tạp nhất (PDF CRM gộp 30-100+ trang, cần
+    `extractForm1040Pages()`/`isForm1040Page()` riêng để lọc đúng 2 trang gốc — cả 2 hàm này đã
+    **XOÁ SẠCH** cùng lúc, không còn lý do tồn tại). Thay đổi xuyên suốt:
+    - `crm-doc-compare.ts`: `AiCompareRow`/`AskParams`/`GEMINI_RESPONSE_SCHEMA` bỏ field
+      `taxReturn`, chỉ còn `{category, wit, tts, note}`. `CHAT_SYSTEM_INSTRUCTION` viết lại ngắn
+      gọn — bỏ hẳn phần "3 tài liệu"/"3 cặp đối chiếu", chỉ còn 1 cặp WIT vs TTS (quy tắc "LUÔN
+      LẤY WIT LÀM GỐC" và công thức Gain 1099-B GIỮ NGUYÊN, chỉ đổi đối tượng so sánh từ
+      "1040/TTS" thành "TTS"). Xoá `extractForm1040Pages()`/`isForm1040Page()`.
+    - Route (`compare-tts-wit-chat/route.ts`): bỏ field `taxReturn` khỏi body, validate đổi từ
+      "chọn ≥2/3 loại" thành "PHẢI có cả TTS lẫn WIT" (`!tts || wit.length === 0` → 400).
+    - `api-client.ts`/`app-store.ts`/`cases/page.tsx`: bỏ `taxReturn` khỏi mọi type khai báo của
+      `compareTtsWitChat`.
+    - `crm-tts-wit-check-button.tsx`: `CompareChatSection` bỏ hẳn `<select>` "1040" (giờ chỉ còn
+      2 ô TTS/WIT, `grid-cols-3` → `grid-cols-2`), `CompareColumns` bỏ `taxReturn`, `ready` đổi
+      từ "chọn ≥2/3" thành `Boolean(ttsUrl) && witUrls.length > 0` (bắt buộc CẢ 2), `AiRowsTable`
+      bỏ cột "1040". **Bảng file "1040 Tax Return" (link tải/xem gốc trên CRM, `DocGroup`) VẪN
+      GIỮ NGUYÊN** dưới popup — chỉ tính năng SO SÁNH BẰNG AI mới bỏ 1040, người dùng vẫn mở/tải
+      file 1040 gốc bình thường qua đúng khu vực đó để tự đọc, không mất chức năng xem file.
+    - i18n (`crmCompareChat.title`/`crmCompare.missingDocs`, VI+EN): bỏ nhắc "1040".
+    - Đã verify sống qua `askCompareDocs()` (script tạm, dữ liệu WIT+TTS giả lập) — trả đúng
+      2 cột `wit`/`tts`, không còn `taxReturn`. `tsc --noEmit`/`eslint` sạch toàn bộ file liên
+      quan. **Không cần bước production nào** (không đổi schema/feature-permission) — chỉ cần
+      deploy code.
 
 ## 4. Giới hạn đã biết
 
