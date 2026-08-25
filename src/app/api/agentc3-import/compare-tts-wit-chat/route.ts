@@ -3,8 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
 import { canViewCase } from "@/lib/rbac";
 import { AgentC3ConfigError, AgentC3LoginError, AgentC3NotFoundError, fetchAgentC3FileBytes } from "@/lib/agentc3-client";
-import { askCompareDocs, extractPdfText, GeminiConfigError, type CompareChatMessage, type SelectedDocEntry } from "@/lib/crm-doc-compare";
-import { GeminiRateLimitError } from "@/lib/gemini-retry";
+import { askCompareDocs, extractPdfText, AiProviderConfigError, type CompareChatMessage, type SelectedDocEntry } from "@/lib/crm-doc-compare";
+import { AiRateLimitError } from "@/lib/ai-retry";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -28,9 +28,10 @@ async function fetchEntry(sel: DocSelection | null | undefined): Promise<Selecte
  * `.claude/skills/crm-tts-wit-compare/SKILL.md`. Đổi kiến trúc 2026-08-26: KHÔNG còn chọn theo
  * "năm" (tự lấy bản mới nhất) — người dùng CHỌN CHÍNH XÁC file nào qua 3 trường select ở UI
  * (TTS/1040 single-select, WIT multi-select tối đa 2 file vì có Taxpayer+Spouse), client gửi
- * thẳng `{url, label}` của từng file đã chọn. Route CHỈ tải/trích/gọi Gemini — không tự tra CRM
- * lại như route cũ (không cần `year`/`customerId` nữa). Dùng Gemini API (free tier, người dùng
- * đã xác nhận chấp nhận đánh đổi dữ liệu bị dùng để train). Trả về `rows` (structured output).
+ * thẳng `{url, label}` của từng file đã chọn. Route CHỈ tải/trích/gọi model — không tự tra CRM
+ * lại như route cũ (không cần `year`/`customerId` nữa). Ưu tiên Gemini, tự động fallback sang
+ * Groq khi Gemini hết quota (xem `askCompareDocs`/crm-doc-compare.ts). Trả về `rows`
+ * (structured output).
  * Không lưu DB — chat chỉ tồn tại trong state React lúc popup đang mở. */
 export async function POST(request: NextRequest) {
   const me = await requireUser();
@@ -87,10 +88,10 @@ export async function POST(request: NextRequest) {
     if (err instanceof AgentC3ConfigError) {
       return NextResponse.json({ ok: false, error: "Chưa cấu hình tài khoản CRM agentc3" }, { status: 501 });
     }
-    if (err instanceof GeminiConfigError) {
-      return NextResponse.json({ ok: false, error: "Chưa cấu hình GEMINI_API_KEY" }, { status: 501 });
+    if (err instanceof AiProviderConfigError) {
+      return NextResponse.json({ ok: false, error: err.message }, { status: 501 });
     }
-    if (err instanceof GeminiRateLimitError) {
+    if (err instanceof AiRateLimitError) {
       return NextResponse.json({ ok: false, error: err.message }, { status: 429 });
     }
     if (err instanceof AgentC3LoginError) return NextResponse.json({ ok: false, error: err.message }, { status: 502 });
