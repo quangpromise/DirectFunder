@@ -55,10 +55,15 @@ KHÔNG khôi phục lại trừ khi người dùng yêu cầu rõ ràng.
      file khác nhau (token thứ 2 trong tên file CRM: `W&I`/`W&IS`) — `extractDocSubType()` trong
      `agentc3-client.ts` đọc token này, đưa LÊN ĐẦU nhãn (vd `"W&I - Nguyen, Pyon Ngoc"`, KHÔNG
      phải để trong ngoặc sau tên — đã đổi lại theo yêu cầu "W&I và W&IS sẽ đưa lên đầu tên").
-   - **Cột "Chênh lệch" tự tính + tô màu** (`computeDiff()`/`formatDiff()` trong
-     `crm-tts-wit-check-button.tsx`) — đọc số đầu tiên trong mỗi cột giá trị ĐANG HIỆN (bỏ dấu
-     phẩy nghìn), lấy max-min; xanh nếu bằng 0 (khớp), đỏ có nền highlight nếu khác 0, "—" nếu
-     <2 giá trị đọc được thành số (category không phải số, vd "Filing status").
+   - **Cột "Chênh lệch" tự tính + tô màu THEO HƯỚNG WIT** (`computeDiff()`/`formatDiff()` trong
+     `crm-tts-wit-check-button.tsx`, đổi màu 2026-08-27 theo yêu cầu "nếu WIT lớn hơn TTS/1040
+     thì đỏ, còn lệch WIT nhỏ hơn thì xanh như khớp") — đọc số đầu tiên trong mỗi cột giá trị
+     ĐANG HIỆN (bỏ dấu phẩy nghìn), số hiện ra vẫn là max-min (không đổi), nhưng MÀU giờ dựa vào
+     `witIsHighest`: **đỏ** CHỈ khi có chọn cột WIT VÀ giá trị WIT là giá trị LỚN NHẤT trong các
+     cột đang so (WIT báo thu nhập nhiều hơn tờ khai/IRS ghi nhận = rủi ro khai thiếu); **xanh**
+     mọi trường hợp còn lại (khớp tuyệt đối, WIT bằng/thấp hơn, hoặc không chọn cột WIT nên
+     không có gốc so sánh theo hướng này); "—" nếu <2 giá trị đọc được thành số (category không
+     phải số, vd "Filing status").
    - **Bảng chỉ hiện đúng cột đã chọn** — `AiRowsTable` nhận `columns: {wit,taxReturn,tts}`
      (lưu THEO TỪNG LƯỢT chat, không phải global — lựa chọn có thể đổi giữa các lượt hỏi) thay
      vì luôn hiện cả 3 cột.

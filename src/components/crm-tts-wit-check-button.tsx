@@ -259,26 +259,39 @@ function parseAmountLike(value: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/** Chênh lệch giữa các cột giá trị SỐ đang hiện (2 hoặc 3 cột, tuỳ đã chọn mấy loại tài liệu)
- * — cách nhau xa nhất trừ gần nhất, đủ để bao quát cả trường hợp so 2 lẫn 3 tài liệu cùng lúc
+/** Kết quả tính cột "Chênh lệch": `magnitude` là số hiện ra (cách nhau xa nhất trừ gần nhất,
+ * giữ nguyên cách tính cũ), `witIsHighest` quyết định MÀU (thêm 2026-08-27 theo yêu cầu "WIT
+ * lớn hơn TTS/1040 thì đỏ, WIT nhỏ hơn thì xanh như khớp") — `true` khi cột WIT có chọn VÀ giá
+ * trị WIT là giá trị LỚN NHẤT trong các cột đang so (WIT báo thu nhập nhiều hơn tờ khai/IRS đã
+ * ghi nhận = rủi ro khai thiếu, tô đỏ); `false` khi WIT không phải giá trị lớn nhất (WIT bằng
+ * hoặc nhỏ hơn — tô xanh, coi như ổn); `null` khi không chọn cột WIT (không có gốc so sánh theo
+ * hướng WIT, giữ màu trung tính dựa theo `magnitude === 0` như bảng cũ). */
+interface DiffResult {
+  magnitude: number;
+  witIsHighest: boolean | null;
+}
+
+/** Chênh lệch giữa các cột giá trị SỐ đang hiện (2 hoặc 3 cột, tuỳ đã chọn mấy loại tài liệu) —
+ * cách nhau xa nhất trừ gần nhất, đủ để bao quát cả trường hợp so 2 lẫn 3 tài liệu cùng lúc
  * trong 1 cột duy nhất (thêm 2026-08-27). `null` nếu chưa đủ 2 giá trị đọc được thành số (vd
  * hạng mục không phải số như "Filing status"). */
-function computeDiff(row: AiCompareRow, columns: CompareColumns): number | null {
-  const values: number[] = [];
-  if (columns.wit) {
-    const n = parseAmountLike(row.wit);
-    if (n !== null) values.push(n);
-  }
+function computeDiff(row: AiCompareRow, columns: CompareColumns): DiffResult | null {
+  const witVal = columns.wit ? parseAmountLike(row.wit) : null;
+  const others: number[] = [];
   if (columns.taxReturn) {
     const n = parseAmountLike(row.taxReturn);
-    if (n !== null) values.push(n);
+    if (n !== null) others.push(n);
   }
   if (columns.tts) {
     const n = parseAmountLike(row.tts);
-    if (n !== null) values.push(n);
+    if (n !== null) others.push(n);
   }
+  const values = [...(witVal !== null ? [witVal] : []), ...others];
   if (values.length < 2) return null;
-  return Math.max(...values) - Math.min(...values);
+  const max = Math.max(...values);
+  const min = Math.min(...values);
+  const witIsHighest = witVal === null ? null : witVal === max && max !== min;
+  return { magnitude: max - min, witIsHighest };
 }
 
 function formatDiff(diff: number): string {
@@ -287,7 +300,9 @@ function formatDiff(diff: number): string {
 
 /** Bảng nhỏ cho 1 lượt trả lời của AI — CHỈ hiện đúng cột (WIT/1040/TTS) đã chọn lúc hỏi (thêm
  * 2026-08-27 theo yêu cầu "bảng phân tích chỉ hiện các cột được chọn"), cộng 1 cột "Chênh lệch"
- * tự tính + tô màu (đỏ = lệch, xanh = khớp) để không phải tự dò từng cột. */
+ * tự tính + tô màu THEO HƯỚNG WIT (đỏ = WIT cao hơn TTS/1040 — rủi ro khai thiếu, xanh = WIT
+ * bằng/thấp hơn hoặc không chọn cột WIT — coi như ổn, thêm 2026-08-27) để không phải tự dò
+ * từng cột. */
 function AiRowsTable({ rows, columns, wrap }: { rows: AiCompareRow[]; columns: CompareColumns; wrap?: boolean }) {
   const t = useT();
   if (rows.length === 0) return null;
@@ -310,6 +325,10 @@ function AiRowsTable({ rows, columns, wrap }: { rows: AiCompareRow[]; columns: C
         <tbody>
           {rows.map((row, i) => {
             const diff = computeDiff(row, columns);
+            // Đỏ CHỈ khi WIT là giá trị cao nhất trong các cột đang so (khai thiếu so với bên
+            // thứ ba báo cáo = rủi ro) — mọi trường hợp còn lại (khớp, WIT thấp hơn/bằng, hoặc
+            // không chọn cột WIT nên không có gốc so sánh) tô xanh, coi như ổn.
+            const isRed = diff !== null && diff.witIsHighest === true;
             return (
               <tr key={i} className="border-t border-border">
                 <td className={`${cellCls} font-medium`}>{row.category}</td>
@@ -320,12 +339,12 @@ function AiRowsTable({ rows, columns, wrap }: { rows: AiCompareRow[]; columns: C
                   className={`whitespace-nowrap px-2 py-1.5 text-right font-semibold tabular-nums ${
                     diff === null
                       ? "text-text-faint"
-                      : diff === 0
-                        ? "text-emerald-600 light:text-emerald-700"
-                        : "rounded bg-red-500/15 text-red-400 light:bg-red-100 light:text-red-700"
+                      : isRed
+                        ? "rounded bg-red-500/15 text-red-400 light:bg-red-100 light:text-red-700"
+                        : "text-emerald-600 light:text-emerald-700"
                   }`}
                 >
-                  {diff === null ? "—" : formatDiff(diff)}
+                  {diff === null ? "—" : formatDiff(diff.magnitude)}
                 </td>
                 <td className={`${cellCls} ${wrap ? "" : "whitespace-normal"} text-text-faint`}>{row.note}</td>
               </tr>
