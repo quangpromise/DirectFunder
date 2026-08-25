@@ -1,6 +1,6 @@
 ---
 name: crm-tts-wit-compare
-description: How TTS (Tax Return Transcript / Record of Account), WIT (Wage & Income Transcript), and "1040 Tax Return" documents from the external CRM tax.agentc3.com are structured, and how the "Get Files" popup's AI chat ("So sánh WIT / 1040 / TTS (AI)") compares any pair of them using a HYBRID Gemini-then-Groq free-tier setup with structured output (Gemini first, auto-fallback to Groq when Gemini's daily quota is exhausted). Read this before touching src/lib/crm-doc-compare.ts, the compare-tts-wit-chat API route, or the compare UI inside src/components/crm-tts-wit-check-button.tsx — or before extending/debugging that feature.
+description: How TTS (Tax Return Transcript / Record of Account), WIT (Wage & Income Transcript), and "1040 Tax Return" documents from the external CRM tax.agentc3.com are structured, and how the "Get Files" popup's AI chat ("So sánh WIT / 1040 / TTS (AI)") compares any pair of them using Gemini free tier (gemini-3.5-flash-lite, ~1,500 req/day) with structured output — Groq fallback was tried and removed 2026-08-27. Read this before touching src/lib/crm-doc-compare.ts, the compare-tts-wit-chat API route, or the compare UI inside src/components/crm-tts-wit-check-button.tsx — or before extending/debugging that feature.
 ---
 
 # So sánh WIT / 1040 Tax Return / TTS trong popup "Get Files" (cột "Doc CRM")
@@ -9,17 +9,27 @@ Tính năng nằm trong popup có sẵn của nút "Get Files" (`CrmTtsWitCheckB
 tính năng đọc link TTS/WIT/1040/Other ở phần cuối `.claude/rules/deployment-database-sync.md`).
 Đọc file này trước khi làm/sửa phần so sánh.
 
-**Trạng thái hiện tại (2026-08-27, cập nhật cuối)**: CHỈ CÒN 1 cơ chế so sánh — khung chat
-`CompareChatSection` ("So sánh WIT / 1040 / TTS (AI)"), đặt Ở ĐẦU popup (trước cả 3 khối link
-TTS/WIT/1040/Other), dùng **HYBRID Gemini + Groq (2 provider free tier)** trả về DẠNG BẢNG
-(structured output) với ĐỦ 3 cột giá trị **WIT | 1040 | TTS** cho mỗi hạng mục — cho phép người
-dùng tự nhìn ra chênh lệch giữa BẤT KỲ cặp nào trong 3 tài liệu (WIT-1040, 1040-TTS, WIT-TTS),
-không chỉ WIT-TTS như thiết kế ban đầu. **Ưu tiên Gemini, TỰ ĐỘNG fallback sang Groq khi Gemini
-hết quota** — xem mục lịch sử #8 và mục 2 (kiến trúc hiện tại) bên dưới, ĐÂY LÀ THAY ĐỔI QUAN
-TRỌNG NHẤT ngày 2026-08-27, đọc kỹ trước khi sửa `crm-doc-compare.ts`. **Bảng cố định thuần
-regex (`CompareSection`, chỉ so WIT-TTS) đã BỊ XOÁ HOÀN TOÀN** 2026-08-26 theo yêu cầu người
-dùng ("bỏ compare cũ đã tạo trước đó") — xem mục lịch sử bên dưới, KHÔNG khôi phục lại trừ khi
-người dùng yêu cầu rõ ràng.
+**Trạng thái hiện tại (2026-08-27, cập nhật cuối — ĐÃ GỠ GROQ)**: CHỈ CÒN 1 cơ chế so sánh —
+khung chat `CompareChatSection` ("So sánh WIT / 1040 / TTS (AI)"), đặt Ở ĐẦU popup (trước cả 3
+khối link TTS/WIT/1040/Other), dùng **DUY NHẤT Gemini** (`gemini-3.5-flash-lite`, free tier
+~1.500 request/ngày) trả về DẠNG BẢNG (structured output) với ĐỦ 3 cột giá trị **WIT | 1040 |
+TTS** cho mỗi hạng mục — cho phép người dùng tự nhìn ra chênh lệch giữa BẤT KỲ cặp nào trong 3
+tài liệu (WIT-1040, 1040-TTS, WIT-TTS), không chỉ WIT-TTS như thiết kế ban đầu.
+
+**Lịch sử kiến trúc AI provider (đọc theo thứ tự để hiểu vì sao đi qua nhiều bước)**: Gemini
+model flagship (`gemini-3.6-flash`, 20 req/ngày) → phát hiện quá thấp → đổi hẳn sang Groq →
+phát hiện Groq TPM=8.000 quá nhỏ cho "1040 Tax Return" → đổi HYBRID (Gemini ưu tiên + Groq
+fallback tự động) → nghiên cứu tìm ra `gemini-3.5-flash-lite` free tier ~1.500 req/ngày (gấp 75
+lần model flagship) → **GỠ HẲN Groq** (2026-08-27, cùng ngày, quyết định CUỐI) vì quota Gemini
+mới đủ rộng rãi, không còn cần dự phòng, đơn giản hoá code đáng kể (bỏ 2 bộ schema, 2 định dạng
+message, lớp lỗi payload-too-large riêng của Groq). Xem mục lịch sử #8/#11/#12 bên dưới cho chi
+tiết từng bước — các mục nói về Groq VẪN GIỮ NGUYÊN làm lịch sử tham khảo (đừng xoá), nhưng
+**code hiện tại KHÔNG còn dùng Groq nữa** — nếu thấy comment/code nào còn nhắc `groq-sdk`/
+`GROQ_API_KEY`/`askGroq`, đó là tàn dư cần dọn, báo lại ngay.
+
+**Bảng cố định thuần regex (`CompareSection`, chỉ so WIT-TTS) đã BỊ XOÁ HOÀN TOÀN** 2026-08-26
+theo yêu cầu người dùng ("bỏ compare cũ đã tạo trước đó") — xem mục lịch sử bên dưới, KHÔNG khôi
+phục lại trừ khi người dùng yêu cầu rõ ràng.
 
 ## Lịch sử quyết định quan trọng (đọc trước khi đổi lại kiến trúc)
 
@@ -163,7 +173,7 @@ với tính năng so sánh WIT/1040/TTS ở skill này) để tránh 2 tính nă
 $68,069 = 1040 Tax Return $68,069 = TTS $68,069.00 — khớp tuyệt đối cả 3 tài liệu, xác nhận
 Gemini đọc đúng và đối chiếu đúng cả 3 nguồn.
 
-## 2. Kiến trúc HIỆN TẠI — HYBRID Gemini + Groq (đã triển khai, kiểm tra lại code trước khi tin 100%)
+## 2. Kiến trúc HIỆN TẠI — CHỈ Gemini (đã gỡ Groq 2026-08-27, kiểm tra lại code trước khi tin 100%)
 
 1. **`src/lib/crm-doc-compare.ts`**:
    - `extractPdfText(buffer)` — `pdfjs-dist` bản `legacy/build/pdf.js`, server-only (cần
@@ -176,75 +186,49 @@ Gemini đọc đúng và đối chiếu đúng cả 3 nguồn.
      sẵn năm + tên người (vd `"2025 - Sanchez, Jose E"`, xây ở client) dùng thẳng làm tiêu đề
      khối trong prompt — KHÔNG còn truyền `year` riêng (mỗi tài liệu tự mang năm của chính nó).
    - `askCompareDocs({wit: SelectedDocEntry[], taxReturn: SelectedDocEntry | null, tts:
-     SelectedDocEntry | null, history, message})` — hàm DUY NHẤT route gọi, tự quyết định gọi
-     Gemini hay Groq bên trong (route/UI không biết/không cần biết đang dùng provider nào):
-     ```ts
-     export async function askCompareDocs(params) {
-       const geminiOk = isGeminiConfigured(), groqOk = isGroqConfigured();
-       if (!geminiOk && !groqOk) throw new AiProviderConfigError(...);
-       if (geminiOk) {
-         try { return await askGemini(params); }
-         catch (err) {
-           if (!(err instanceof AiRateLimitError) || !groqOk) throw err;
-           console.warn("[crm-doc-compare] Gemini hết quota, tự động chuyển sang Groq");
-         }
-       }
-       return askGroq(params);
-     }
-     ```
-     Chỉ fallback khi lỗi CHÍNH XÁC là `AiRateLimitError` (429 dai dẳng kể cả sau retry) — lỗi
-     Gemini khác (400/403/500...) ném thẳng ra ngoài, KHÔNG âm thầm chuyển Groq (tránh che giấu
-     lỗi thật không liên quan quota). Nếu chỉ 1 trong 2 provider có key, dùng đúng provider đó
-     (không cố gọi provider thiếu key).
-   - `askGemini(params)` — gửi NGUYÊN VĂN đầy đủ mọi tài liệu (không rút gọn) vì Gemini xử lý
-     tài liệu dài tốt. Dùng `@google/genai` (`GoogleGenAI` client, đọc `GEMINI_API_KEY`) —
-     `ai.models.generateContent({model: "gemini-3.6-flash", contents, config: {systemInstruction,
-     responseMimeType: "application/json", responseSchema}})` — **structured output**
-     (`responseSchema` = `Type.ARRAY` of `Type.OBJECT{category, wit, taxReturn, tts, note}`).
-     `contents` là mảng `{role: "user"|"model", parts: [{text}]}` — SDK dùng `"model"` cho lượt
-     AI (KHÁC Groq/OpenAI-style dùng `"assistant"`).
-   - `askGroq(params)` — DỰ PHÒNG, chỉ chạy khi Gemini hết quota. **Rút gọn riêng field
-     `taxReturn.text`** qua `extractForm1040Pages()` trước khi gửi (WIT/TTS gửi nguyên văn, vốn
-     đã nhỏ) — Groq free tier giới hạn token/request thấp hơn nhiều so với Gemini (xem mục lịch
-     sử #8b). Dùng `groq-sdk` (`Groq` client, đọc `GROQ_API_KEY`), model **`openai/gpt-oss-120b`**
-     (model DUY NHẤT cùng `gpt-oss-20b` hỗ trợ `response_format: {type:"json_schema",
-     json_schema:{strict:true, schema}}` — "strict" đảm bảo JSON đúng schema tuyệt đối). Root
-     schema PHẢI là `type:"object"` (không phải mảng trần như Gemini) — bọc mảng rows trong
-     field `rows: {"rows":[...]}`, `additionalProperties:false` bắt buộc cho strict mode. Messages
-     dùng role `"assistant"` cho lượt AI (chuẩn OpenAI-style, KHÔNG cần tự map như Gemini).
+     SelectedDocEntry | null, history, message}): Promise<AiCompareRow[]>` — hàm DUY NHẤT route
+     gọi. Rút gọn `taxReturn.text` qua `extractForm1040Pages()` TRƯỚC KHI gọi Gemini (CRM gộp
+     chung 30-100+ trang schedule/worksheet vào 1 file, gửi nguyên văn từng gây `504` thật do
+     vượt 60s giới hạn cứng Vercel — xem mục lịch sử #8), rồi gọi thẳng `askGemini(params)`. WIT/
+     TTS KHÔNG rút gọn. **Không còn try/catch fallback provider nào** (đơn giản hoá 2026-08-27
+     sau khi gỡ Groq) — lỗi từ Gemini (kể cả `AiRateLimitError` 429) ném thẳng ra route.
+   - `askGemini(params)` — dùng `@google/genai` (`GoogleGenAI` client, đọc `GEMINI_API_KEY`) —
+     `ai.models.generateContent({model: "gemini-3.5-flash-lite", contents, config:
+     {systemInstruction, responseMimeType: "application/json", responseSchema}})` — **structured
+     output** (`responseSchema` = `Type.ARRAY` of `Type.OBJECT{category, wit, taxReturn, tts,
+     note}`). Model **đổi 2026-08-27** từ `gemini-3.6-flash` (flagship, chỉ 20 request/NGÀY free
+     tier — xác nhận thật) sang `gemini-3.5-flash-lite` (free tier ~1.500 request/ngày, gấp 75
+     lần, vẫn hỗ trợ đầy đủ structured output — xem mục lịch sử #11). `contents` là mảng
+     `{role: "user"|"model", parts: [{text}]}` — SDK dùng `"model"` cho lượt AI.
    - `extractForm1040Pages(fullText)`/`isForm1040Page(pageText)` — tách `fullText` lại thành
-     từng trang qua `split("\n")` (khớp ranh giới `extractPdfText` đã nối), giữ lại CHỈ trang
-     khớp: trang 1 (chứa cụm `"U.S. Individual Income Tax Return"` gần đầu trang) hoặc trang 2
-     tiếp theo (bắt đầu `"Form 1040 (năm) Page 2"`) — loại trừ mọi trang bắt đầu bằng
-     `"SCHEDULE"` hoặc `"Form {số khác 1040}"` (dù trang đó CÓ nhắc "Form 1040" ở đâu đó, vd
-     "SCHEDULE 1 ... (Form 1040)" — chỉ trang có "Form 1040" LÀ TIÊU ĐỀ CHÍNH CỦA CHÍNH NÓ mới
-     được giữ). Không khớp trang nào → fallback lấy 2 "trang" ĐẦU (an toàn hơn gửi rỗng, dù có
-     thể không đúng thật là Form 1040 nếu PDF đổi cấu trúc hoàn toàn khác).
-   - `parseRowsFromJsonText(text)` — dùng CHUNG cho cả 2 nhánh, chấp nhận CẢ 2 hình dạng JSON
-     (Gemini trả mảng trần `[...]`, Groq trả `{"rows":[...]}`) — `Array.isArray(parsed) ?
-     parsed : parsed?.rows`.
-   - `isGeminiConfigured()`/`isGroqConfigured()`/`AiProviderConfigError` — thiếu CẢ HAI
-     `GEMINI_API_KEY`/`GROQ_API_KEY` thì route tự trả 501 rõ ràng ("Chưa cấu hình
-     GEMINI_API_KEY/GROQ_API_KEY"), không crash app. Có ít nhất 1 trong 2 là chạy được.
-   - `withAiRetry()`/`AiRateLimitError` (`src/lib/ai-retry.ts`, đổi tên từ `withGeminiRetry`/
-     `GeminiRateLimitError` trong `gemini-retry.ts` cũ — giờ TRUNG LẬP theo provider, chỉ cần
-     lỗi có `status === 429`) — dùng CHUNG cho cả `askGemini`/`askGroq`, tự retry tối đa 2 lần
-     (1.5s rồi 3s) trước khi ném `AiRateLimitError` — đây chính là tín hiệu `askCompareDocs()`
-     dùng để quyết định có fallback Groq hay không.
+     từng trang qua `split("\n")` (khớp ranh giới `extractPdfText` đã nối). **Viết lại hoàn toàn
+     2026-08-27** (bug thật — xem mục lịch sử #10): KHÔNG còn chỉ xét đầu trang hay dựa vào số
+     trang — quét TOÀN TRANG tìm cụm boilerplate IRS chính thức: trang 1 qua
+     `"U.S. Individual Income Tax Return"` (ở BẤT KỲ ĐÂU trong trang), trang 2 qua TỔ HỢP ≥2
+     trong 3 cụm riêng của trang 2 (`"Standard deduction for-"`/`"Third Party Designee"`/
+     `"Amount from line 11a (adjusted gross income)"`). Loại Schedule qua tìm
+     `"SCHEDULE {mã} ... (Form 1040)"` ở bất kỳ đâu trong trang (KHÔNG loại theo "có nhắc mã Form
+     khác" — chính trang 1/2 thật cũng tự nhắc "Form 8919"/"Form 8995" trong mô tả dòng của nó).
+     Không khớp trang nào → fallback lấy 2 "trang" ĐẦU (an toàn hơn gửi rỗng, dù có thể không
+     đúng thật là Form 1040 nếu PDF đổi cấu trúc hoàn toàn khác).
+   - `parseRowsFromJsonText(text)` — parse mảng rows trần `[...]` từ Gemini (vẫn chấp nhận thêm
+     hình dạng `{rows:[...]}` phòng hờ model trả sai định dạng, không phải vì còn Groq).
+   - `isGeminiConfigured()`/`AiProviderConfigError` — thiếu `GEMINI_API_KEY` thì route tự trả
+     501 rõ ràng ("Chưa cấu hình GEMINI_API_KEY"), không crash app.
+   - `withAiRetry()`/`AiRateLimitError` (`src/lib/ai-retry.ts`, tên vẫn TRUNG LẬP theo provider
+     dù giờ chỉ còn 1 nơi dùng — không đổi lại tên, phòng hờ cần thêm provider khác sau này) —
+     tự retry tối đa 2 lần (1.5s rồi 3s) trước khi ném `AiRateLimitError` (429) ra ngoài route.
 2. **Route `POST /api/agentc3-import/compare-tts-wit-chat`** — nhận `{caseId, tts?: {url,label},
    taxReturn?: {url,label}, wit?: {url,label}[], message, history}` — client gửi THẲNG URL +
    label của từng file ĐÃ CHỌN (route KHÔNG tự tra `fetchTtsWitDatesByYear` nữa, KHÁC route
-   `check-latest-tts` — route này chỉ tải/trích/gọi `askCompareDocs()` theo đúng URL nhận được,
-   KHÔNG biết/không cần biết cuối cùng dùng Gemini hay Groq).
+   `check-latest-tts` — route này chỉ tải/trích/gọi `askCompareDocs()` theo đúng URL nhận được).
    `fetchAgentC3FileBytes()` tự validate URL thuộc domain CRM (chặn SSRF) — không cần thêm lớp
    kiểm tra nào khác vì `canViewCase` đã gate quyền xem hồ sơ, và session CRM vốn dùng chung 1
    tài khoản công ty (không phải ranh giới riêng tư giữa các case). `wit` giới hạn `.slice(0,2)`
    (tối đa 2 file). **Validate 400** nếu số loại tài liệu có chọn (đếm `tts`/`taxReturn`/
    `wit.length>0` — mỗi loại tính 1, không tính số file) < 2 — thông báo "Chọn ít nhất 2 loại
    tài liệu (TTS/WIT/1040) để so sánh". `history` giữ tối đa 6 tin gần nhất — không lưu DB. Bắt
-   `AiProviderConfigError` (501, thay `GeminiConfigError`/`GroqConfigError` cũ) và
-   `AiRateLimitError` (429, thay `GeminiRateLimitError` cũ — giờ CÓ THỂ đến từ Groq nếu CẢ 2
-   provider cùng hết quota, không chỉ Gemini).
+   `AiProviderConfigError` (501) và `AiRateLimitError` (429, Gemini hết quota).
 3. **UI** (`CompareChatSection` trong `crm-tts-wit-check-button.tsx`, ĐẶT Ở ĐẦU popup — trước
    `<div className="mt-4 grid grid-cols-2 ...">` chứa `DocGroup` TTS/WIT) — **3 trường chọn tài
    liệu** (`buildDocOptions()` duyệt CẢ 3 năm 2023-2025, gộp thành 1 danh sách phẳng
@@ -262,18 +246,17 @@ Gemini đọc đúng và đối chiếu đúng cả 3 nguồn.
    ĐẦY ĐỦ chỉ hiện ở popup "Kết quả phân tích AI" RIÊNG cạnh popup chính (khung chat trong popup
    "Doc CRM" giờ CHỈ hiện lại câu đã hỏi, không lặp lại bảng — xem mục 7 lịch sử quyết định).
 
-**Biến môi trường**: cần ÍT NHẤT 1 trong 2, khuyến khích có CẢ HAI để hybrid hoạt động đúng
-thiết kế:
+**Biến môi trường**: CHỈ CẦN `GEMINI_API_KEY` (đã gỡ `GROQ_API_KEY` 2026-08-27 — nếu vẫn còn để
+trong `.env.local`/Vercel Environment Variables, vô hại (không đọc tới) nhưng nên dọn cho gọn):
 - `GEMINI_API_KEY` — lấy tại `aistudio.google.com/apikey`, KHÔNG cần thẻ tín dụng cho free tier
   (định dạng key thật dạng `AQ.xxxxx...`, KHÔNG phải `AIzaSy...` như bản cũ hơn). Model đang
-  dùng: **`gemini-3.6-flash`** — KHÔNG PHẢI `gemini-2.5-flash` (đã thử, API trả lỗi 404 thật:
-  *"This model models/gemini-2.5-flash is no longer available to new users"*). **Free tier chỉ
-  20 request/NGÀY, tính theo Google Cloud Project** (xem mục lịch sử #8a) — đây là lý do CẦN có
-  Groq làm dự phòng, không phải lỗi cấu hình.
-- `GROQ_API_KEY` — lấy tại `console.groq.com`, cũng không cần thẻ tín dụng. Model đang dùng:
-  **`openai/gpt-oss-120b`** (xem lý do chọn ở mục kiến trúc phía trên) — free tier giới hạn
-  ~8.000 token/phút/request (xem mục lịch sử #8b), đây là lý do CẦN rút gọn "1040 Tax Return"
-  trước khi gửi Groq.
+  dùng: **`gemini-3.5-flash-lite`** (đổi 2026-08-27 từ `gemini-3.6-flash`, xem mục lịch sử #11)
+  — KHÔNG PHẢI `gemini-2.5-flash`/`gemini-2.5-flash-lite` (đã thử, API trả lỗi 404 thật: *"This
+  model ... is no longer available to new users"*, gợi ý đổi sang bản 3.5/3.6). Free tier
+  `gemini-3.6-flash` (flagship) chỉ **20 request/NGÀY, tính theo Google Cloud Project** (xem mục
+  lịch sử #8a) — `gemini-3.5-flash-lite` (bản Lite đang dùng) được báo **~1.500 request/ngày**
+  (gấp 75 lần, chưa xác nhận chắc 100% vì dữ liệu third-party — nếu vẫn hết quota bất thường,
+  kiểm tra lại con số này). Thiếu biến này thì route tự trả 501 rõ ràng, không crash app.
 
 ## 3. Đã verify với key thật (2026-08-25 → 2026-08-26)
 
@@ -377,19 +360,15 @@ khác biệt so với 2 biến thể đã biết) thay vì đoán mò sửa lạ
    `agentc3-client.ts`). Đã verify lại đúng file `.html` thật của `BY4849` — trích đúng
    506.818 ký tự nội dung WIT thật ("Wage and Income Transcript Request Date...").
 
-5. **(2026-08-27) UI thêm badge báo AI nào vừa trả lời** — theo yêu cầu "show đang sử dụng AI
-   nào" (trước đó chỉ đoán được qua log Vercel, xem dòng `console.warn` trong `askCompareDocs`).
-   `askCompareDocs()` giờ trả `{rows, provider: "gemini" | "groq"}` (kiểu `AskCompareResult`)
-   thay vì mảng trần — xuyên suốt route → `api-client.ts` → `app-store.ts` →
-   `crm-tts-wit-check-button.tsx` đều thêm field `provider`. UI hiện badge nhỏ (xanh dương
-   "Gemini" / cam "Groq") cạnh tiêu đề popup "Kết quả phân tích AI" (`AiProviderBadge`, đặt cạnh
-   `crmCompareChat.analysisTitle`). Đã verify trực tiếp qua `askCompareDocs()` (script tạm, key
-   Gemini còn quota) — trả đúng `provider: "gemini"`. Không verify được nhánh `"groq"` qua code
-   thật (cần Gemini hết quota thật để trigger fallback) — chỉ verify bằng đọc code (`askGroq()`
-   luôn được gọi kèm `provider: "groq"` ở đúng 1 nơi trong `askCompareDocs`, không có đường nào
-   khác gán sai). Nếu 1 hồ sơ đang chọn 2/3 loại tài liệu mà thấy badge "Groq", nghĩa là Gemini
-   đã hết 20 request/ngày hôm đó (dấu hiệu duy nhất người dùng cần để biết, không cần hỏi lại
-   log Vercel nữa).
+5. **(2026-08-27) UI từng thêm badge báo AI nào vừa trả lời — ĐÃ GỠ LẠI cùng ngày khi gỡ Groq**
+   — bản đầu theo yêu cầu "show đang sử dụng AI nào" (trước đó chỉ đoán được qua log Vercel),
+   `askCompareDocs()` từng trả `{rows, provider: "gemini" | "groq"}` (kiểu `AskCompareResult`)
+   xuyên suốt route → `api-client.ts` → `app-store.ts` → `crm-tts-wit-check-button.tsx`, UI hiện
+   badge nhỏ (xanh dương "Gemini" / cam "Groq") cạnh tiêu đề popup "Kết quả phân tích AI". Sau
+   khi gỡ hẳn Groq (mục lịch sử #12), badge chỉ còn hiện MỘT màu duy nhất mãi mãi — vô nghĩa,
+   nên đã bỏ luôn cùng lúc: `askCompareDocs()` quay về trả `AiCompareRow[]` trần (không còn
+   `AiProvider`/`AskCompareResult`/`AiProviderBadge`) — nếu cần biết AI nào trả lời trong tương
+   lai (vd thêm lại 1 provider dự phòng khác), làm lại từ đầu thay vì cố khôi phục code cũ.
 
 6. **(2026-08-27) Quy tắc tính Gain cho khoản 1099-B (bán chứng khoán) trên WIT** — theo yêu
    cầu "nếu có Gross Proceeds và Cost Basis và Wash Sale Disallowed thì lấy Gross Proceeds +
@@ -479,6 +458,41 @@ khác biệt so với 2 biến thể đã biết) thay vì đoán mò sửa lạ
     rõ nguyên nhân) — chỉ xảy ra khi Gemini hết quota NGÀY hôm đó, Gemini bình thường xử lý được
     document lớn cỡ này không vấn đề gì.
 
+11. **(2026-08-27, cùng ngày) Nghiên cứu + đổi model Gemini chính — 20 request/ngày → ~1.500
+    request/ngày** — theo yêu cầu "nghiên cứu có AI nào free phân tích được 1040 mà request
+    nhiều lần và token không". Đã tra cứu (WebSearch nhiều nguồn đối chiếu + WebFetch tài liệu
+    chính thức Google, dữ liệu third-party nên có thể lệch nhẹ theo thời gian) và VERIFY SỐNG:
+    `gemini-2.5-flash`/`gemini-2.5-flash-lite` đã ngừng cấp cho user mới (404, gợi ý đổi sang
+    bản 3.5/3.6). Gọi thật `gemini-3.5-flash-lite` — hoạt động đúng, trả structured output khớp
+    schema y hệt `gemini-3.6-flash` — free tier model này được nhiều nguồn báo cùng con số
+    **~1.500 request/ngày, 15 request/phút** (so với 20 request/NGÀY của `gemini-3.6-flash` —
+    gấp 75 lần). Groq (`llama-3.3-70b-versatile`, TPM=12.000) có TPM cao hơn `gpt-oss-120b`
+    (8.000) nhưng KHÔNG hỗ trợ `strict:true` — không đáng đánh đổi vì lợi ích chính nằm ở
+    Gemini, không phải Groq (Groq vẫn chỉ là dự phòng). Đã đổi `askGemini()` sang
+    `gemini-3.5-flash-lite`, verify sống qua `askCompareDocs()` đầy đủ — trả đúng
+    `provider: "gemini"`, kết quả structured đúng. **Đánh đổi đã biết**: "Flash-Lite" là bản nhẹ
+    hơn "Flash" thường, chất lượng suy luận có thể thấp hơn 1 chút — chấp nhận được cho tác vụ
+    đối chiếu số liệu (không cần suy luận phức tạp), người dùng đã xác nhận đổi qua
+    AskUserQuestion.
+
+12. **(2026-08-27, cùng ngày, ngay sau mục #11) GỠ HẲN Groq** — người dùng yêu cầu thẳng "gỡ bỏ
+    groq" ngay sau khi đổi model Gemini thành công. Lý do hợp lý: quota Gemini mới (~1.500
+    request/ngày) đủ rộng rãi nên khả năng cần fallback gần như bằng 0, giữ Groq chỉ còn là code
+    phức tạp không cần thiết (2 bộ response schema khác hình dạng, 2 định dạng message
+    Gemini-style/OpenAI-style, lớp lỗi `AiPayloadTooLargeError` riêng cho Groq 413/400, dependency
+    `groq-sdk`). Đã xoá SẠCH: `askGroq()`, `GROQ_RESPONSE_SCHEMA`, `isGroqConfigured()`/
+    `getGroqClient()`, `AiPayloadTooLargeError`/`isPayloadTooLargeStatus()`, import `Groq` từ
+    `groq-sdk` (+ `npm uninstall groq-sdk`), `AiProvider`/`AskCompareResult`/badge UI (mục #5).
+    `askCompareDocs()` giờ CHỈ gọi `askGemini()` thẳng, trả `AiCompareRow[]` trần — không còn
+    try/catch fallback provider nào. Route (`compare-tts-wit-chat/route.ts`) bỏ nhánh bắt
+    `AiPayloadTooLargeError`. `api-client.ts`/`app-store.ts`/`cases/page.tsx` bỏ field `provider`
+    khỏi kiểu trả về. `.env.example` bỏ đoạn `GROQ_API_KEY`. Đã verify sống qua `askCompareDocs()`
+    (script tạm, dữ liệu WIT/1040 giả lập) — vẫn trả đúng kết quả structured, không còn field
+    `provider`. `tsc --noEmit`/`eslint` sạch trên toàn bộ file liên quan. **Không cần bước
+    production nào** (không đổi schema/feature-permission) — chỉ cần deploy code; nếu
+    `GROQ_API_KEY` còn sót trong Vercel Environment Variables, có thể xoá cho gọn (vô hại nếu để
+    lại, code không đọc tới nữa).
+
 ## 4. Giới hạn đã biết
 
 - Không có OCR/fallback nếu CRM đổi định dạng PDF hoàn toàn khác — Gemini vẫn đọc được text lộn
@@ -488,14 +502,12 @@ khác biệt so với 2 biến thể đã biết) thay vì đoán mò sửa lạ
 - Nếu 1 năm có NHIỀU bản "1040 Tax Return"/TTS (hiếm, nhưng có thể xảy ra nếu khách sửa/nộp lại)
   route chỉ lấy bản `[0]` (mới nhất theo `fetchTtsWitDatesByYear`, đã sắp mới-nhất-trước) — WIT
   thì lấy TẤT CẢ (khử trùng theo người) vì WIT vốn nhiều người (Taxpayer+Spouse) là bình thường.
-- **Free tier Gemini chỉ 20 request/NGÀY (không phải chỉ giới hạn phút) — ĐÃ GẶP THẬT trên
-  production (2026-08-27), đã giải quyết bằng kiến trúc hybrid** — xem mục lịch sử #8 và mục 2
-  (kiến trúc hiện tại) ở trên cho lời giải đầy đủ. Tóm tắt: `withAiRetry()` (`ai-retry.ts`, đổi
-  tên từ `withGeminiRetry`/`gemini-retry.ts`) xử lý rate-limit NGẮN HẠN (RPM, retry 1.5s/3s);
-  khi hết quota NGÀY thật sự (429 dai dẳng), `askCompareDocs()` TỰ ĐỘNG chuyển sang Groq thay vì
-  chỉ báo lỗi cho người dùng — không còn cảnh "chờ 1 phút vẫn lỗi" như trước. Tính năng "Trợ lý
-  AI" (chat tự do, KHÔNG liên quan compare) đã xoá hẳn ở bước trung gian (xem mục "[ĐÃ XOÁ
-  2026-08-27]" đầu file) để giảm tải quota Gemini trước khi quyết định hybrid — quyết định đó
-  VẪN ĐÚNG, không cần khôi phục lại chỉ vì giờ đã có Groq dự phòng (2 vấn đề độc lập: tính năng
-  "Trợ lý AI" bị xoá vì KHÔNG CẦN THIẾT/tốn quota vô ích, không phải vì kỹ thuật không giải
-  quyết được).
+- **Free tier Gemini model flagship (`gemini-3.6-flash`) chỉ 20 request/NGÀY (không phải chỉ
+  giới hạn phút) — ĐÃ GẶP THẬT trên production (2026-08-27)** — xem mục lịch sử #8/#11. Đã đổi
+  model sang `gemini-3.5-flash-lite` (~1.500 request/ngày) thay vì tiếp tục dựa vào Groq dự
+  phòng (Groq ĐÃ GỠ HẲN, xem mục lịch sử #12) — nếu vẫn hết quota NGÀY thật sự dù đã đổi model
+  (429 dai dẳng kể cả sau retry của `withAiRetry()`), `AiRateLimitError` ném thẳng ra route,
+  người dùng thấy lỗi rõ ràng "đang bị giới hạn tốc độ — thử lại sau", KHÔNG còn tự động chuyển
+  provider nào khác. Tính năng "Trợ lý AI" (chat tự do, KHÔNG liên quan compare) đã xoá hẳn ở
+  bước trung gian (xem mục "[ĐÃ XOÁ 2026-08-27]" đầu file) để giảm tải quota Gemini — quyết định
+  đó VẪN ĐÚNG, không liên quan gì tới việc gỡ Groq (2 vấn đề độc lập).

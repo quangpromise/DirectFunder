@@ -7,7 +7,6 @@ import {
   askCompareDocs,
   extractDocumentText,
   AiProviderConfigError,
-  AiPayloadTooLargeError,
   type CompareChatMessage,
   type SelectedDocEntry,
 } from "@/lib/crm-doc-compare";
@@ -39,9 +38,9 @@ async function fetchEntry(sel: DocSelection | null | undefined): Promise<Selecte
  * "năm" (tự lấy bản mới nhất) — người dùng CHỌN CHÍNH XÁC file nào qua 3 trường select ở UI
  * (TTS/1040 single-select, WIT multi-select tối đa 2 file vì có Taxpayer+Spouse), client gửi
  * thẳng `{url, label}` của từng file đã chọn. Route CHỈ tải/trích/gọi model — không tự tra CRM
- * lại như route cũ (không cần `year`/`customerId` nữa). Ưu tiên Gemini, tự động fallback sang
- * Groq khi Gemini hết quota (xem `askCompareDocs`/crm-doc-compare.ts). Trả về `rows`
- * (structured output).
+ * lại như route cũ (không cần `year`/`customerId` nữa). Dùng Gemini (`gemini-3.5-flash-lite`,
+ * free tier ~1.500 request/ngày — xem `askCompareDocs`/crm-doc-compare.ts, đã gỡ Groq dự phòng
+ * 2026-08-27). Trả về `rows` (structured output).
  * Không lưu DB — chat chỉ tồn tại trong state React lúc popup đang mở. */
 export async function POST(request: NextRequest) {
   const me = await requireUser();
@@ -86,23 +85,20 @@ export async function POST(request: NextRequest) {
       Promise.all(wit.map((w) => fetchEntry(w))),
     ]);
 
-    const { rows, provider } = await askCompareDocs({
+    const rows = await askCompareDocs({
       wit: witEntries.filter((e): e is NonNullable<typeof e> => e !== null),
       taxReturn: taxReturnEntry,
       tts: ttsEntry,
       history,
       message: message.trim(),
     });
-    return NextResponse.json({ ok: true, rows, provider });
+    return NextResponse.json({ ok: true, rows });
   } catch (err) {
     if (err instanceof AgentC3ConfigError) {
       return NextResponse.json({ ok: false, error: "Chưa cấu hình tài khoản CRM agentc3" }, { status: 501 });
     }
     if (err instanceof AiProviderConfigError) {
       return NextResponse.json({ ok: false, error: err.message }, { status: 501 });
-    }
-    if (err instanceof AiPayloadTooLargeError) {
-      return NextResponse.json({ ok: false, error: err.message }, { status: 413 });
     }
     if (err instanceof AiRateLimitError) {
       return NextResponse.json({ ok: false, error: err.message }, { status: 429 });

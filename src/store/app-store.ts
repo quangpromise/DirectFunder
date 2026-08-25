@@ -473,7 +473,7 @@ interface AppState {
     message: string;
     history: { role: "user" | "assistant"; content: string }[];
   }) => Promise<
-    | { ok: true; rows: { category: string; wit: string; taxReturn: string; tts: string; note: string }[]; provider: "gemini" | "groq" }
+    | { ok: true; rows: { category: string; wit: string; taxReturn: string; tts: string; note: string }[] }
     | { ok: false; error: string }
   >;
   /** Nạp "My Notes" của chính user đang đăng nhập — gọi lần đầu mở popup (xem

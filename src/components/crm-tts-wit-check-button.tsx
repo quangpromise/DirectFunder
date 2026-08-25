@@ -57,18 +57,13 @@ export interface DocSelection {
  * liệu bị Google dùng để train). Người dùng CHỌN CHÍNH XÁC file nào qua 3 trường select (đổi
  * 2026-08-26 — không còn tự lấy theo năm), `wit` là mảng tối đa 2 file (Taxpayer + Spouse).
  * `caseId` đã đóng gói sẵn ở call site (`cases/page.tsx`). */
-/** Provider thực sự đã trả lời lượt hỏi đó — hiện ra UI (badge) để người dùng biết đang dùng
- * Gemini hay đã tự động rớt xuống Groq (thêm 2026-08-27 theo yêu cầu "show đang sử dụng AI
- * nào"), khỏi phải tự đoán/xem log Vercel. */
-export type AiProvider = "gemini" | "groq";
-
 export type CompareTtsWitChatFn = (payload: {
   tts?: DocSelection | null;
   taxReturn?: DocSelection | null;
   wit?: DocSelection[];
   message: string;
   history: CompareChatMessage[];
-}) => Promise<{ ok: true; rows: AiCompareRow[]; provider: AiProvider } | { ok: false; error: string }>;
+}) => Promise<{ ok: true; rows: AiCompareRow[] } | { ok: false; error: string }>;
 
 /**
  * Nút "Check log" ở cột "TTS & WIT Lastest" (thay cho 2 nút "Order 8821"/"TTS & WIT" đặt lệnh
@@ -104,7 +99,7 @@ export function CrmTtsWitCheckButton({
   // (thay vì giữ trong CompareChatSection) vì popup thứ 2 phải render NGANG HÀNG với popup
   // "Doc CRM" (2 phần tử `.popover` cạnh nhau trong cùng 1 flex row), không phải lồng bên
   // trong popup đó.
-  const [analysis, setAnalysis] = useState<{ rows: AiCompareRow[]; columns: CompareColumns; provider: AiProvider } | null>(null);
+  const [analysis, setAnalysis] = useState<{ rows: AiCompareRow[]; columns: CompareColumns } | null>(null);
   const t = useT();
 
   async function handleClick() {
@@ -171,10 +166,7 @@ export function CrmTtsWitCheckButton({
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="mb-3 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-semibold">{t("crmCompareChat.analysisTitle")}</h3>
-                    <AiProviderBadge provider={analysis.provider} />
-                  </div>
+                  <h3 className="text-sm font-semibold">{t("crmCompareChat.analysisTitle")}</h3>
                   <button onClick={() => setAnalysis(null)} className="text-text-faint hover:text-text" aria-label={t("common.close")}>
                     <X size={16} />
                   </button>
@@ -249,27 +241,7 @@ type CompareColumns = { wit: boolean; taxReturn: boolean; tts: boolean };
 /** 1 tin nhắn trong state UI — khác `CompareChatMessage` (dây API): tin user giữ text thô, tin
  * assistant giữ SẴN mảng rows đã parse (không phải chuỗi) để render bảng trực tiếp, không phải
  * parse lại mỗi lần re-render, kèm `columns` để bảng chỉ hiện đúng cột đã chọn lúc hỏi. */
-type ChatEntry =
-  | { role: "user"; text: string }
-  | { role: "assistant"; rows: AiCompareRow[]; columns: CompareColumns; provider: AiProvider };
-
-/** Badge nhỏ báo AI nào vừa trả lời — Gemini/Groq, đặt cạnh tiêu đề bảng kết quả (thêm
- * 2026-08-27). Groq chỉ xuất hiện khi Gemini đã hết quota (`askCompareDocs` tự fallback), nên
- * badge này còn là tín hiệu sớm cho biết Gemini đang hết hạn mức ngày hôm đó. */
-function AiProviderBadge({ provider }: { provider: AiProvider }) {
-  const isGemini = provider === "gemini";
-  return (
-    <span
-      className={`inline-flex shrink-0 items-center rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
-        isGemini
-          ? "border-blue-800/60 bg-blue-900/40 text-blue-200 light:border-blue-300 light:bg-blue-100 light:text-blue-900"
-          : "border-orange-800/60 bg-orange-900/40 text-orange-200 light:border-orange-300 light:bg-orange-100 light:text-orange-900"
-      }`}
-    >
-      {isGemini ? "Gemini" : "Groq"}
-    </span>
-  );
-}
+type ChatEntry = { role: "user"; text: string } | { role: "assistant"; rows: AiCompareRow[]; columns: CompareColumns };
 
 /** Chuyển `ChatEntry[]` (state UI) -> `CompareChatMessage[]` (payload gửi API) — tin assistant
  * nén rows thành JSON string (Gemini đọc hiểu JSON làm ngữ cảnh bình thường, xem
@@ -431,7 +403,7 @@ function CompareChatSection({
   onCompareChat: CompareTtsWitChatFn;
   /** Báo cho component cha (`CrmTtsWitCheckButton`) mỗi khi có kết quả AI mới — cha tự mở popup
    * "full bảng" thứ 2 cạnh popup này (thêm 2026-08-27). */
-  onAnalysis: (analysis: { rows: AiCompareRow[]; columns: CompareColumns; provider: AiProvider }) => void;
+  onAnalysis: (analysis: { rows: AiCompareRow[]; columns: CompareColumns }) => void;
 }) {
   const t = useT();
   const ttsOptions = buildDocOptions(result.tts);
@@ -472,8 +444,8 @@ function CompareChatSection({
       const witSel = witOptions.filter((o) => witUrls.includes(o.url));
       const res = await onCompareChat({ tts: ttsSel, taxReturn: taxReturnSel, wit: witSel, message, history });
       if (res.ok) {
-        setMessages((prev) => [...prev, { role: "assistant", rows: res.rows, columns, provider: res.provider }]);
-        onAnalysis({ rows: res.rows, columns, provider: res.provider });
+        setMessages((prev) => [...prev, { role: "assistant", rows: res.rows, columns }]);
+        onAnalysis({ rows: res.rows, columns });
       } else {
         setError(res.error);
       }

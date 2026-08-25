@@ -1,27 +1,29 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import Groq from "groq-sdk";
 import * as cheerio from "cheerio";
-import { withAiRetry, AiRateLimitError } from "@/lib/ai-retry";
+import { withAiRetry } from "@/lib/ai-retry";
 
 /**
  * So sánh WIT / "1040 Tax Return" / TTS trong popup "Get Files" — chat hỏi-đáp tự do, KHÔNG
  * dùng cơ chế regex cố định nữa (bảng regex ban đầu, chỉ so WIT-TTS, đã BỎ theo yêu cầu
  * 2026-08-26 — xem lịch sử quyết định trong `.claude/skills/crm-tts-wit-compare/SKILL.md`).
  *
- * **Kiến trúc HYBRID Gemini + Groq (2026-08-27, cùng ngày, bản CUỐI)** — lịch sử:
+ * **Kiến trúc: CHỈ Gemini (2026-08-27, cùng ngày, bản CUỐI — đã gỡ Groq)** — lịch sử:
  * 1. Ban đầu dùng Gemini free tier — hoá ra chỉ 20 request/NGÀY cho `gemini-3.6-flash`, tính
  *    theo Google Cloud PROJECT (không phải theo API key) — tạo key mới/project mới vẫn dính
  *    quota thấp y hệt (đã xác nhận thật qua lỗi RESOURCE_EXHAUSTED).
  * 2. Đổi hẳn sang Groq — phát hiện Groq free tier giới hạn ~8.000 token/PHÚT/request (model hỗ
  *    trợ structured output strict), quá nhỏ cho file "1040 Tax Return" thật (100K+ ký tự ≈
  *    30-50K token) — request bị từ chối thẳng (413).
- * 3. **Quyết định cuối**: dùng CẢ HAI, ưu tiên Gemini trước (xử lý tài liệu dài tốt, chỉ giới
- *    hạn SỐ LƯỢT/ngày) — khi Gemini hết quota (429 dai dẳng kể cả sau retry), TỰ ĐỘNG chuyển
- *    sang Groq. Vì Groq không kham nổi toàn văn "1040 Tax Return" (thường 30-100+ trang do CRM
- *    gộp chung mọi schedule/worksheet/tờ khai state vào 1 file duy nhất), khi fallback sang
- *    Groq CHỈ gửi đúng 2 trang "Form 1040" gốc (KHÔNG gửi Schedule 1/3/C/EIC/8812... hay các
- *    worksheet nội bộ phần mềm khai thuế đi kèm) — xem `extractForm1040Pages()`. WIT/TTS vốn
- *    đã nhỏ (thường <2K ký tự/file) nên KHÔNG cần rút gọn khi fallback.
+ * 3. Đổi sang HYBRID: ưu tiên Gemini, hết quota TỰ ĐỘNG chuyển Groq. `extractForm1040Pages()`
+ *    rút gọn "1040 Tax Return" xuống 2 trang gốc trước khi gửi (áp dụng cả 2 provider — sửa sau
+ *    khi gặp `504` thật do gửi nguyên văn 30-100+ trang cho Gemini, xem SKILL.md).
+ * 4. Nghiên cứu + đổi model Gemini chính từ `gemini-3.6-flash` (20 request/ngày) sang
+ *    `gemini-3.5-flash-lite` (~1.500 request/ngày, gấp 75 lần, verify sống hoạt động đúng) —
+ *    xem mục lịch sử #11 SKILL.md.
+ * 5. **(2026-08-27, cùng ngày) GỠ HẲN Groq** — với quota Gemini ~1.500/ngày, fallback gần như
+ *    không bao giờ cần tới nữa; gỡ bớt 1 provider giúp code đơn giản hơn hẳn (không còn 2 bộ
+ *    schema/2 định dạng message/2 lớp lỗi payload-too-large). Nếu Gemini hết quota, lỗi
+ *    `AiRateLimitError` (429) ném thẳng ra ngoài — route trả rõ "đang bị giới hạn tốc độ".
  *
  * Chạy SERVER-ONLY (`extractPdfText` cần Node thật cho `pdfjs-dist`; các hàm gọi model cần
  * giấu API key).
@@ -57,9 +59,9 @@ function looksLikePdf(buffer: Buffer): boolean {
  * trên production 2026-08-27: CRM đôi khi lưu WIT dưới dạng `.html` thay vì `.pdf`, vd
  * "2024,W&I,THIEN T NGUYEN 0034 11-10-2025 0131.html" — `extractPdfText()` ném thẳng
  * `InvalidPDFException: Invalid PDF structure` nếu cố parse HTML bằng `pdfjs`, khiến cả lượt so
- * sánh lỗi ngay từ bước đọc file, TRƯỚC KHI kịp gọi Gemini/Groq). Hàm này tự nhận diện định
- * dạng qua magic bytes rồi chọn đường trích đúng — route gọi hàm NÀY (không gọi thẳng
- * `extractPdfText`) cho MỌI tài liệu chọn từ dropdown TTS/WIT/1040. */
+ * sánh lỗi ngay từ bước đọc file, TRƯỚC KHI kịp gọi Gemini). Hàm này tự nhận diện định dạng qua
+ * magic bytes rồi chọn đường trích đúng — route gọi hàm NÀY (không gọi thẳng `extractPdfText`)
+ * cho MỌI tài liệu chọn từ dropdown TTS/WIT/1040. */
 export async function extractDocumentText(buffer: Buffer): Promise<string> {
   if (looksLikePdf(buffer)) return extractPdfText(buffer);
   const $ = cheerio.load(buffer.toString("utf-8"));
@@ -107,15 +109,12 @@ function isForm1040Page(pageText: string): boolean {
 }
 
 /** Rút gọn text đã trích của "1040 Tax Return" xuống ĐÚNG 2 trang Form 1040 gốc (bỏ mọi
- * Schedule/Form/worksheet đính kèm) — ÁP DỤNG CHO CẢ Gemini LẪN Groq (2026-08-27, đổi từ
- * "chỉ Groq" — lỗi thật gặp trên production: gửi nguyên văn 30-100+ trang CRM gộp chung sang
- * Gemini KHÔNG rút gọn khiến request vượt quá 60s giới hạn cứng của Vercel (Hobby plan không
- * nâng được), trả `504`). Không mất thông tin cần thiết cho việc so sánh (Wages/Interest/
- * Dividends/AGI... đều nằm trên chính 2 trang Form 1040), đồng thời khớp đúng những gì
- * `CHAT_SYSTEM_INSTRUCTION` vốn đã mô tả sẵn cho Gemini ("chỉ chứa ĐÚNG 2 trang chính thức").
- * Nếu không nhận diện được trang nào (PDF lạ/đổi định dạng), fallback về 2 "trang" ĐẦU (an toàn
- * hơn gửi trắng, dù có thể không phải đúng Form 1040) — không bao giờ trả về rỗng nếu input có
- * nội dung. */
+ * Schedule/Form/worksheet đính kèm) — CRM thường gộp chung 30-100+ trang schedule/worksheet/tờ
+ * khai state vào 1 file duy nhất, gửi nguyên văn từng gây timeout thật (504, vượt 60s giới hạn
+ * cứng của Vercel Hobby). Không mất thông tin cần thiết cho việc so sánh (Wages/Interest/
+ * Dividends/AGI... đều nằm trên chính 2 trang Form 1040). Nếu không nhận diện được trang nào
+ * (PDF lạ/đổi định dạng), fallback về 2 "trang" ĐẦU (an toàn hơn gửi trắng, dù có thể không phải
+ * đúng Form 1040) — không bao giờ trả về rỗng nếu input có nội dung. */
 function extractForm1040Pages(fullText: string): string {
   const pages = fullText.split("\n");
   const matched = pages.filter(isForm1040Page);
@@ -125,44 +124,14 @@ function extractForm1040Pages(fullText: string): string {
 
 export class AiProviderConfigError extends Error {}
 
-/** Tài liệu (sau khi đã rút gọn "1040 Tax Return") vẫn vượt giới hạn token/request của Groq
- * (~8.000 token/phút, lỗi thật gặp trên production 2026-08-27: `413 Request too large` dù đã
- * rút gọn 1040 xuống 2 trang — WIT có 2 khối Taxpayer+Spouse hoặc TTS có bảng TRANSACTIONS dài
- * cộng dồn vẫn có thể vượt ngưỡng này). Route bắt riêng lỗi này để trả thông báo RÕ NGUYÊN NHÂN
- * thay vì lỗi chung chung "Không so sánh được tài liệu". */
-export class AiPayloadTooLargeError extends Error {}
-
-/** Groq trả 2 dạng lỗi khác nhau tuỳ mức độ quá tải — `413` (vượt ~8.000 token/PHÚT, lỗi thật
- * gặp trên production) khi payload vượt ngưỡng throttle nhưng vẫn trong giới hạn context window,
- * hoặc `400 invalid_request_error/context_length_exceeded` khi payload vượt LUÔN cả giới hạn
- * context window của model (đã tự tái hiện qua payload cực lớn lúc verify) — cả 2 đều cùng 1
- * nguyên nhân gốc (tài liệu quá lớn), gộp chung xử lý. */
-function isPayloadTooLargeStatus(err: unknown): boolean {
-  if (typeof err !== "object" || err === null || !("status" in err)) return false;
-  const status = (err as { status?: unknown }).status;
-  if (status === 413) return true;
-  if (status !== 400) return false;
-  const code = (err as { error?: { error?: { code?: unknown } } }).error?.error?.code;
-  return code === "context_length_exceeded";
-}
-
 function isGeminiConfigured(): boolean {
   return Boolean(process.env.GEMINI_API_KEY);
-}
-function isGroqConfigured(): boolean {
-  return Boolean(process.env.GROQ_API_KEY);
 }
 
 let geminiClient: GoogleGenAI | null = null;
 function getGeminiClient(): GoogleGenAI {
   if (!geminiClient) geminiClient = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   return geminiClient;
-}
-
-let groqClient: Groq | null = null;
-function getGroqClient(): Groq {
-  if (!groqClient) groqClient = new Groq({ apiKey: process.env.GROQ_API_KEY });
-  return groqClient;
 }
 
 /** Tin nhắn user: `content` là text người dùng gõ. Tin nhắn assistant: `content` là
@@ -221,32 +190,6 @@ const GEMINI_RESPONSE_SCHEMA = {
   },
 };
 
-/** JSON Schema chuẩn (KHÁC `Type.*` enum của Gemini) — root PHẢI là object (không phải mảng
- * trần) để tương thích chế độ "strict" của Groq structured outputs, nên bọc mảng trong field
- * `rows`. `additionalProperties: false` bắt buộc cho strict mode. */
-const GROQ_RESPONSE_SCHEMA = {
-  type: "object",
-  properties: {
-    rows: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          category: { type: "string" },
-          wit: { type: "string" },
-          taxReturn: { type: "string" },
-          tts: { type: "string" },
-          note: { type: "string" },
-        },
-        required: ["category", "wit", "taxReturn", "tts", "note"],
-        additionalProperties: false,
-      },
-    },
-  },
-  required: ["rows"],
-  additionalProperties: false,
-};
-
 /** 1 tài liệu cụ thể người dùng đã CHỌN qua dropdown/checkbox (thêm 2026-08-26 theo yêu cầu "3
  * trường select cho 3 loại TTS/WIT/1040... list tất cả tên đang có") — `label` đã gồm sẵn năm +
  * tên người (vd "2025 - Sanchez, Jose E"), dùng trực tiếp làm tiêu đề khối trong prompt, KHÔNG
@@ -280,7 +223,6 @@ function buildDocumentsBlock(params: AskParams): string {
 function parseRowsFromJsonText(text: string): AiCompareRow[] {
   try {
     const parsed: unknown = JSON.parse(text);
-    // Gemini trả mảng trần; Groq trả {rows: [...]} — chấp nhận cả 2 hình dạng.
     const rows = Array.isArray(parsed) ? parsed : (parsed as { rows?: unknown })?.rows;
     if (!Array.isArray(rows)) return [];
     return rows.filter(
@@ -289,16 +231,6 @@ function parseRowsFromJsonText(text: string): AiCompareRow[] {
   } catch {
     return [{ category: "—", wit: "—", taxReturn: "—", tts: "—", note: text.slice(0, 300) }];
   }
-}
-
-/** Provider thực sự đã trả lời — hiện ra UI (badge cạnh bảng kết quả) để người dùng biết đang
- * dùng Gemini hay đã tự động rớt xuống Groq (thêm 2026-08-27 theo yêu cầu "show đang sử dụng AI
- * nào"), không cần tự đoán/xem log Vercel nữa. */
-export type AiProvider = "gemini" | "groq";
-
-export interface AskCompareResult {
-  rows: AiCompareRow[];
-  provider: AiProvider;
 }
 
 /** Gọi Gemini — nhận `params` đã được `askCompareDocs()` rút gọn "1040 Tax Return" xuống 2
@@ -315,9 +247,14 @@ async function askGemini(params: AskParams): Promise<AiCompareRow[]> {
   ];
   const response = await withAiRetry(() =>
     ai.models.generateContent({
-      // "gemini-2.5-flash" đã ngừng cấp cho user mới (xác nhận thật 2026-08-25 — gọi API trả
-      // lỗi 404 kèm khuyến nghị đổi sang model này) — vẫn thuộc free tier.
-      model: "gemini-3.6-flash",
+      // "gemini-3.6-flash" (bản trước) chỉ 20 request/NGÀY cho free tier (đã xác nhận thật qua
+      // lỗi RESOURCE_EXHAUSTED thật trên production) — đổi sang "gemini-3.5-flash-lite"
+      // (2026-08-27, nghiên cứu + verify sống): free tier ~1.500 request/ngày (gấp 75 lần),
+      // vẫn hỗ trợ đầy đủ responseSchema/structured output, đủ dùng cho tác vụ đối chiếu số
+      // liệu WIT/1040/TTS (không cần suy luận phức tạp như model flagship). "gemini-2.5-flash"/
+      // "gemini-2.5-flash-lite" đã ngừng cấp cho user mới (xác nhận thật 2026-08-25/27 — gọi API
+      // trả lỗi 404 kèm khuyến nghị đổi sang bản 3.5/3.6).
+      model: "gemini-3.5-flash-lite",
       contents,
       config: {
         systemInstruction: CHAT_SYSTEM_INSTRUCTION,
@@ -329,74 +266,26 @@ async function askGemini(params: AskParams): Promise<AiCompareRow[]> {
   return parseRowsFromJsonText(response.text ?? "[]");
 }
 
-/** Gọi Groq — DỰ PHÒNG khi Gemini hết quota. Free tier Groq giới hạn token/request thấp
- * (~8.000 token/phút cho model hỗ trợ structured output strict), nhưng `params` đã được
- * `askCompareDocs()` rút gọn "1040 Tax Return" từ trước (chung 1 bước với Gemini, xem
- * `extractForm1040Pages()`) nên không cần rút gọn lại ở đây. */
-async function askGroq(params: AskParams): Promise<AiCompareRow[]> {
-  const groq = getGroqClient();
-  const documentsBlock = buildDocumentsBlock(params);
-  const messages: Groq.Chat.Completions.ChatCompletionMessageParam[] = [
-    { role: "system", content: CHAT_SYSTEM_INSTRUCTION },
-    { role: "user", content: `Đây là toàn văn các tài liệu:\n\n${documentsBlock}` },
-    { role: "assistant", content: JSON.stringify({ rows: [] }) },
-    ...params.history.map((m) => ({ role: m.role, content: m.content }) as Groq.Chat.Completions.ChatCompletionMessageParam),
-    { role: "user", content: params.message },
-  ];
-  let completion;
-  try {
-    completion = await withAiRetry(() =>
-      groq.chat.completions.create({
-        // Model duy nhất trên Groq hỗ trợ structured outputs chế độ "strict" (đảm bảo đúng JSON
-        // Schema tuyệt đối) cùng free tier còn hạn mức tốt nhất trong nhóm model strict.
-        model: "openai/gpt-oss-120b",
-        messages,
-        response_format: {
-          type: "json_schema",
-          json_schema: { name: "compare_rows", strict: true, schema: GROQ_RESPONSE_SCHEMA },
-        },
-      })
-    );
-  } catch (err) {
-    if (isPayloadTooLargeStatus(err)) {
-      throw new AiPayloadTooLargeError(
-        "Tài liệu đã chọn quá lớn cho Groq (giới hạn ~8.000 token/phút) — thử chọn ít tài liệu hơn (vd bỏ bớt 1 file WIT), hoặc đợi Gemini có quota trở lại (reset theo ngày)."
-      );
-    }
-    throw err;
+/** So sánh các tài liệu ĐÃ CHỌN (WIT/1040 Tax Return/TTS), trả về DẠNG BẢNG (structured output),
+ * qua Gemini (`gemini-3.5-flash-lite`, free tier ~1.500 request/ngày — đủ rộng rãi nên đã GỠ
+ * Groq dự phòng, 2026-08-27). Nếu Gemini hết quota (429 dai dẳng kể cả sau retry ngắn),
+ * `AiRateLimitError` ném thẳng ra ngoài — route bắt riêng để trả thông báo rõ ràng. `history` là
+ * các lượt chat TRƯỚC (không gồm `message` mới nhất, `content` của lượt assistant là JSON rows
+ * đã stringify — gửi lại nguyên văn cho model làm ngữ cảnh, model đọc hiểu được JSON bình
+ * thường); mỗi lượt gửi lại toàn bộ text các tài liệu đã chọn (không có cơ chế lưu context phía
+ * server cho luồng đơn giản này). `wit` là MẢNG (thêm 2026-08-26 — WIT có thể chọn 2 file vì có
+ * 2 người khai, Taxpayer + Spouse) — route gọi hàm này chịu trách nhiệm tải/trích trước, hàm này
+ * chỉ lắp ráp prompt + gọi model. */
+export async function askCompareDocs(rawParams: AskParams): Promise<AiCompareRow[]> {
+  if (!isGeminiConfigured()) {
+    throw new AiProviderConfigError("Chưa cấu hình GEMINI_API_KEY");
   }
-  return parseRowsFromJsonText(completion.choices[0]?.message?.content ?? "{}");
-}
-
-/** So sánh các tài liệu ĐÃ CHỌN (WIT/1040 Tax Return/TTS), trả về DẠNG BẢNG (structured output).
- * Ưu tiên Gemini (xử lý tài liệu dài tốt hơn) — nếu Gemini hết quota (429 dai dẳng kể cả sau
- * retry ngắn), TỰ ĐỘNG chuyển sang Groq (rút gọn riêng "1040 Tax Return" trước khi gửi, xem
- * `askGroq`). `history` là các lượt chat TRƯỚC (không gồm `message` mới nhất, `content` của
- * lượt assistant là JSON rows đã stringify — gửi lại nguyên văn cho model làm ngữ cảnh, model
- * đọc hiểu được JSON bình thường); mỗi lượt gửi lại toàn bộ text các tài liệu đã chọn (không có
- * cơ chế lưu context phía server cho luồng đơn giản này). `wit` là MẢNG (thêm 2026-08-26 — WIT
- * có thể chọn 2 file vì có 2 người khai, Taxpayer + Spouse) — route gọi hàm này chịu trách
- * nhiệm tải/trích trước, hàm này chỉ lắp ráp prompt + gọi model. */
-export async function askCompareDocs(rawParams: AskParams): Promise<AskCompareResult> {
-  const geminiOk = isGeminiConfigured();
-  const groqOk = isGroqConfigured();
-  if (!geminiOk && !groqOk) {
-    throw new AiProviderConfigError("Chưa cấu hình GEMINI_API_KEY/GROQ_API_KEY");
-  }
-  // Rút gọn "1040 Tax Return" xuống 2 trang gốc TRƯỚC khi gọi BẤT KỲ provider nào (không chỉ
-  // Groq như bản trước) — CRM gộp chung 30-100+ trang Schedule/worksheet vào 1 file, gửi nguyên
-  // văn sang Gemini từng gây timeout thật (504, vượt 60s giới hạn cứng Vercel Hobby).
+  // Rút gọn "1040 Tax Return" xuống 2 trang gốc TRƯỚC khi gọi Gemini — CRM gộp chung 30-100+
+  // trang Schedule/worksheet vào 1 file, gửi nguyên văn từng gây timeout thật (504, vượt 60s
+  // giới hạn cứng của Vercel Hobby).
   const params: AskParams = {
     ...rawParams,
     taxReturn: rawParams.taxReturn ? { ...rawParams.taxReturn, text: extractForm1040Pages(rawParams.taxReturn.text) } : null,
   };
-  if (geminiOk) {
-    try {
-      return { rows: await askGemini(params), provider: "gemini" };
-    } catch (err) {
-      if (!(err instanceof AiRateLimitError) || !groqOk) throw err;
-      console.warn("[crm-doc-compare] Gemini hết quota, tự động chuyển sang Groq");
-    }
-  }
-  return { rows: await askGroq(params), provider: "groq" };
+  return askGemini(params);
 }
