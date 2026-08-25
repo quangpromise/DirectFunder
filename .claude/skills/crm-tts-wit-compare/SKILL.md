@@ -207,6 +207,42 @@ tier hiện hành trước khi đổi bừa.
   loại tài liệu...".
 - `tsc --noEmit`/`eslint` sạch trên toàn bộ file mới/sửa sau mỗi lần đổi.
 
+## 3b. Bug thật đã gặp trên production + đã sửa (2026-08-27)
+
+Người dùng báo hồ sơ thật (CRM `BY4849`) thiếu tên trong dropdown TTS/WIT VÀ thiếu hẳn 2 năm
+2023/2024 ở bảng "1040 Tax Return". Debug trực tiếp vào CRM thật (script `tsx` tạm, gọi thẳng
+`fetchTtsWitDatesByYear()`/`fetchCrmFormContext()` với `AGENTC3_USERNAME`/`PASSWORD` ở
+`.env.local` — CRM là hệ thống ngoài, không phụ thuộc app chạy ở dev hay production, tái hiện
+được y hệt qua local) lộ ra **2 lỗi thật**, cả 2 đã sửa trong `agentc3-client.ts`:
+
+1. **Mục "1040 Tax returns" gộp NHIỀU năm chung 1 tiêu đề, không có năm trong tiêu đề** — khác
+   TTS/WIT luôn có năm trong tiêu đề mục (vd "Pitbulltax 2024 TTS"), CRM có 1 kiểu mục
+   **"1040 Tax returns" (số nhiều, không năm)** gộp chung 2022/2023/2024 (xác nhận thật, nằm
+   ngay TRƯỚC mục "2021 1040 Tax return" — mục riêng năm 2021, đang NGOÀI phạm vi
+   `TARGET_YEARS` nên không lấy), năm chỉ đọc được qua chính TÊN FILE (vd "VIVIAN 2023.pdf").
+   Code cũ chỉ đọc năm từ tiêu đề mục nên bỏ qua sạch 3 năm gộp chung này (2023/2024 "biến
+   mất" khỏi bảng, 2025 vẫn còn vì có tiêu đề riêng "2025 1040 Tax return"). Đã sửa: nếu tiêu
+   đề không có năm VÀ đang ở nhánh `isTaxReturn`, tự đọc năm từ tên file hiển thị (linkText).
+2. **Tên người trong TTS/WIT bị mất/sai khi link tải đã bị "slugify"** — `extractPersonNameFromDocUrl`/
+   `extractDocSubType` (tên cũ) đọc tên NGƯỜI từ chính `href` (đường link tải) — đúng với file
+   tải qua `download_s3?key=...` (giữ nguyên dấu cách/phẩy trong key), nhưng SAI với file đã
+   qua "processing" nội bộ CRM (`/uploads/pdfs/processing/...`, tên bị viết thường + đổi dấu
+   cách/phẩy thành gạch ngang + thêm hậu tố epoch/mã khách hàng, vd
+   "2023,ra,to,-vivian-9406-...-BY4849-Person1.pdf") — parse ra `null`/sai case, dropdown mất
+   tên (rơi về timestamp) hoặc hiện "w&i"/"w&is" chữ thường không kèm tên. **Cách sửa**: đổi
+   nguồn đọc từ `href` sang TEXT HIỂN THỊ của thẻ `<a>` (`linkEl.text().trim()`, đổi tên hàm
+   thành `extractPersonNameFromFileName()`/`extractDocSubTypeFromFileName()`, nhận thẳng
+   `fileName: string` thay vì `url: string`) — text hiển thị LUÔN giữ nguyên định dạng gốc có
+   dấu cách/phẩy bất kể `href` đã bị biến đổi ra sao (đã xác nhận qua cả 2 kiểu file thật).
+
+**Bài học chung khi debug tính năng đọc CRM ngoài**: **KHÔNG BAO GIỜ chỉ test với 1 hồ sơ mẫu
+"đẹp"** (đủ dữ liệu, đúng định dạng chuẩn) rồi coi là đủ — CRM có nhiều "kiểu" upload khác nhau
+tuỳ nguồn gốc file (tải trực tiếp qua `download_s3` vs đã qua "processing" nội bộ), và có thể
+gộp nhiều năm chung 1 mục tiêu đề không báo trước. Khi người dùng báo lỗi ở 1 hồ sơ thật, LUÔN
+xin link/ID khách hàng CRM thật đó để debug trực tiếp (không đoán/giả lập) — vì CRM là hệ thống
+ngoài độc lập, gọi được y hệt từ máy local (`AGENTC3_USERNAME`/`PASSWORD` ở `.env.local`) mà
+không cần đụng gì tới Vercel/production.
+
 ## 4. Giới hạn đã biết
 
 - Không có OCR/fallback nếu CRM đổi định dạng PDF hoàn toàn khác — Gemini vẫn đọc được text lộn

@@ -375,23 +375,24 @@ export interface CrmTtsWitDoc {
   personName: string | null;
 }
 
-/** Đọc tên khách hàng từ chính tên file upload trên CRM — đường dẫn/query "key" của link tải
- * (`download_s3?key=...`) luôn có dạng đã khảo sát thật:
+/** Đọc tên khách hàng từ chính TÊN FILE HIỂN THỊ trên CRM (text của thẻ `<a>`, KHÔNG phải
+ * `href` — thêm 2026-08-27, sửa lỗi thật gặp trên production) — luôn có dạng đã khảo sát thật:
  * "{năm},{LOẠI},{Họ}, {Tên đệm} {số} {MM-DD-YYYY} {HHMM}.{ext}" (vd
  * "2023,W&I,Nguyen, Pyon Ngoc 9190 08-12-2026 0104.pdf" -> "Nguyen, Pyon Ngoc"). Trả `null` nếu
  * không khớp định dạng này — CRM có 1 số ít file cũ dùng kiểu đặt tên khác (viết-liền-dấu-gạch,
- * không có timestamp cùng dạng), không cố đoán, để phía hiển thị tự fallback. */
-function extractPersonNameFromDocUrl(url: string): string | null {
-  let decoded: string;
-  try {
-    const parsed = new URL(url);
-    const key = parsed.searchParams.get("key");
-    decoded = decodeURIComponent(key ?? url);
-  } catch {
-    decoded = url;
-  }
-  const basename = decoded.split("/").pop() ?? "";
-  const parts = basename.split(",");
+ * không có timestamp cùng dạng), không cố đoán, để phía hiển thị tự fallback.
+ *
+ * **Lỗi thật đã gặp trên production trước khi đổi từ `href` sang text hiển thị**: 1 số file
+ * (nhất là file đã qua "processing" — thư mục `/uploads/pdfs/processing/...`, khác file tải
+ * trực tiếp qua `download_s3?key=...`) có `href` là tên đã SLUGIFY (viết thường, dấu cách/dấu
+ * phẩy đổi thành gạch ngang, thêm hậu tố epoch + mã khách hàng, vd
+ * "2023,ra,to,-vivian-9406-08-21-2026-2231-1787400627-BY4849-Person1.pdf") — không còn khớp
+ * định dạng gốc nên hàm này luôn trả `null` cho các file đó (mất tên/subtype trong dropdown).
+ * TEXT HIỂN THỊ của thẻ `<a>` (`linkEl.text()`) luôn giữ NGUYÊN tên gốc có dấu cách/dấu phẩy
+ * (vd "2023,RA,TO, VIVIAN 9406 08-21-2026 2231.pdf") bất kể `href` đã bị biến đổi thế nào — dùng
+ * nguồn này đáng tin cậy hơn hẳn. */
+function extractPersonNameFromFileName(fileName: string): string | null {
+  const parts = fileName.split(",");
   if (parts.length < 4) return null;
   const lastName = parts[2].trim();
   if (!lastName) return null;
@@ -402,22 +403,13 @@ function extractPersonNameFromDocUrl(url: string): string | null {
   return firstMiddle ? `${lastName}, ${firstMiddle}` : lastName;
 }
 
-/** Đọc loại tài liệu WIT (token thứ 2 trong tên file CRM, vd "W&I" = Wage & Income Transcript
- * gốc, "W&IS" = bản Summary — CRM lưu 2 loại khác nhau CÙNG dưới 1 mục "{năm} WI Transcript",
- * thêm 2026-08-25) — dùng để hiện đúng tên loại tài liệu trong nhãn lựa chọn thay vì gộp chung
- * "WIT" chung chung. Cùng định dạng key với `extractPersonNameFromDocUrl()`, trả `null` nếu
- * không khớp (fallback không hiện loại). */
-function extractDocSubType(url: string): string | null {
-  let decoded: string;
-  try {
-    const parsed = new URL(url);
-    const key = parsed.searchParams.get("key");
-    decoded = decodeURIComponent(key ?? url);
-  } catch {
-    decoded = url;
-  }
-  const basename = decoded.split("/").pop() ?? "";
-  const parts = basename.split(",");
+/** Đọc loại tài liệu WIT (token thứ 2 trong TÊN FILE HIỂN THỊ, vd "W&I" = Wage & Income
+ * Transcript gốc, "W&IS" = bản Summary — CRM lưu 2 loại khác nhau CÙNG dưới 1 mục "{năm} WI
+ * Transcript", thêm 2026-08-25) — dùng để hiện đúng tên loại tài liệu trong nhãn lựa chọn thay
+ * vì gộp chung "WIT" chung chung. Cùng nguồn dữ liệu (text hiển thị, không phải `href`) và cùng
+ * lý do đổi với `extractPersonNameFromFileName()` ở trên — trả `null` nếu không khớp. */
+function extractDocSubTypeFromFileName(fileName: string): string | null {
+  const parts = fileName.split(",");
   if (parts.length < 4) return null;
   const subType = parts[1].trim();
   return subType || null;
@@ -516,9 +508,6 @@ export async function fetchTtsWitDatesByYear(customerId: string): Promise<CrmTts
       return;
     }
 
-    const yearMatch = /\b(20\d{2})\b/.exec(currentTitle);
-    const year = yearMatch?.[1];
-    if (!year || !TARGET_YEARS.includes(year as CrmDocYear)) return;
     const isTts = /TTS/i.test(currentTitle);
     const isWit = /WI Transcript/i.test(currentTitle);
     const isTaxReturn = /1040 Tax return/i.test(currentTitle);
@@ -527,10 +516,21 @@ export async function fetchTtsWitDatesByYear(customerId: string): Promise<CrmTts
     const timestamp = $(tds[2]).text().trim();
     const linkEl = $(tds[1]).find("a").first();
     const url = linkEl.attr("href");
+    const linkText = linkEl.text().trim();
     if (!timestamp || !url) return;
 
+    // Bình thường năm nằm sẵn trong tiêu đề mục ("Pitbulltax 2024 TTS", "2023 WI Transcript",
+    // "2025 1040 Tax return") — NHƯNG mục "1040 Tax returns" (số nhiều, không năm) đã xác nhận
+    // thật trên production gộp CHUNG nhiều năm (2022/2023/2024) vào 1 mục duy nhất, năm chỉ còn
+    // đọc được qua chính tên file (vd "VIVIAN 2023.pdf") — đây là nguyên nhân thật khiến 1 số
+    // năm "biến mất" khỏi bảng "1040 Tax Return" dù CRM có đủ file (bug đã sửa 2026-08-27, xem
+    // .claude/skills/crm-tts-wit-compare/SKILL.md).
+    const titleYear = /\b(20\d{2})\b/.exec(currentTitle)?.[1];
+    const year = titleYear ?? (isTaxReturn ? /\b(20\d{2})\b/.exec(linkText)?.[1] : undefined);
+    if (!year || !TARGET_YEARS.includes(year as CrmDocYear)) return;
+
     if (isTaxReturn) {
-      const fileName = stripFileExtension(linkEl.text().trim());
+      const fileName = stripFileExtension(linkText);
       all.taxReturns[year as CrmDocYear].push({ timestamp, url, personName: fileName || null });
       return;
     }
@@ -538,13 +538,13 @@ export async function fetchTtsWitDatesByYear(customerId: string): Promise<CrmTts
       // WIT gộp 2 loại tài liệu khác nhau ("W&I"/"W&IS") dưới cùng 1 mục "{năm} WI
       // Transcript" trên CRM — đưa tên loại lên ĐẦU nhãn (vd "W&I - Nguyen, Pyon Ngoc") để
       // phân biệt khi chọn (thêm 2026-08-27 theo yêu cầu "W&I và W&IS sẽ đưa lên đầu tên").
-      const person = extractPersonNameFromDocUrl(url);
-      const subType = extractDocSubType(url);
+      const person = extractPersonNameFromFileName(linkText);
+      const subType = extractDocSubTypeFromFileName(linkText);
       const label = subType ? (person ? `${subType} - ${person}` : subType) : person;
       all.wit[year as CrmDocYear].push({ timestamp, url, personName: label });
       return;
     }
-    all.tts[year as CrmDocYear].push({ timestamp, url, personName: extractPersonNameFromDocUrl(url) });
+    all.tts[year as CrmDocYear].push({ timestamp, url, personName: extractPersonNameFromFileName(linkText) });
   });
 
   // "Other" chỉ lấy ĐÚNG 1 link mới nhất (khác 3 bảng trên lấy mọi link cùng ngày).
