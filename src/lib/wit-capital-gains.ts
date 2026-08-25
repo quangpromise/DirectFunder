@@ -49,12 +49,22 @@ export interface CapitalGainsSummary {
    * tổng Proceeds (không tính được Gain vì thiếu giá vốn). */
   form1099DACovered: CapitalGainsBucket | null;
   form1099DANoncoveredProceeds: number | null;
-  /** Tổng GỘP 1099-B + 1099-DA "covered" thành 1 con số Gain DUY NHẤT — dùng làm giá trị cột
-   * "wit" khi đối chiếu trực tiếp với dòng Capital Gain tổng trên TTS/1040 (đã xác nhận thật:
-   * TTS/IRS luôn báo GỘP CHUNG 1 con số, không tách riêng theo loại form — trước đây trả về 2
-   * dòng "1099-B"/"1099-DA" riêng biệt khiến khó đối chiếu 1-1 với TTS, theo yêu cầu người dùng
-   * "tổng của 1099B và 1099DA nên gộp lại"). CHƯA gồm phần `form1099DANoncoveredProceeds` (nếu
-   * có) vì phần đó không tính được Gain thật do thiếu giá vốn — ghi chú riêng khi trình bày. */
+  /** Tổng GỘP 1099-B + 1099-DA (CẢ "covered" LẪN "noncovered") thành 1 con số Gain DUY NHẤT —
+   * dùng làm giá trị cột "wit" khi đối chiếu trực tiếp với dòng Capital Gain tổng trên TTS/1040.
+   *
+   * **Công thức (sửa 2026-08-27, cùng ngày, sau khi người dùng đối chiếu với số IRS thật trong
+   * "W&IS")**: `= (totalProceeds CỦA CẢ 1099-B lẫn 1099-DA, kể cả noncovered) + totalWashSale −
+   * totalCostBasis (chỉ cộng cost basis THẬT SỰ có, coi phần thiếu = $0)`. Bản đầu loại HẲN
+   * Proceeds của phần `noncoveredProceeds` ra khỏi công thức (coi như "không tính được nên bỏ
+   * qua") — SAI theo đúng cách IRS tự tính: đã verify chéo với "W&IS" (bản tóm tắt IRS tính sẵn)
+   * của hồ sơ thật `BY306702` — công thức bản đầu ra `-$63,138` trong khi IRS tự tính ra
+   * `-$58,731`, lệch đúng bằng phần Proceeds `$4,434` của 1099-DA noncovered đã bị loại nhầm.
+   * Đổi công thức (CỘNG Proceeds noncovered vào, KHÔNG trừ gì cho phần cost basis thiếu của nó)
+   * ra `-$58,704` — lệch chỉ `$27`/`$3.29 triệu` (~0,05%, do 2/474 giao dịch bị bỏ sót lúc trích
+   * — coi là sai số làm tròn chấp nhận được). **Lưu ý bản chất**: đây LÀ QUY ƯỚC IRS dùng cho 1
+   * con số tổng hợp duy nhất, KHÔNG PHẢI số Gain "chính xác về thuế" cho riêng phần noncovered
+   * (giá vốn thật của phần đó vẫn không biết được — có thể lãi/lỗ khác con số này) — ghi rõ ràng
+   * này trong note khi trình bày (xem `formatCapitalGainsSummaryBlock`). */
   combinedGain: number;
 }
 
@@ -175,12 +185,21 @@ export function summarizeCapitalGains(texts: string[]): CapitalGainsSummary | nu
 
   const form1099B = b.length > 0 ? summarizeBucket(b) : null;
   const form1099DACovered = daCovered.length > 0 ? summarizeBucket(daCovered) : null;
-  return {
-    form1099B,
-    form1099DACovered,
-    form1099DANoncoveredProceeds: daNoncovered.length > 0 ? daNoncovered.reduce((s, r) => s + r.proceeds, 0) : null,
-    combinedGain: (form1099B?.gain ?? 0) + (form1099DACovered?.gain ?? 0),
-  };
+  const noncoveredProceeds = daNoncovered.length > 0 ? daNoncovered.reduce((s, r) => s + r.proceeds, 0) : null;
+
+  // Công thức khớp đúng cách IRS tự tính trong "W&IS" (đã verify chéo, xem doc-comment
+  // `combinedGain` phía trên) — CỘNG Proceeds của CẢ phần noncovered vào, coi cost basis thiếu
+  // = $0 (KHÔNG trừ gì cho phần đó, KHÔNG loại hẳn ra như bản đầu).
+  const combinedGain =
+    (form1099B?.totalProceeds ?? 0) +
+    (form1099DACovered?.totalProceeds ?? 0) +
+    (noncoveredProceeds ?? 0) +
+    (form1099B?.totalWashSale ?? 0) +
+    (form1099DACovered?.totalWashSale ?? 0) -
+    (form1099B?.totalCostBasis ?? 0) -
+    (form1099DACovered?.totalCostBasis ?? 0);
+
+  return { form1099B, form1099DACovered, form1099DANoncoveredProceeds: noncoveredProceeds, combinedGain };
 }
 
 /** Cắt bỏ TOÀN BỘ đoạn text 1099-B/1099-DA khỏi 1 khối WIT — giữ nguyên mọi nội dung khác
@@ -253,7 +272,7 @@ export function formatCapitalGainsSummaryBlock(summary: CapitalGainsSummary): st
     lines.push(
       `  - 1099-DA (bán tài sản số/crypto, KHÔNG báo cáo giá vốn — sàn không biết Cost Basis): Tổng Proceeds ${formatMoney(
         summary.form1099DANoncoveredProceeds
-      )}. KHÔNG tính được Gain chính xác vì thiếu giá vốn, CHƯA gộp vào tổng ở trên — chỉ dùng Proceeds làm tham khảo.`
+      )}. ĐÃ CỘNG vào TỔNG GỘP ở trên coi giá vốn = $0 (đúng quy ước IRS dùng cho 1 con số tổng hợp), nhưng giá vốn thật của phần này KHÔNG biết được nên đây KHÔNG PHẢI Gain chính xác về thuế cho riêng phần này.`
     );
   }
   return lines.join("\n");

@@ -629,6 +629,29 @@ khác biệt so với 2 biến thể đã biết) thay vì đoán mò sửa lạ
       luật giới hạn khấu trừ lỗ vốn $3.000/năm — Capital Loss Carryover). Mất ~37 giây (vẫn dưới
       50s timeout). `tsc --noEmit`/`eslint` sạch. **Không cần bước production nào**.
 
+17. **(2026-08-27, cùng ngày, sau mục #16) Sửa công thức `combinedGain` — người dùng tự đối
+    chiếu số IRS thật trong "W&IS" lộ ra sai số lớn** — người dùng tính tay Capital Gain gộp cả
+    2 người từ "W&IS" ra `-$58,731`, trong khi tool trả về `-$63,138` (dùng "W&I") — hỏi thẳng
+    tại sao lệch. Nguyên nhân: `combinedGain` bản đầu (mục #16) = `form1099B.gain +
+    form1099DACovered.gain`, **LOẠI HẲN** Proceeds của phần 1099-DA "noncovered" ($4,434.00,
+    không có giá vốn) ra khỏi công thức — coi như "không tính được nên bỏ qua hoàn toàn". Verify
+    lại bằng cách trừ 2 số IRS thật (Cost or Basis/Wash Sale đã khớp CHÍNH XÁC qua mục #16, chỉ
+    còn nghi Proceeds): `$63,138 − $58,731 = $4,407` ≈ đúng bằng `$4,434` Proceeds noncovered bị
+    loại nhầm (chênh $27 là sai số làm tròn đã biết từ trước). **Kết luận**: IRS tự tính "Capital
+    Gains" trên "W&IS" theo quy ước **CỘNG Proceeds của CẢ phần noncovered vào, coi giá vốn
+    thiếu = $0** (KHÔNG loại bỏ hẳn) — verify công thức mới: `(Proceeds 1099-B + Proceeds
+    1099-DA CẢ covered LẪN noncovered) + Wash Sale − Cost Basis (chỉ cộng phần THẬT SỰ có)` =
+    `$3,288,327 + $4,434 + $66,605 − $3,418,070 = -$58,704` — lệch chỉ `$27`/`$3,29 triệu`
+    (~0,05%, sai số làm tròn đã biết) so với số IRS thật `-$58,731`. Đã sửa `combinedGain` trong
+    `summarizeCapitalGains()` theo đúng công thức mới, cập nhật note trong
+    `formatCapitalGainsSummaryBlock()`/`CHAT_SYSTEM_INSTRUCTION` ghi rõ: tổng gộp ĐÃ CỘNG phần
+    noncovered (coi giá vốn = $0, đúng quy ước IRS cho 1 con số tổng hợp), nhưng KHÔNG PHẢI Gain
+    chính xác về thuế cho RIÊNG phần đó (giá vốn thật vẫn không biết được). Verify sống lại toàn
+    luồng: `summarizeCapitalGains()` độc lập ra đúng `-$58,704.00`; `askCompareDocs()` đầy đủ
+    (BY306702, WIT "W&I" 2 người + TTS thật) trả đúng 1 dòng `"Capital Gains (1099-B +
+    1099-DA)"` = `$-58,704.00` vs TTS `$-3,000.00`, AI tự giải thích đúng luật giới hạn khấu trừ
+    lỗ vốn — mất ~21.6 giây. `tsc --noEmit`/`eslint` sạch. **Không cần bước production nào**.
+
 ## 4. Giới hạn đã biết
 
 - Không có OCR/fallback nếu CRM đổi định dạng PDF hoàn toàn khác — Gemini vẫn đọc được text lộn
