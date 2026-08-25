@@ -445,6 +445,40 @@ khác biệt so với 2 biến thể đã biết) thay vì đoán mò sửa lạ
    thước request rơi đúng khoảng giữa "vượt TPM" và "vượt context window", nhưng logic kiểm tra
    đơn giản `status === 413` nên rủi ro sai thấp).
 
+10. **(2026-08-27, cùng ngày) Bug THẬT khiến "phân tích sai 1040" — `isForm1040Page()` viết lại
+    hoàn toàn** — người dùng báo hồ sơ `BY4849` "check WIT với 1040 không trả đúng kết quả
+    1040". Debug trực tiếp file 1040 THẬT của hồ sơ này (phần mềm khai thuế "Thuc Tran Agency")
+    lộ ra **`pdfjs` KHÔNG trích text theo đúng thứ tự đọc thị giác** với PDF của phần mềm này —
+    cụm "U.S. Individual Income Tax Return" (tiêu đề trang 1 thật) nằm GIỮA trang (sau một loạt
+    label "Presidential Election Campaign", "Filing Status"...), không phải đầu trang như bản cũ
+    giả định (`head = pageText.slice(0, 250)`). Tệ hơn: chữ số "2" trong cụm "Form 1040 (năm)
+    Page 2" của trang 2 thật **bị MẤT HẲN** khỏi text trích được (`pdfjs` không capture được, có
+    thể do vị trí render đặc biệt của số trang) — cụm `/Page\s*2/` không bao giờ khớp. Việc loại
+    "SCHEDULE ..." cũng SAI vì PDF thật có "OMB No. 1545-0074  SCHEDULE 1  (Form 1040)..." — OMB
+    đứng trước SCHEDULE, không khớp `^\s*SCHEDULE`. **Hậu quả thật**: KHÔNG trang nào khớp →
+    `extractForm1040Pages()` fallback về "2 trang ĐẦU của file" — với hồ sơ này đó là trang bìa
+    HOÁ ĐƠN + THƯ GIỚI THIỆU (hoàn toàn không phải Form 1040!) — AI nhận nhầm nội dung này thay
+    vì Form 1040 thật, giải thích đúng triệu chứng "phân tích sai 1040" người dùng báo.
+    **Cách sửa**: quét TOÀN TRANG (không chỉ đầu trang) tìm cụm boilerplate IRS chính thức (luôn
+    nguyên văn dù thứ tự trích xáo trộn) — trang 1 nhận qua "U.S. Individual Income Tax Return"
+    (chỉ Form 1040 mới có), trang 2 nhận qua TỔ HỢP ≥2 cụm riêng của trang 2 ("Standard deduction
+    for-"/"Third Party Designee"/"Amount from line 11a (adjusted gross income)"), KHÔNG còn dựa
+    vào số trang. Loại Schedule qua "SCHEDULE {mã} ... (Form 1040)" ở BẤT KỲ ĐÂU trong trang.
+    **Đã tự gặp thêm 1 bug lúc verify**: ban đầu thêm lớp loại trừ phụ theo mã Form phụ thường
+    gặp (8995/8962/8919...) — SAI, vì chính trang 1 Form 1040 THẬT cũng tự NHẮC tới các mã đó
+    trong mô tả dòng của nó (vd dòng 1g "Wages from Form 8919, line 6") → tự loại nhầm luôn
+    chính trang cần giữ. Đã bỏ lớp này, chỉ giữ loại trừ SCHEDULE. Verify sống: tải đúng file
+    1040 thật (23 "trang"/dòng sau split, PDF 1.2MB) của `BY4849` — kết quả CHỈ đúng 2 trang
+    (trang 4 và 5, đúng là Form 1040 thật) được chọn, mọi trang Schedule 1/2/1-A/B/C/D/SE/8995/
+    8962 khác đều bị loại đúng.
+    **Phát hiện thêm (KHÔNG phải bug, chỉ là giới hạn đã biết)**: 1 file WIT `.html` của hồ sơ
+    này dài **506.818 ký tự** (transcript IRS thật, dữ liệu hợp lệ — mỗi field WIT đều có nhãn
+    mô tả rất dài dòng) — nếu Gemini hết quota (fallback sang Groq) VÀ WIT lớn cỡ này, vẫn có
+    thể dính `AiPayloadTooLargeError` dù 1040 đã rút gọn đúng, vì Groq giới hạn ~8.000
+    token/phút cho TOÀN BỘ request kể cả không có 1040. Chưa cần xử lý thêm (thông báo lỗi đã
+    rõ nguyên nhân) — chỉ xảy ra khi Gemini hết quota NGÀY hôm đó, Gemini bình thường xử lý được
+    document lớn cỡ này không vấn đề gì.
+
 ## 4. Giới hạn đã biết
 
 - Không có OCR/fallback nếu CRM đổi định dạng PDF hoàn toàn khác — Gemini vẫn đọc được text lộn

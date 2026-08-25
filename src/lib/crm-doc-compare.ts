@@ -66,20 +66,44 @@ export async function extractDocumentText(buffer: Buffer): Promise<string> {
   return $("body").text().replace(/\s+/g, " ").trim();
 }
 
-/** 1 trang được coi là "Form 1040 gốc" (KHÔNG phải Schedule/Form khác đính kèm, dù nhiều trang
- * trong đó CŨNG nhắc tới cụm "Form 1040" — vd "SCHEDULE 1 ... (Form 1040)") nếu:
- * - Trang 1 thật của 1040: có cụm "U.S. Individual Income Tax Return" GẦN ĐẦU trang (tiêu đề
- *   chính thức duy nhất của chính form 1040, các Schedule/Form khác không có cụm này).
- * - Trang 2 (tiếp theo) của 1040: bắt đầu bằng "Form 1040 (năm) Page 2".
- * Ngược lại (bắt đầu bằng "SCHEDULE", hoặc "Form {số khác 1040}") -> KHÔNG phải, loại bỏ. */
+/** 1 trang được coi là "Form 1040 gốc" (KHÔNG phải Schedule/Form khác đính kèm).
+ *
+ * **Sửa lại hoàn toàn 2026-08-27 (bug thật gặp trên production với hồ sơ `BY4849`)**: bản đầu
+ * chỉ xét 250 KÝ TỰ ĐẦU trang, giả định `pdfjs` trích text THEO ĐÚNG THỨ TỰ ĐỌC THỊ GIÁC —
+ * SAI với 1 số phần mềm khai thuế thật (đã xác nhận qua debug trực tiếp file PDF thật): cụm
+ * "U.S. Individual Income Tax Return" của trang 1 THẬT nằm GIỮA trang (sau hàng loạt label
+ * "Presidential Election Campaign", "Filing Status"...), không phải đầu trang — check theo
+ * `head` bỏ sót hoàn toàn. Tệ hơn, số trang trong cụm "Form 1040 (năm) Page 2" của trang 2 THẬT
+ * còn bị MẤT HẲN chữ số "2" khỏi text trích được (`pdfjs` không capture được, có thể do render
+ * qua vị trí đặc biệt) — cụm `/Page\s*2/` không bao giờ khớp. Đồng thời việc loại "SCHEDULE ..."
+ * cũng SAI vì check `^\s*SCHEDULE` đòi hỏi "SCHEDULE" phải là từ đầu tiên, nhưng PDF thật có
+ * "OMB No. 1545-0074  SCHEDULE 1  (Form 1040)..." — "OMB No." đứng trước.
+ *
+ * **Cách sửa**: quét TOÀN TRANG (không chỉ đầu trang) tìm cụm văn bản CHÍNH THỨC CỦA IRS (luôn
+ * xuất hiện NGUYÊN VĂN trên form dù thứ tự trích có xáo trộn, vì đây là boilerplate IRS bắt
+ * buộc mọi phần mềm khai thuế phải in đúng) — trang 1 nhận qua "U.S. Individual Income Tax
+ * Return" (tiêu đề duy nhất của chính Form 1040, Schedule/Form khác không có), trang 2 nhận qua
+ * TỔ HỢP ≥2 cụm chỉ xuất hiện ở trang 2 chính thức (không dựa vào số trang nữa): "Standard
+ * deduction for-", "Third Party Designee", "Amount from line 11a (adjusted gross income)". Loại
+ * Schedule/Form đính kèm bằng cách tìm cụm "SCHEDULE {mã} ... (Form 1040)" ở BẤT KỲ ĐÂU trong
+ * trang (không chỉ đầu). KHÔNG loại theo "có nhắc tới mã Form khác" (vd "Form 8919", "Form
+ * 8995") — bug đã tự gặp khi verify: chính trang 1 Form 1040 THẬT cũng tự nhắc tới các mã form
+ * đó ngay trong mô tả dòng của nó (vd dòng 1g "Wages from Form 8919, line 6", dòng 13a
+ * "Qualified business income deduction from Form 8995..."), nên check kiểu đó tự loại nhầm luôn
+ * chính trang 1/2 thật — chỉ dựa vào SCHEDULE + cụm boilerplate độc quyền của trang 1040 chính
+ * là đủ phân biệt, không cần lớp loại trừ phụ này. */
 function isForm1040Page(pageText: string): boolean {
-  const head = pageText.slice(0, 250);
-  if (/^\s*SCHEDULE\b/i.test(head)) return false;
-  const otherFormMatch = /^\s*(?:OMB No\.[^A-Za-z]*)?Form\s+(\d[\dA-Z-]*)/i.exec(head);
-  if (otherFormMatch && otherFormMatch[1] !== "1040") return false;
-  if (/U\.S\.\s*Individual\s+Income\s+Tax\s+Return/i.test(head)) return true;
-  if (/Form\s+1040\s*\(\d{4}\)\s*Page\s*2/i.test(head)) return true;
-  return false;
+  const isAttachmentSchedule = /SCHEDULE\s+[A-Z0-9-]{1,4}\b[\s\S]{0,150}\(\s*Form\s*1040\s*\)/i.test(pageText);
+  if (isAttachmentSchedule) return false;
+
+  if (/U\.S\.\s*Individual\s+Income\s+Tax\s+Return/i.test(pageText)) return true;
+
+  const page2Markers = [
+    /Standard\s+deduction\s+for-/i,
+    /Third\s+Party\s+Designee/i,
+    /Amount\s+from\s+line\s+11a\s*\(adjusted\s+gross\s+income\)/i,
+  ];
+  return page2Markers.filter((re) => re.test(pageText)).length >= 2;
 }
 
 /** Rút gọn text đã trích của "1040 Tax Return" xuống ĐÚNG 2 trang Form 1040 gốc (bỏ mọi
