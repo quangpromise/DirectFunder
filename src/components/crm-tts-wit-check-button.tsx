@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { X, Send, ChevronDown } from "lucide-react";
 import { Spinner } from "@/components/spinner";
@@ -306,6 +306,25 @@ function formatDiff(diff: number): string {
   return diff.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+/** Khớp cụm "Bắt buộc"/"Không bắt buộc" (không phân biệt hoa/thường) — nhóm không bắt buộc
+ * `(không\s+)?` đứng TRƯỚC "bắt buộc" trong chính pattern nên khi cụm "Không bắt buộc" xuất
+ * hiện, điểm bắt đầu tô đỏ luôn tính từ "Không" (không phải từ "bắt buộc" nằm bên trong nó). */
+const MANDATORY_HIGHLIGHT_RE = /(không\s+)?bắt buộc/i;
+
+/** Tô màu ô "Ghi chú" — nền chữ chính màu vàng (dễ nhìn hơn màu xám mờ cũ, theo yêu cầu
+ * 2026-08-27), riêng đoạn TỪ cụm "Bắt buộc"/"Không bắt buộc" TRỞ ĐI (tới hết ghi chú) tô đỏ đậm
+ * để nổi bật nghĩa vụ khai thuế — đây thường là phần quan trọng nhất của note. */
+function renderNoteText(note: string): ReactNode {
+  const m = MANDATORY_HIGHLIGHT_RE.exec(note);
+  if (!m) return note;
+  return (
+    <>
+      {note.slice(0, m.index)}
+      <span className="font-semibold text-red-500 light:text-red-700">{note.slice(m.index)}</span>
+    </>
+  );
+}
+
 /** Bảng nhỏ cho 1 lượt trả lời của AI — CHỈ hiện đúng cột (WIT/TTS) đã chọn lúc hỏi (thêm
  * 2026-08-27 theo yêu cầu "bảng phân tích chỉ hiện các cột được chọn"), cộng 1 cột "Chênh lệch"
  * tự tính + tô màu THEO HƯỚNG WIT (đỏ = WIT cao hơn TTS — rủi ro khai thiếu, xanh = WIT
@@ -352,7 +371,7 @@ function AiRowsTable({ rows, columns, wrap }: { rows: AiCompareRow[]; columns: C
                 >
                   {diff === null ? "—" : formatDiff(diff.magnitude)}
                 </td>
-                <td className={`${cellCls} ${wrap ? "" : "whitespace-normal"} text-text-faint`}>{row.note}</td>
+                <td className={`${cellCls} ${wrap ? "" : "whitespace-normal"} text-yellow-300 light:text-yellow-800`}>{renderNoteText(row.note)}</td>
               </tr>
             );
           })}
