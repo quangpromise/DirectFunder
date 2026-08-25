@@ -375,12 +375,23 @@ export interface CrmTtsWitDoc {
   personName: string | null;
 }
 
+/** Regex phần đuôi CHUNG cho cả 2 biến thể tên file CRM (xem `extractPersonNameFromFileName`) —
+ * "{tên} {số} {MM-DD-YYYY} {HHMM}.{ext}", vd " CHAU T PHAM 0035 11-10-2025 0132.pdf" ->
+ * capture group 1 = "CHAU T PHAM". */
+const FILE_NAME_TRAILING_META = /^\s*(.+?)\s+\d{2,6}\s+\d{2}-\d{2}-\d{4}\s+\d{3,4}\.\w+$/;
+
 /** Đọc tên khách hàng từ chính TÊN FILE HIỂN THỊ trên CRM (text của thẻ `<a>`, KHÔNG phải
- * `href` — thêm 2026-08-27, sửa lỗi thật gặp trên production) — luôn có dạng đã khảo sát thật:
- * "{năm},{LOẠI},{Họ}, {Tên đệm} {số} {MM-DD-YYYY} {HHMM}.{ext}" (vd
- * "2023,W&I,Nguyen, Pyon Ngoc 9190 08-12-2026 0104.pdf" -> "Nguyen, Pyon Ngoc"). Trả `null` nếu
- * không khớp định dạng này — CRM có 1 số ít file cũ dùng kiểu đặt tên khác (viết-liền-dấu-gạch,
- * không có timestamp cùng dạng), không cố đoán, để phía hiển thị tự fallback.
+ * `href` — thêm 2026-08-27, sửa lỗi thật gặp trên production) — đã khảo sát thật 2 biến thể:
+ * - **Có dấu phẩy tách Họ/Tên** (≥4 phần khi `split(",")`): "{năm},{LOẠI},{Họ}, {Tên đệm} {số}
+ *   {MM-DD-YYYY} {HHMM}.{ext}" (vd "2023,W&I,Nguyen, Pyon Ngoc 9190 08-12-2026 0104.pdf" ->
+ *   "Nguyen, Pyon Ngoc").
+ * - **KHÔNG có dấu phẩy tách Họ/Tên** (đúng 3 phần, thêm 2026-08-27 — lỗi thật gặp trên
+ *   production, hồ sơ `BY306702`): "{năm},{LOẠI},{Tên đầy đủ, không phẩy} {số} {MM-DD-YYYY}
+ *   {HHMM}.{ext}" (vd "2023,RA,CHAU T PHAM 0035 11-10-2025 0132.pdf" -> "CHAU T PHAM") — giữ
+ *   NGUYÊN cụm tên, không cố đoán thứ tự Họ/Tên vì không có tín hiệu nào để tách.
+ * Trả `null` nếu không khớp CẢ 2 biến thể — CRM có 1 số ít file cũ dùng kiểu đặt tên khác
+ * (viết-liền-dấu-gạch, không có timestamp cùng dạng), không cố đoán, để phía hiển thị tự
+ * fallback.
  *
  * **Lỗi thật đã gặp trên production trước khi đổi từ `href` sang text hiển thị**: 1 số file
  * (nhất là file đã qua "processing" — thư mục `/uploads/pdfs/processing/...`, khác file tải
@@ -393,24 +404,33 @@ export interface CrmTtsWitDoc {
  * nguồn này đáng tin cậy hơn hẳn. */
 function extractPersonNameFromFileName(fileName: string): string | null {
   const parts = fileName.split(",");
-  if (parts.length < 4) return null;
-  const lastName = parts[2].trim();
-  if (!lastName) return null;
-  const rest = parts.slice(3).join(",");
-  const m = /^\s*(.+?)\s+\d{2,6}\s+\d{2}-\d{2}-\d{4}\s+\d{3,4}\.\w+$/.exec(rest);
+  if (parts.length < 3) return null;
+  if (parts.length >= 4) {
+    const lastName = parts[2].trim();
+    if (!lastName) return null;
+    const rest = parts.slice(3).join(",");
+    const m = FILE_NAME_TRAILING_META.exec(rest);
+    if (!m) return null;
+    const firstMiddle = m[1].trim();
+    return firstMiddle ? `${lastName}, ${firstMiddle}` : lastName;
+  }
+  // Đúng 3 phần — không có dấu phẩy tách tên, giữ nguyên cụm tên trong parts[2].
+  const m = FILE_NAME_TRAILING_META.exec(parts[2]);
   if (!m) return null;
-  const firstMiddle = m[1].trim();
-  return firstMiddle ? `${lastName}, ${firstMiddle}` : lastName;
+  const name = m[1].trim();
+  return name || null;
 }
 
 /** Đọc loại tài liệu WIT (token thứ 2 trong TÊN FILE HIỂN THỊ, vd "W&I" = Wage & Income
  * Transcript gốc, "W&IS" = bản Summary — CRM lưu 2 loại khác nhau CÙNG dưới 1 mục "{năm} WI
  * Transcript", thêm 2026-08-25) — dùng để hiện đúng tên loại tài liệu trong nhãn lựa chọn thay
- * vì gộp chung "WIT" chung chung. Cùng nguồn dữ liệu (text hiển thị, không phải `href`) và cùng
- * lý do đổi với `extractPersonNameFromFileName()` ở trên — trả `null` nếu không khớp. */
+ * vì gộp chung "WIT" chung chung. Chỉ cần đúng ≥2 phần khi `split(",")` (năm + loại) — KHÔNG
+ * phụ thuộc file có phần tên dạng nào (đã sửa 2026-08-27, trước đó đòi ≥4 phần nên bỏ sót cả
+ * subtype của biến thể tên file không dấu phẩy, xem `extractPersonNameFromFileName`). Cùng
+ * nguồn dữ liệu (text hiển thị, không phải `href`) — trả `null` nếu không khớp. */
 function extractDocSubTypeFromFileName(fileName: string): string | null {
   const parts = fileName.split(",");
-  if (parts.length < 4) return null;
+  if (parts.length < 2) return null;
   const subType = parts[1].trim();
   return subType || null;
 }

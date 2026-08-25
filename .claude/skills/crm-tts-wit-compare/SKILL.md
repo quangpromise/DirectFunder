@@ -235,13 +235,32 @@ Người dùng báo hồ sơ thật (CRM `BY4849`) thiếu tên trong dropdown T
    `fileName: string` thay vì `url: string`) — text hiển thị LUÔN giữ nguyên định dạng gốc có
    dấu cách/phẩy bất kể `href` đã bị biến đổi ra sao (đã xác nhận qua cả 2 kiểu file thật).
 
+3. **(Cùng ngày, phát hiện sau khi user báo lại "vẫn thiếu tên TTS 2023/2024" ở hồ sơ KHÁC —
+   `BY306702`) Tên file KHÔNG PHẢI LÚC NÀO CŨNG có dấu phẩy tách Họ/Tên** — biến thể đã biết
+   trước đó luôn có dạng "{năm},{loại},{Họ}, {Tên đệm} {số}..." (Ví dụ "Nguyen, Pyon Ngoc" —
+   4 phần khi `split(",")`), nhưng hồ sơ này dùng "{năm},{loại},{Cụm tên KHÔNG phẩy} {số}..."
+   (vd "2023,RA,CHAU T PHAM 0035 11-10-2025 0132.pdf" — chỉ 3 phần) — code cũ đòi `parts.length
+   >= 4` nên trả `null` cho cả tên LẪN subtype (subtype `extractDocSubTypeFromFileName` cũng bị
+   ảnh hưởng dây chuyền vì dùng chung ngưỡng `>= 4`, dù bản thân subtype chỉ cần `parts[1]`).
+   **Cách sửa**: `extractPersonNameFromFileName()` giờ nhánh theo `parts.length` — `>= 4` giữ
+   nguyên logic Họ,Tên cũ; đúng `3` thì áp cùng regex đuôi (`FILE_NAME_TRAILING_META`, đã tách
+   hằng số dùng chung) trực tiếp lên `parts[2]`, GIỮ NGUYÊN cụm tên không cố tách Họ/Tên (không
+   có tín hiệu nào để tách đúng thứ tự). `extractDocSubTypeFromFileName()` hạ ngưỡng xuống
+   `parts.length >= 2` (đúng yêu cầu tối thiểu thật sự của nó). Verify lại `BY306702` sau sửa:
+   2023/2024 TTS/WIT đều ra đúng tên ("THIEN T NGUYEN", "CHAU T PHAM"...); verify lại KHÔNG hồi
+   quy trên `BY309070`/`BY4849` (2 hồ sơ đã verify trước đó, kết quả giữ nguyên y hệt).
+
 **Bài học chung khi debug tính năng đọc CRM ngoài**: **KHÔNG BAO GIỜ chỉ test với 1 hồ sơ mẫu
 "đẹp"** (đủ dữ liệu, đúng định dạng chuẩn) rồi coi là đủ — CRM có nhiều "kiểu" upload khác nhau
-tuỳ nguồn gốc file (tải trực tiếp qua `download_s3` vs đã qua "processing" nội bộ), và có thể
-gộp nhiều năm chung 1 mục tiêu đề không báo trước. Khi người dùng báo lỗi ở 1 hồ sơ thật, LUÔN
-xin link/ID khách hàng CRM thật đó để debug trực tiếp (không đoán/giả lập) — vì CRM là hệ thống
-ngoài độc lập, gọi được y hệt từ máy local (`AGENTC3_USERNAME`/`PASSWORD` ở `.env.local`) mà
-không cần đụng gì tới Vercel/production.
+tuỳ nguồn gốc file (tải trực tiếp qua `download_s3` vs đã qua "processing" nội bộ), CÓ THỂ có
+hoặc KHÔNG có dấu phẩy tách Họ/Tên trong tên file tuỳ hồ sơ, và có thể gộp nhiều năm chung 1 mục
+tiêu đề không báo trước. Khi người dùng báo lỗi ở 1 hồ sơ thật, LUÔN xin link/ID khách hàng CRM
+thật đó để debug trực tiếp (không đoán/giả lập) — vì CRM là hệ thống ngoài độc lập, gọi được y
+hệt từ máy local (`AGENTC3_USERNAME`/`PASSWORD` ở `.env.local`) mà không cần đụng gì tới Vercel/
+production. **Đã sửa 2 vòng liên tiếp cho đúng 2 hồ sơ khác nhau báo lỗi tương tự — nếu người
+dùng báo lại LẦN 3 vẫn thiếu tên ở 1 hồ sơ khác, gần như chắc chắn còn 1 biến thể tên file thứ 3
+chưa biết, lặp lại đúng quy trình debug này (xin link → dump raw title/linkText/url → tìm điểm
+khác biệt so với 2 biến thể đã biết) thay vì đoán mò sửa lại code hiện có.**
 
 ## 4. Giới hạn đã biết
 
