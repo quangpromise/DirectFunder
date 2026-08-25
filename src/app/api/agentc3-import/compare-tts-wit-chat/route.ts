@@ -3,7 +3,14 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
 import { canViewCase } from "@/lib/rbac";
 import { AgentC3ConfigError, AgentC3LoginError, AgentC3NotFoundError, fetchAgentC3FileBytes } from "@/lib/agentc3-client";
-import { askCompareDocs, extractDocumentText, AiProviderConfigError, type CompareChatMessage, type SelectedDocEntry } from "@/lib/crm-doc-compare";
+import {
+  askCompareDocs,
+  extractDocumentText,
+  AiProviderConfigError,
+  AiPayloadTooLargeError,
+  type CompareChatMessage,
+  type SelectedDocEntry,
+} from "@/lib/crm-doc-compare";
 import { AiRateLimitError } from "@/lib/ai-retry";
 
 export const runtime = "nodejs";
@@ -93,6 +100,9 @@ export async function POST(request: NextRequest) {
     }
     if (err instanceof AiProviderConfigError) {
       return NextResponse.json({ ok: false, error: err.message }, { status: 501 });
+    }
+    if (err instanceof AiPayloadTooLargeError) {
+      return NextResponse.json({ ok: false, error: err.message }, { status: 413 });
     }
     if (err instanceof AiRateLimitError) {
       return NextResponse.json({ ok: false, error: err.message }, { status: 429 });

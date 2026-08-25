@@ -420,6 +420,31 @@ khác biệt so với 2 biến thể đã biết) thay vì đoán mò sửa lạ
    verify độc lập qua script tạm (sao y logic, không import trực tiếp vì hàm không export) với 6
    case (cả 2 âm dạng "-$"/dạng ngoặc kế toán/cả 2 dương/mixed/bằng nhau) — tất cả đúng kỳ vọng.
 
+8. **(2026-08-27, cùng ngày) `504` thật trên production khi so sánh "1040 Tax Return"** —
+   nguyên nhân: `askGemini()` trước đó nhận NGUYÊN VĂN "1040 Tax Return" (CRM gộp 30-100+ trang
+   Schedule/worksheet vào 1 file, có thể 100K+ ký tự) không rút gọn như Groq — Gemini xử lý
+   chậm dần theo độ dài prompt, vượt quá 60s giới hạn cứng của route (`maxDuration = 60`, gói
+   Vercel Hobby không nâng được) → Vercel tự cắt kết nối, trả `504` (không phải lỗi code, không
+   có JSON body nào để đọc `error`). **Cách sửa**: chuyển bước rút gọn `extractForm1040Pages()`
+   (2 trang Form 1040 gốc, loại Schedule/worksheet) từ CHỈ-Groq sang ÁP DỤNG TẬP TRUNG trong
+   `askCompareDocs()` TRƯỚC KHI gọi BẤT KỲ provider nào — vừa khớp đúng những gì
+   `CHAT_SYSTEM_INSTRUCTION` vốn đã mô tả sẵn ("chỉ chứa ĐÚNG 2 trang chính thức", trước đây là
+   mô tả SAI với nhánh Gemini), vừa giảm hẳn thời gian xử lý. Đã verify sống: dựng 1 bundle giả
+   (trang 1 + 1 trang Schedule C rác lặp 500 dòng + trang 2) — kết quả `taxReturn` đúng khớp số
+   liệu ở trang 1/2 thật, Schedule C rác bị loại hoàn toàn, không còn ảnh hưởng thời gian xử lý.
+9. **(2026-08-27, cùng ngày) `413`/`400 context_length_exceeded` thật từ Groq dù đã rút gọn
+   1040** — WIT có 2 khối (Taxpayer+Spouse) hoặc TTS có bảng TRANSACTIONS dài vẫn có thể cộng
+   dồn vượt ~8.000 token/phút của Groq (413), hoặc vượt LUÔN giới hạn context window nếu cực lớn
+   (400 `context_length_exceeded`) — trước đây route bắt lỗi này vào nhánh chung chung "Không so
+   sánh được tài liệu — thử lại sau", không rõ nguyên nhân. Thêm `AiPayloadTooLargeError`
+   (`crm-doc-compare.ts`, `isPayloadTooLargeStatus()` nhận diện CẢ 2 dạng lỗi trên) — route trả
+   status `413` kèm message rõ ràng gợi ý bớt tài liệu/đợi Gemini reset quota. Đã verify sống cả
+   2 nhánh: payload cực lớn (3 khối ~150K ký tự) → Groq trả `400 context_length_exceeded` →
+   đúng `AiPayloadTooLargeError`; đã xác nhận qua code review `status === 413` cũng khớp cùng 1
+   nhánh xử lý (không tái hiện được đúng ngưỡng 413 chính xác qua script tạm vì phụ thuộc kích
+   thước request rơi đúng khoảng giữa "vượt TPM" và "vượt context window", nhưng logic kiểm tra
+   đơn giản `status === 413` nên rủi ro sai thấp).
+
 ## 4. Giới hạn đã biết
 
 - Không có OCR/fallback nếu CRM đổi định dạng PDF hoàn toàn khác — Gemini vẫn đọc được text lộn
