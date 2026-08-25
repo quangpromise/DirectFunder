@@ -409,7 +409,12 @@ function GeminiRateLimitTable() {
     rpm: { used: number; limit: number };
     tpm: { used: number; limit: number };
     rpd: { used: number; limit: number };
+    rpdResetsAt: string;
   } | null>(null);
+  // "Còn bao lâu reset RPD" (thêm 2026-08-26) — cập nhật mỗi phút bằng setInterval, KHÔNG phải
+  // gọi lại API (mốc `rpdResetsAt` cố định trong 1 phiên mở popup, chỉ cần tính lại hiệu số với
+  // giờ hiện tại là đủ, không cần hỏi server lại).
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     let cancelled = false;
@@ -425,6 +430,11 @@ function GeminiRateLimitTable() {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
   }, []);
 
   if (!usage) return null;
@@ -454,11 +464,24 @@ function GeminiRateLimitTable() {
             <span className={isHigh ? "font-semibold text-red-400 light:text-red-600" : "text-text"}>
               {formatCompactNumber(r.used)}/{formatCompactNumber(r.limit)}
             </span>
+            {r.key === "rpd" && (
+              <span className="text-text-faint">({formatCountdown(new Date(usage.rpdResetsAt).getTime() - now)})</span>
+            )}
           </div>
         );
       })}
     </div>
   );
+}
+
+/** "5h32m" (giờ+phút còn lại tới lúc RPD reset) — làm tròn XUỐNG phút (không hiện giây, cập
+ * nhật mỗi phút là đủ), tối thiểu "0m" nếu mốc reset đã qua (hiếm, chỉ trong lúc chờ tick tiếp
+ * theo cập nhật lại `usage` mới). */
+function formatCountdown(ms: number): string {
+  const totalMinutes = Math.max(0, Math.floor(ms / 60_000));
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return h > 0 ? `${h}h${m}m` : `${m}m`;
 }
 
 /** Rút gọn số lớn thành dạng "175.5K" (1 chữ số thập phân, bỏ ".0" nếu tròn) — chỉ ảnh hưởng
