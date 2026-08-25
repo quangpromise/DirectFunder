@@ -493,6 +493,25 @@ khác biệt so với 2 biến thể đã biết) thay vì đoán mò sửa lạ
     `GROQ_API_KEY` còn sót trong Vercel Environment Variables, có thể xoá cho gọn (vô hại nếu để
     lại, code không đọc tới nữa).
 
+13. **(2026-08-27, cùng ngày, sau mục #12) `504` thật tái xuất SAU KHI đã gỡ Groq — thêm timeout
+    nội bộ** — người dùng báo lại đúng "So sánh WIT/1040/TTS" vẫn `504`. Debug lại với ĐÚNG file
+    WIT thật 500K+ ký tự của `BY4849` (đã dùng ở mục #10) qua model MỚI (`gemini-3.5-flash-lite`)
+    — kết quả chỉ mất **~8.6 giây**, xa dưới 60s giới hạn Vercel, tức KHÔNG PHẢI do kích thước tài
+    liệu như nghi ngờ ban đầu. Kết luận: lần `504` này nhiều khả năng là 1 request chậm bất
+    thường (mạng/model, không lặp lại ổn định) — dù chưa xác định được nguyên nhân gốc chính
+    xác, đã thêm lớp phòng thủ: `withTimeout()` (`crm-doc-compare.ts`, mới) bọc quanh lời gọi
+    Gemini, tự huỷ SỚM ở **50 giây** (dưới mốc 60s Vercel cắt cứng) và ném `AiTimeoutError` với
+    thông báo rõ ràng ("Gemini xử lý quá lâu — thử lại, hoặc chọn ít tài liệu hơn") thay vì để
+    Vercel tự cắt kết nối trong im lặng (`504` thô, không có JSON lỗi nào để đọc — đúng triệu
+    chứng người dùng gặp). Route bắt riêng `AiTimeoutError` → trả status `504` kèm message rõ.
+    Đã verify độc lập logic `withTimeout()` (script tạm, promise nhanh/chậm giả lập) — cả 2 case
+    đúng kỳ vọng (resolve bình thường khi nhanh hơn timeout; reject đúng `AiTimeoutError` khi
+    chậm hơn). **Giới hạn còn lại**: đây là lưới an toàn cho TRẢI NGHIỆM (lỗi rõ ràng thay vì
+    504 thô), KHÔNG giải quyết được nguyên nhân gốc nếu Gemini thật sự chậm — nếu người dùng báo
+    lại lỗi timeout LẶP LẠI nhiều lần (không phải 1 lần đơn lẻ), cần điều tra sâu hơn (có thể do
+    1 combo tài liệu cụ thể lớn hơn hẳn ca đã test, hoặc Gemini free tier có độ trễ cao hơn vào
+    giờ cao điểm).
+
 ## 4. Giới hạn đã biết
 
 - Không có OCR/fallback nếu CRM đổi định dạng PDF hoàn toàn khác — Gemini vẫn đọc được text lộn

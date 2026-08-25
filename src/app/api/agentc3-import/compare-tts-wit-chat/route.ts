@@ -7,6 +7,7 @@ import {
   askCompareDocs,
   extractDocumentText,
   AiProviderConfigError,
+  AiTimeoutError,
   type CompareChatMessage,
   type SelectedDocEntry,
 } from "@/lib/crm-doc-compare";
@@ -102,6 +103,9 @@ export async function POST(request: NextRequest) {
     }
     if (err instanceof AiRateLimitError) {
       return NextResponse.json({ ok: false, error: err.message }, { status: 429 });
+    }
+    if (err instanceof AiTimeoutError) {
+      return NextResponse.json({ ok: false, error: err.message }, { status: 504 });
     }
     if (err instanceof AgentC3LoginError) return NextResponse.json({ ok: false, error: err.message }, { status: 502 });
     if (err instanceof AgentC3NotFoundError) return NextResponse.json({ ok: false, error: err.message }, { status: 404 });

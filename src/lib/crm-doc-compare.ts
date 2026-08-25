@@ -124,6 +124,31 @@ function extractForm1040Pages(fullText: string): string {
 
 export class AiProviderConfigError extends Error {}
 
+/** Gemini xử lý chậm bất thường (mạng/model, không phải do kích thước tài liệu — đã verify
+ * sống với file WIT thật 500K+ ký tự chỉ mất ~9s) từng gây `504` thô (Vercel tự cắt kết nối ở
+ * 60s giới hạn cứng, không có JSON lỗi nào để đọc) — lỗi thật gặp trên production 2026-08-27.
+ * `withTimeout()` chủ động huỷ SỚM HƠN mốc đó (50s) và ném lỗi rõ ràng thay vì để Vercel cắt
+ * ngang trong im lặng. */
+export class AiTimeoutError extends Error {}
+
+const GEMINI_TIMEOUT_MS = 50_000;
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new AiTimeoutError(message)), timeoutMs);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
+}
+
 function isGeminiConfigured(): boolean {
   return Boolean(process.env.GEMINI_API_KEY);
 }
@@ -245,23 +270,27 @@ async function askGemini(params: AskParams): Promise<AiCompareRow[]> {
     ...params.history.map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] })),
     { role: "user", parts: [{ text: params.message }] },
   ];
-  const response = await withAiRetry(() =>
-    ai.models.generateContent({
-      // "gemini-3.6-flash" (bản trước) chỉ 20 request/NGÀY cho free tier (đã xác nhận thật qua
-      // lỗi RESOURCE_EXHAUSTED thật trên production) — đổi sang "gemini-3.5-flash-lite"
-      // (2026-08-27, nghiên cứu + verify sống): free tier ~1.500 request/ngày (gấp 75 lần),
-      // vẫn hỗ trợ đầy đủ responseSchema/structured output, đủ dùng cho tác vụ đối chiếu số
-      // liệu WIT/1040/TTS (không cần suy luận phức tạp như model flagship). "gemini-2.5-flash"/
-      // "gemini-2.5-flash-lite" đã ngừng cấp cho user mới (xác nhận thật 2026-08-25/27 — gọi API
-      // trả lỗi 404 kèm khuyến nghị đổi sang bản 3.5/3.6).
-      model: "gemini-3.5-flash-lite",
-      contents,
-      config: {
-        systemInstruction: CHAT_SYSTEM_INSTRUCTION,
-        responseMimeType: "application/json",
-        responseSchema: GEMINI_RESPONSE_SCHEMA,
-      },
-    })
+  const response = await withTimeout(
+    withAiRetry(() =>
+      ai.models.generateContent({
+        // "gemini-3.6-flash" (bản trước) chỉ 20 request/NGÀY cho free tier (đã xác nhận thật qua
+        // lỗi RESOURCE_EXHAUSTED thật trên production) — đổi sang "gemini-3.5-flash-lite"
+        // (2026-08-27, nghiên cứu + verify sống): free tier ~1.500 request/ngày (gấp 75 lần),
+        // vẫn hỗ trợ đầy đủ responseSchema/structured output, đủ dùng cho tác vụ đối chiếu số
+        // liệu WIT/1040/TTS (không cần suy luận phức tạp như model flagship). "gemini-2.5-flash"/
+        // "gemini-2.5-flash-lite" đã ngừng cấp cho user mới (xác nhận thật 2026-08-25/27 — gọi API
+        // trả lỗi 404 kèm khuyến nghị đổi sang bản 3.5/3.6).
+        model: "gemini-3.5-flash-lite",
+        contents,
+        config: {
+          systemInstruction: CHAT_SYSTEM_INSTRUCTION,
+          responseMimeType: "application/json",
+          responseSchema: GEMINI_RESPONSE_SCHEMA,
+        },
+      })
+    ),
+    GEMINI_TIMEOUT_MS,
+    "Gemini xử lý quá lâu — thử lại, hoặc chọn ít tài liệu hơn (vd bớt 1 file WIT)."
   );
   return parseRowsFromJsonText(response.text ?? "[]");
 }
