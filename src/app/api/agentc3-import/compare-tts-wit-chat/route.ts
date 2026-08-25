@@ -24,13 +24,29 @@ interface DocSelection {
   label: string;
 }
 
+/** Cache text đã trích theo URL — module-scope, cùng mẫu với `cachedCookie` (TTL 15 phút) trong
+ * `agentc3-client.ts`. Lý do thêm (2026-08-27, đo thật): tải 1 file WIT lớn từ CRM có thể mất
+ * ~17 GIÂY (2.12MB, tốc độ trả về của CHÍNH SERVER CRM, không phải mạng/code phía mình) — mỗi
+ * lượt hỏi tiếp theo TRONG CÙNG 1 phiên chat (cùng file WIT/TTS, chỉ đổi câu hỏi) trước đây tải
+ * + parse lại TỪ ĐẦU dù tài liệu không đổi. Cache này (best-effort — chỉ có tác dụng nếu Vercel
+ * tái dùng cùng 1 instance serverless ấm cho các request liên tiếp, không đảm bảo 100% nhưng
+ * KHÔNG có rủi ro gì khi cache miss, tự tải lại như cũ) giúp câu hỏi thứ 2 trở đi trong cùng
+ * phiên gần như tức thời thay vì lặp lại ~17-25s tải+trích. */
+const DOCUMENT_TEXT_CACHE_TTL_MS = 10 * 60 * 1000;
+const documentTextCache = new Map<string, { text: string; expiresAt: number }>();
+
 async function fetchEntry(sel: DocSelection | null | undefined): Promise<SelectedDocEntry | null> {
   if (!sel?.url) return null;
+  const cached = documentTextCache.get(sel.url);
+  if (cached && cached.expiresAt > Date.now()) {
+    return { label: sel.label, text: cached.text };
+  }
   const bytes = await fetchAgentC3FileBytes(sel.url);
   // extractDocumentText (không phải extractPdfText thẳng) — CRM đôi khi lưu WIT dạng ".html"
   // thay vì ".pdf", tự nhận diện định dạng thay vì luôn ép parse bằng pdfjs (xem
   // crm-doc-compare.ts, lỗi thật gặp trên production "InvalidPDFException").
   const text = await extractDocumentText(bytes);
+  documentTextCache.set(sel.url, { text, expiresAt: Date.now() + DOCUMENT_TEXT_CACHE_TTL_MS });
   return { label: sel.label, text };
 }
 

@@ -699,6 +699,30 @@ khác biệt so với 2 biến thể đã biết) thay vì đoán mò sửa lạ
       Mất **~17.4 giây**. `tsc --noEmit`/`eslint` sạch. **Không cần bước production nào** (không
       đổi schema/feature-permission).
 
+19. **(2026-08-27, cùng ngày, sau mục #18) Đo chi tiết nguồn gốc độ trễ + thêm cache text theo
+    URL (route)** — người dùng hỏi thời gian "cộng dồn" và "Gemini trả kết quả" tách riêng. Đo
+    thật (`BY306702`, 2 người WIT + TTS): **cộng dồn (regex, xây prompt) chỉ ~56ms** (không đáng
+    kể), **Gemini xử lý ~2.1 giây** (rất nhanh — khớp mục #16 phát hiện `gemini-3.5-flash-lite`
+    không có "thinking" bật mặc định). **Bottleneck thật nằm ở bước TẢI FILE TỪ CRM + parse PDF
+    (~25.6 giây tổng, KHÔNG liên quan gì tới Gemini)** — đo sâu hơn: đăng nhập CRM + tải danh
+    sách tài liệu ~7.7-8.1s (kể cả gọi lần 2 sau khi session đã cache — bản thân trang danh sách
+    phía CRM vốn đã chậm, không phải do thiếu cache session), tải 1 file WIT LỚN (2.12MB) mất
+    **~17 giây** (tốc độ trả về của CHÍNH SERVER CRM, ~125KB/s — không phải mạng/code phía mình,
+    không tối ưu trực tiếp được), trong khi parse PDF bằng `pdfjs` chỉ ~500ms (rất nhanh, không
+    phải vấn đề).
+    **Tối ưu đã làm**: phát hiện mỗi lượt hỏi TIẾP THEO trong CÙNG 1 phiên chat (chỉ đổi câu hỏi,
+    giữ nguyên file WIT/TTS đã chọn) trước đó vẫn tải + parse lại TỪ ĐẦU dù tài liệu không đổi —
+    lãng phí ~17-25s mỗi lần dù không cần thiết. Thêm cache module-scope theo URL trong
+    `compare-tts-wit-chat/route.ts` (`documentTextCache`, TTL 10 phút — cùng mẫu `cachedCookie`
+    TTL 15 phút đã có sẵn trong `agentc3-client.ts`) — `fetchEntry()` kiểm tra cache trước khi
+    gọi `fetchAgentC3FileBytes`/`extractDocumentText`. Cache "best-effort" (chỉ có tác dụng nếu
+    Vercel tái dùng cùng 1 instance serverless ấm cho các request liên tiếp — thường đúng với
+    chat hỏi liên tục trong vài phút, không đảm bảo 100% nhưng KHÔNG có rủi ro gì khi cache miss,
+    tự tải lại bình thường như cũ). Verify sống: gọi `fetchEntry()` 2 lần liên tiếp với ĐÚNG url
+    file WIT lớn — lần 1 mất `13.045s`, lần 2 (cache hit) mất **`0ms`**, nội dung text giống hệt
+    nhau (`r1.text === r2.text`). `tsc --noEmit`/`eslint` sạch. **Không cần bước production
+    nào**.
+
 ## 4. Giới hạn đã biết
 
 - Không có OCR/fallback nếu CRM đổi định dạng PDF hoàn toàn khác — Gemini vẫn đọc được text lộn
