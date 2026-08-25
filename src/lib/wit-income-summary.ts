@@ -1,6 +1,12 @@
 /**
- * Tự tách + cộng dồn các giao dịch 1099-B (bán chứng khoán) và 1099-DA (bán tài sản số/crypto)
- * TRONG CODE bằng regex xác định — thay vì bắt AI tự đọc + cộng hàng trăm dòng số liệu.
+ * Tự tách + cộng dồn TOÀN BỘ số liệu dạng tiền trên WIT (1099-B/1099-DA VÀ mọi loại Form khác —
+ * W-2/1099-INT/1099-DIV/1099-G/1099-R/5498...) TRONG CODE bằng regex xác định — thay vì bắt AI
+ * tự đọc + cộng qua nhiều record/nhiều khối WIT (Taxpayer + Spouse). File đổi tên 2026-08-27 từ
+ * `wit-capital-gains.ts` (bản đầu CHỈ xử lý 1099-B/DA) sau khi mở rộng sang MỌI loại Form theo
+ * yêu cầu "tương tự với DIV, 1099G hay bất cứ khoản tiền nào, nếu chung 1 form thì gộp làm 1 số
+ * tổng" — xem `summarizeOtherWitForms()`/`formatOtherWitFormsBlock()`/`stripAllWitRecordsFromText()`
+ * ở nửa sau file. 1099-B/DA vẫn xử lý RIÊNG (`summarizeCapitalGains()`) vì có công thức Gain đặc
+ * thù (Proceeds + Wash Sale − Cost Basis) không áp dụng được cho các Form khác.
  *
  * **Lý do tồn tại (2026-08-27)**: người dùng báo AI không tổng hợp đúng Proceeds/Cost Basis/
  * Wash Sale của 1099-B/1099-DA khi WIT có nhiều giao dịch. Debug trực tiếp với 2 hồ sơ CRM thật
@@ -10,6 +16,8 @@
  * đáng tin cậy cho phép cộng hàng loạt quy mô lớn, bất kể prompt viết rõ đến đâu. Cách sửa đúng:
  * tính tổng bằng regex xác định (nhanh, chính xác 100%, đã verify khớp tay), rồi CHỈ đưa con số
  * đã tính sẵn vào prompt cho AI dùng thẳng khi đối chiếu với TTS — AI không cần tự cộng nữa.
+ * Bug tương tự (không cộng đúng khi CÓ NHIỀU BẢN GHI cùng loại/nhiều khối WIT — vd 2 W-2, 2
+ * 1099-INT) đã gặp lại với các Form khác 1099-B/DA, dẫn tới việc mở rộng module này (xem trên).
  *
  * Cấu trúc thật đã khảo sát (2 broker khác nhau, cùng field name):
  * - 1099-B luôn có đủ 3 field dạng tiền: "Proceeds:", "Cost or Basis:" (LƯU Ý: có chữ "or" ở
@@ -202,26 +210,146 @@ export function summarizeCapitalGains(texts: string[]): CapitalGainsSummary | nu
   return { form1099B, form1099DACovered, form1099DANoncoveredProceeds: noncoveredProceeds, combinedGain };
 }
 
-/** Cắt bỏ TOÀN BỘ đoạn text 1099-B/1099-DA khỏi 1 khối WIT — giữ nguyên mọi nội dung khác
- * (W-2/1099-INT/1099-DIV/1099-R/1099-NEC/1099-MISC/5498...). Đây là bước RÚT GỌN PROMPT bắt
- * buộc, không chỉ "tiện": đã tự gặp thật — dù `summarizeCapitalGains()` đã tính sẵn Gain, gửi
- * KÈM nguyên văn 195-249 giao dịch (chiếm >90% dung lượng file WIT thật đã khảo sát, vd
- * 195K/217K ký tự) vẫn khiến request Gemini TIMEOUT (input quá lớn, không liên quan gì tới việc
- * AI có phải tự cộng hay không — vấn đề là THỜI GIAN GEMINI ĐỌC HẾT INPUT). Trả về text đã cắt,
- * chèn 1 dòng đánh dấu ngắn tại vị trí đã cắt để AI biết còn dữ liệu (không hiểu nhầm là không
- * có 1099-B/DA nào — số liệu thật đã nằm ở khối "[TÍNH TOÁN SẴN...]" riêng). */
-export function stripCapitalGainsRecordsFromText(text: string): string {
-  const boundaries = findFormBoundaries(text);
-  const ranges: { start: number; end: number }[] = [];
-  for (let i = 0; i < boundaries.length; i++) {
-    const b = boundaries[i];
-    if (b.formType !== "1099-B" && b.formType !== "1099-DA") continue;
-    ranges.push({ start: b.index, end: i + 1 < boundaries.length ? boundaries[i + 1].index : text.length });
-  }
-  if (ranges.length === 0) return text;
+function formatMoney(n: number): string {
+  return `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
 
-  // Gộp các range liền kề thành khối lớn để chỉ chèn 1 dòng đánh dấu / khối liên tục, không lặp
-  // lại placeholder cho từng giao dịch riêng lẻ.
+/** 1 field dạng tiền cộng dồn theo nhãn (vd "Wages, Tips and Other Compensation"), gộp qua MỌI
+ * record cùng loại Form trong MỌI khối WIT đã chọn (Taxpayer + Spouse). */
+export interface WitFieldTotal {
+  label: string;
+  total: number;
+  count: number;
+}
+
+export interface WitFormTypeSummary {
+  formType: string;
+  recordCount: number;
+  fields: WitFieldTotal[];
+}
+
+/** Từ nối ngắn cho phép xuất hiện GIỮA 1 nhãn field thật (vd "Fair Market Value **of** Account",
+ * "Wages, Tips **and** Other Compensation") mà không bị coi là điểm cắt. */
+const LABEL_CONNECTOR_WORDS = new Set(["of", "or", "and", "the", "to", "from", "on", "in", "for", "a", "an", "per", "at", "no"]);
+
+/** 1 "từ" trong nhãn field được coi HỢP LỆ nếu: chỉ gồm chữ cái + dấu câu thường gặp (KHÔNG chứa
+ * chữ số/gạch ngang — loại được mã tài khoản/CUSIP kiểu "Z60J03-1"/"83Z45Y18TL0014550176" hay
+ * lẫn vào), VÀ (bắt đầu bằng chữ hoa — đúng quy ước viết hoa đầu từ của nhãn IRS thật — HOẶC là
+ * từ nối ngắn trong whitelist). */
+function isValidLabelWord(word: string): boolean {
+  if (!/^[A-Za-z(),./&]+$/.test(word)) return false;
+  const firstAlpha = word.match(/[A-Za-z]/)?.[0];
+  if (!firstAlpha) return false;
+  if (firstAlpha === firstAlpha.toUpperCase()) return true;
+  return LABEL_CONNECTOR_WORDS.has(word.toLowerCase().replace(/[^a-z]/g, ""));
+}
+
+/** Cắt bỏ phần "rác" ở ĐẦU nhãn thô — bug thật đã tự gặp khi verify: field liền TRƯỚC không có
+ * giá trị dạng tiền (vd "Submission Type: Original document") nên regex trích field không có
+ * điểm dừng tự nhiên, "nuốt" luôn cụm "Original document" vào đầu nhãn field kế tiếp (ra
+ * "Original document Wages, Tips and Other Compensation" thay vì đúng ra chỉ
+ * "Wages, Tips and Other Compensation"), tương tự mã tài khoản/CUSIP đứng trước 1 field cũng bị
+ * nuốt nhầm (vd "Z60J03-1 Fair Market Value of Account"). Quét NGƯỢC TỪ CUỐI nhãn thô, giữ lại
+ * các từ HỢP LỆ liên tiếp (`isValidLabelWord`) — gặp từ đầu tiên KHÔNG hợp lệ thì dừng, chỉ lấy
+ * phần từ SAU từ đó tới cuối làm nhãn thật. */
+function cleanLabel(rawLabel: string): string {
+  const words = rawLabel.trim().split(/\s+/);
+  let startIdx = 0;
+  for (let i = words.length - 1; i >= 0; i--) {
+    if (!isValidLabelWord(words[i])) {
+      startIdx = i + 1;
+      break;
+    }
+  }
+  return words.slice(startIdx).join(" ");
+}
+
+/** Trích MỌI field dạng "{Nhãn}: $X.XX" trong 1 đoạn record — TỔNG QUÁT, không cần biết trước
+ * tên field cụ thể của từng loại Form (W-2 có "Wages, Tips and Other Compensation"/"Federal
+ * Income Tax Withheld"/...; 1099-INT có "Interest"/...; 1099-DIV có "Ordinary Dividends"/
+ * "Qualified Dividends"/...; 1099-G có "Unemployment Compensation"/...; mỗi loại Form field
+ * khác nhau nhưng cùng 1 định dạng "Nhãn: $X.XX" nên dùng chung 1 regex được). Nhãn thô trích
+ * xong luôn được lọc qua `cleanLabel()` để loại rác từ field liền trước lẫn vào. */
+function extractDollarFields(segment: string): { label: string; amount: number }[] {
+  const re = /([A-Za-z][A-Za-z0-9,'()/\- ]{2,70}?):\s*\$([\d,]+\.\d{2})/g;
+  const out: { label: string; amount: number }[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(segment)) !== null) {
+    const label = cleanLabel(m[1]);
+    if (label) out.push({ label, amount: parseMoney(m[2]) });
+  }
+  return out;
+}
+
+/** Cộng dồn TOÀN BỘ field dạng tiền của MỌI loại Form khác 1099-B/1099-DA (đã có xử lý riêng ở
+ * `summarizeCapitalGains` — công thức Gain đặc thù, không dùng cách cộng field trần này) — từ 1
+ * HOẶC NHIỀU khối WIT (Taxpayer + Spouse), theo ĐÚNG nguyên tắc đã áp dụng cho 1099-B/DA: tính
+ * SẴN trong code bằng regex xác định, KHÔNG bắt AI tự đọc + cộng nhiều record/nhiều khối WIT lại
+ * (lỗi thật đã gặp: 2 file WIT mỗi file có W-2/1099-INT riêng, AI không cộng đúng hoặc bỏ sót).
+ * Trả mảng RỖNG nếu WIT không có Form nào khác 1099-B/DA. */
+export function summarizeOtherWitForms(texts: string[]): WitFormTypeSummary[] {
+  const byFormType = new Map<string, { count: number; fields: Map<string, { total: number; count: number }> }>();
+
+  for (const text of texts) {
+    const boundaries = findFormBoundaries(text);
+    for (let i = 0; i < boundaries.length; i++) {
+      const b = boundaries[i];
+      if (b.formType === "1099-B" || b.formType === "1099-DA") continue;
+      const end = i + 1 < boundaries.length ? boundaries[i + 1].index : text.length;
+      const segment = text.slice(b.index, end);
+      const fields = extractDollarFields(segment);
+      if (fields.length === 0) continue; // tiêu đề không kèm số liệu -> bỏ qua
+
+      let bucket = byFormType.get(b.formType);
+      if (!bucket) {
+        bucket = { count: 0, fields: new Map() };
+        byFormType.set(b.formType, bucket);
+      }
+      bucket.count++;
+      for (const f of fields) {
+        const existing = bucket.fields.get(f.label);
+        if (existing) {
+          existing.total += f.amount;
+          existing.count++;
+        } else {
+          bucket.fields.set(f.label, { total: f.amount, count: 1 });
+        }
+      }
+    }
+  }
+
+  return [...byFormType.entries()].map(([formType, bucket]) => ({
+    formType,
+    recordCount: bucket.count,
+    fields: [...bucket.fields.entries()].map(([label, v]) => ({ label, total: v.total, count: v.count })),
+  }));
+}
+
+/** Định dạng `WitFormTypeSummary[]` thành khối text cho prompt — 1 dòng/loại Form, liệt kê từng
+ * field đã cộng dồn. AI dùng thẳng các con số này khi đối chiếu với TTS, không tự cộng lại. */
+export function formatOtherWitFormsBlock(summaries: WitFormTypeSummary[]): string {
+  return summaries
+    .map((s) => {
+      const fieldsStr = s.fields.map((f) => `${f.label}: ${formatMoney(f.total)}${f.count > 1 ? ` (cộng dồn ${f.count} lần)` : ""}`).join(", ");
+      return `Form ${s.formType} (${s.recordCount} bản ghi, đã CỘNG DỒN mọi khối WIT đã chọn): ${fieldsStr}.`;
+    })
+    .join("\n");
+}
+
+/** Cắt bỏ TOÀN BỘ record của MỌI loại Form trong whitelist (1099-B/DA lẫn các loại khác) khỏi 1
+ * khối WIT — thay `stripCapitalGainsRecordsFromText` (chỉ cắt 1099-B/DA) vì giờ MỌI loại Form
+ * đều đã được trích + cộng dồn sẵn trong code (`summarizeCapitalGains`/`summarizeOtherWitForms`),
+ * không cần gửi nguyên văn cho AI đọc lại nữa — giảm đáng kể kích thước prompt (đa số dung lượng
+ * 1 file WIT là các record này). Nội dung KHÔNG khớp Form nào trong whitelist (banner đầu file,
+ * dòng tổng số...) vẫn giữ nguyên. */
+export function stripAllWitRecordsFromText(text: string): string {
+  const boundaries = findFormBoundaries(text);
+  if (boundaries.length === 0) return text;
+
+  const ranges = boundaries.map((b, i) => ({
+    start: b.index,
+    end: i + 1 < boundaries.length ? boundaries[i + 1].index : text.length,
+  }));
   const merged: { start: number; end: number }[] = [];
   for (const r of ranges) {
     const last = merged[merged.length - 1];
@@ -233,15 +361,11 @@ export function stripCapitalGainsRecordsFromText(text: string): string {
   let cursor = 0;
   for (const r of merged) {
     result += text.slice(cursor, r.start);
-    result += " [ĐÃ LƯỢC BỚT các giao dịch 1099-B/1099-DA gốc — xem tổng đã tính sẵn ở khối riêng bên dưới] ";
+    result += " [ĐÃ LƯỢC BỚT các record gốc — xem tổng đã tính sẵn ở khối riêng bên dưới] ";
     cursor = r.end;
   }
   result += text.slice(cursor);
   return result;
-}
-
-function formatMoney(n: number): string {
-  return `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 /** Định dạng `CapitalGainsSummary` thành 1 khối text NGẮN GỌN, dễ đọc để chèn vào prompt gửi

@@ -1,7 +1,13 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import * as cheerio from "cheerio";
 import { withAiRetry } from "@/lib/ai-retry";
-import { summarizeCapitalGains, formatCapitalGainsSummaryBlock, stripCapitalGainsRecordsFromText } from "@/lib/wit-capital-gains";
+import {
+  summarizeCapitalGains,
+  formatCapitalGainsSummaryBlock,
+  summarizeOtherWitForms,
+  formatOtherWitFormsBlock,
+  stripAllWitRecordsFromText,
+} from "@/lib/wit-income-summary";
 
 /**
  * So sánh WIT / TTS trong popup "Get Files" — chat hỏi-đáp tự do, KHÔNG dùng cơ chế regex cố
@@ -130,6 +136,8 @@ Bạn sẽ nhận toàn văn TRÍCH TỪ các tài liệu PDF do người dùng 
 
 QUY TẮC CHIỀU SO SÁNH BẮT BUỘC: LUÔN LẤY WIT LÀM GỐC — duyệt qua TỪNG khoản thu nhập/khấu trừ XUẤT HIỆN TRÊN WIT (mỗi mã W-2/1099-INT/1099-DIV/1099-MISC/1099-NEC/1099-G/1099-R/5498...), rồi kiểm tra xem TTS CÓ ghi nhận khoản đó hay không. TUYỆT ĐỐI KHÔNG so chiều ngược lại — nếu TTS có 1 khoản mà WIT KHÔNG có, BỎ QUA khoản đó, không đưa vào bảng (vì WIT chỉ là dữ liệu bên thứ ba báo cáo, không phải danh sách đầy đủ mọi thu nhập). Với MỖI khoản có trên WIT nhưng KHÔNG thấy trên TTS: bắt buộc ghi trong note (a) khoản đó thuộc biểu mẫu nào (vd "1099-INT — Lãi ngân hàng"), và (b) DỰA THEO KIẾN THỨC THUẾ CỦA BẠN, loại thu nhập này có BẮT BUỘC phải khai trên Form 1040 hay không, kèm lý do ngắn gọn (vd "Lãi ngân hàng — LUÔN bắt buộc khai dù ngân hàng không gửi 1099-INT (dưới $10)"; "Trợ cấp thất nghiệp (1099-G) — bắt buộc khai, là thu nhập chịu thuế"; "Đóng góp HSA (5498-SA) — thường KHÔNG cần khai nếu trong hạn mức, chỉ mang tính thông tin").
 
+QUY TẮC BẮT BUỘC khi WIT có NHIỀU KHỐI (Taxpayer + Spouse) hoặc NHIỀU bản ghi cùng loại Form (vd 2 W-2, 2 1099-INT...): TUYỆT ĐỐI KHÔNG tự đọc từng khối/từng bản ghi rồi cộng lại (dễ sai/bỏ sót). Nếu prompt có kèm phần "[TÍNH TOÁN SẴN - Tổng từng field theo loại Form khác trên WIT, ĐÃ CỘNG DỒN mọi khối WIT đã chọn (đã tính bằng code, KHÔNG được tự cộng lại)]", PHẢI DÙNG THẲNG con số đã cộng dồn sẵn ở đó (đã gộp CẢ Taxpayer LẪN Spouse, CẢ nhiều bản ghi cùng loại) làm giá trị cột "wit" cho category tương ứng — KHÔNG tự tính lại, KHÔNG tự cộng thêm dù thấy nhiều khối WIT trong phần văn bản gốc (phần record gốc ĐÃ BỊ LƯỢC BỚT khỏi văn bản chính vì đã tính sẵn ở khối riêng này). Field không xuất hiện trong khối tính sẵn (vì WIT không có Form đó) thì bỏ qua, không suy đoán.
+
 QUY TẮC RIÊNG cho 1099-B (bán chứng khoán/cổ phiếu) và 1099-DA (bán tài sản số/crypto) trên WIT: mỗi file WIT có thể chứa RẤT NHIỀU giao dịch 1099-B/1099-DA riêng lẻ (có hồ sơ thật lên tới hàng trăm giao dịch) — TUYỆT ĐỐI KHÔNG tự đọc từng dòng rồi cộng lại (dễ sai/timeout với số lượng lớn). Thay vào đó, nếu khối WIT có kèm phần "[TÍNH TOÁN SẴN - Cộng dồn 1099-B/1099-DA trên WIT (đã tính bằng code, KHÔNG được tự cộng lại)]", PHẢI DÙNG THẲNG dòng "TỔNG GỘP Capital Gains" đã tính sẵn ở đó làm giá trị cột "wit" cho ĐÚNG 1 category DUY NHẤT tên "Capital Gains (1099-B + 1099-DA)" khi đối chiếu với TTS (dòng thu nhập lãi vốn tổng — TTS/IRS luôn báo GỘP CHUNG 1 con số, KHÔNG tách riêng theo loại form, nên WIT cũng phải gộp lại để so sánh 1-1 được) — KHÔNG tạo 2 dòng riêng "1099-B" và "1099-DA" nữa, không tự tính lại từ đầu. Nếu có nhiều khối WIT (Taxpayer + Spouse), khối "TỔNG GỘP" đã CỘNG DỒN SẴN cả 2 người rồi — không cần/không được tự cộng thêm lần nữa. Nếu phần chi tiết bên dưới có dòng "1099-DA ... KHÔNG báo cáo giá vốn", ghi rõ trong note của category đó rằng tổng gộp ĐÃ CỘNG Proceeds phần này (coi giá vốn = $0, đúng quy ước IRS dùng cho 1 con số tổng hợp), nhưng đây KHÔNG PHẢI Gain chính xác về thuế cho riêng phần thiếu giá vốn (giá vốn thật không biết được — đây là hạn chế THẬT của báo cáo IRS, không phải lỗi thiếu dữ liệu). Nếu KHÔNG thấy khối "[TÍNH TOÁN SẴN...]" nào trong WIT, nghĩa là không có giao dịch 1099-B/1099-DA nào — bỏ qua category này hoàn toàn, không suy đoán.
 
 Luôn trả lời bằng 1 DANH SÁCH DÒNG (không phải văn xuôi) — mỗi dòng gồm: category (tên khoản), wit (số/giá trị trên WIT, "—" nếu không có/không áp dụng), tts (số/giá trị trên TTS, "—" nếu không có/không áp dụng), note (ghi chú ngắn — nêu RÕ chênh lệch nếu có, vd "WIT vs TTS lệch $2", "WIT vs TTS khớp", giải thích cách suy luận nếu là ước tính gián tiếp, và nêu rõ nghĩa vụ khai 1040 theo quy tắc ở trên khi khoản WIT bị thiếu ở TTS). Nếu TTS không có sẵn, để "—" ở cột đó, không suy đoán. Nếu câu hỏi chỉ liên quan 1 khoản, trả về đúng 1 dòng. Nếu câu hỏi yêu cầu liệt kê nhiều khoản, trả nhiều dòng (áp dụng đúng quy tắc lấy WIT làm gốc ở trên khi liệt kê). Không bịa số liệu — chỉ dùng đúng số xuất hiện trong các văn bản được cung cấp. Category/note viết tiếng Việt trừ khi người dùng hỏi bằng tiếng Anh.
@@ -167,19 +175,27 @@ interface AskParams {
 }
 
 function buildDocumentsBlock(params: AskParams): string {
-  // Cộng dồn 1099-B/1099-DA bằng regex (chính xác 100%, xem wit-capital-gains.ts) TỪ TEXT GỐC
-  // TRƯỚC khi cắt — KHÔNG bắt AI tự đọc + cộng hàng trăm dòng số liệu (lỗi thật gặp trên
-  // production: 195-249 giao dịch 1099-B/1099-DA trong 1 file WIT khiến AI tự tính SAI, có ca
-  // lệch tới 7.6 lần). Sau đó CẮT BỎ nguyên văn các giao dịch đã tính xong khỏi text gửi AI —
-  // riêng bước cộng sẵn KHÔNG ĐỦ để hết timeout, vì các giao dịch này thường chiếm >90% dung
-  // lượng 1 file WIT thật (vd 195K/217K ký tự) — phải cắt hẳn mới giảm đủ kích thước prompt.
-  const capitalGainsSummary = summarizeCapitalGains(params.wit.map((w) => w.text));
+  // Cộng dồn MỌI loại Form (1099-B/DA riêng vì công thức Gain đặc thù, các loại khác — W-2/
+  // 1099-INT/1099-DIV/1099-G/1099-R... — qua bộ trích tổng quát) bằng regex xác định TỪ TEXT
+  // GỐC, cộng qua MỌI khối WIT đã chọn (Taxpayer + Spouse) TRƯỚC khi cắt — KHÔNG bắt AI tự đọc +
+  // cộng nhiều record/nhiều khối WIT lại (lỗi thật gặp trên production: 195-249 giao dịch
+  // 1099-B/DA khiến AI tính sai tới 7.6 lần; 2 khối WIT mỗi khối có W-2/1099-INT riêng khiến AI
+  // không cộng đúng/bỏ sót). Sau đó CẮT BỎ nguyên văn mọi record đã tính xong khỏi text gửi AI —
+  // riêng bước cộng sẵn KHÔNG ĐỦ để hết timeout với hồ sơ nhiều giao dịch, vì các record này
+  // thường chiếm >90% dung lượng 1 file WIT thật — phải cắt hẳn mới giảm đủ kích thước prompt.
+  const witTexts = params.wit.map((w) => w.text);
+  const capitalGainsSummary = summarizeCapitalGains(witTexts);
   const capitalGainsBlock = capitalGainsSummary
     ? `\n\n[TÍNH TOÁN SẴN - Cộng dồn 1099-B/1099-DA trên WIT (đã tính bằng code, KHÔNG được tự cộng lại)]\n${formatCapitalGainsSummaryBlock(capitalGainsSummary)}`
     : "";
+  const otherFormsSummary = summarizeOtherWitForms(witTexts);
+  const otherFormsBlock =
+    otherFormsSummary.length > 0
+      ? `\n\n[TÍNH TOÁN SẴN - Tổng từng field theo loại Form khác trên WIT, ĐÃ CỘNG DỒN mọi khối WIT đã chọn (đã tính bằng code, KHÔNG được tự cộng lại)]\n${formatOtherWitFormsBlock(otherFormsSummary)}`
+      : "";
   const witBlock =
     params.wit.length > 0
-      ? params.wit.map((w) => `[WIT - ${w.label}]\n${stripCapitalGainsRecordsFromText(w.text)}`).join("\n\n") + capitalGainsBlock
+      ? params.wit.map((w) => `[WIT - ${w.label}]\n${stripAllWitRecordsFromText(w.text)}`).join("\n\n") + capitalGainsBlock + otherFormsBlock
       : `[WIT]\n(Không có tài liệu này)`;
   return [witBlock, params.tts ? `[TTS - ${params.tts.label}]\n${params.tts.text}` : `[TTS]\n(Không có tài liệu này)`].join("\n\n");
 }

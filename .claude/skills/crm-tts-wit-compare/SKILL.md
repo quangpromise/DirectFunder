@@ -652,6 +652,53 @@ khác biệt so với 2 biến thể đã biết) thay vì đoán mò sửa lạ
     1099-DA)"` = `$-58,704.00` vs TTS `$-3,000.00`, AI tự giải thích đúng luật giới hạn khấu trừ
     lỗ vốn — mất ~21.6 giây. `tsc --noEmit`/`eslint` sạch. **Không cần bước production nào**.
 
+18. **(2026-08-27, cùng ngày, sau mục #17) Tổng quát hoá — gộp MỌI loại Form (không chỉ
+    1099-B/DA), đổi tên file `wit-capital-gains.ts` → `wit-income-summary.ts`** — người dùng báo
+    "lỗi quan trọng, khi cả 2 file WIT&I có 2 thông tin thì gộp thành 1 số, ví dụ 2 file có 2
+    INT và 2 W2 thì gộp chung lại", rồi tổng quát hoá thêm "tương tự với DIV, 1099G hay bất cứ
+    khoản tiền nào, nếu chung 1 form thì gộp làm 1 số tổng". Trước đó chỉ 1099-B/DA được tính
+    sẵn trong code (mục #15-#17) — mọi Form khác (W-2/1099-INT/1099-DIV/1099-G/1099-R/5498...)
+    vẫn để AI tự đọc + cộng qua nhiều bản ghi/nhiều khối WIT, đúng bug đã biết trước đó (LLM
+    không đáng tin cậy khi tự cộng hàng loạt).
+    - **Thiết kế TỔNG QUÁT** (không cần biết trước tên field cụ thể của từng loại Form):
+      `findFormBoundaries()` (đã có sẵn từ mục #16) tách MỌI record theo whitelist `WIT_FORM_TYPES`
+      — mới `extractDollarFields()` trích MỌI field dạng `"{Nhãn}: $X.XX"` trong 1 record (không
+      cần biết trước nhãn — W-2 có "Wages, Tips and Other Compensation", 1099-INT có "Interest",
+      1099-DIV có "Ordinary Dividends"/"Qualified Dividends", 1099-G có "Prior Year Refund",
+      5498 có "Fair Market Value of Account"... đều bắt được bằng 1 regex chung). `summarizeOtherWitForms()`
+      cộng dồn TỪNG field theo TỪNG loại Form, qua MỌI khối WIT đã chọn (Taxpayer + Spouse) — trả
+      `WitFormTypeSummary[]`. 1099-B/DA VẪN xử lý riêng (`summarizeCapitalGains`, không đổi) vì
+      có công thức Gain đặc thù không áp dụng chung được.
+    - **Bug thật tự phát hiện khi verify (nhãn field bị dính rác)**: field liền TRƯỚC 1 field có
+      giá trị `$` nhưng bản thân KHÔNG có `$` (vd `"Submission Type: Original document"`) không
+      tạo điểm dừng tự nhiên cho regex — nhãn trích ra bị nuốt luôn cụm đó (`"Original document
+      Wages, Tips and Other Compensation"` thay vì đúng ra chỉ `"Wages, Tips and Other
+      Compensation"`), tương tự mã tài khoản/CUSIP đứng trước field cũng bị nuốt nhầm (vd
+      `"Z60J03-1 Fair Market Value of Account"`). **Cách sửa**: `cleanLabel()` — quét NGƯỢC TỪ
+      CUỐI nhãn thô, giữ các từ HỢP LỆ liên tiếp (`isValidLabelWord()`: chỉ gồm chữ cái + dấu câu
+      thường gặp — loại được mã số/CUSIP chứa chữ số — VÀ bắt đầu chữ hoa hoặc là từ nối ngắn
+      trong whitelist như "of"/"and"/"or"), gặp từ đầu tiên không hợp lệ thì dừng, chỉ giữ phần
+      SAU đó làm nhãn thật.
+    - **`stripAllWitRecordsFromText()`** (thay `stripCapitalGainsRecordsFromText` cũ, đã xoá) —
+      cắt bỏ record của MỌI loại Form trong whitelist (không chỉ 1099-B/DA), vì giờ MỌI loại đã
+      được trích + cộng sẵn trong code. Đã verify: file WIT thật 514.864 ký tự (Thien Nguyen)
+      giảm còn **288 ký tự**; file 1.740 ký tự (Chau Pham) còn **301 ký tự**.
+    - `CHAT_SYSTEM_INSTRUCTION` thêm 1 đoạn quy tắc mới (trước đoạn 1099-B/DA riêng): nếu prompt
+      có khối `"[TÍNH TOÁN SẴN - Tổng từng field theo loại Form khác trên WIT, ĐÃ CỘNG DỒN mọi
+      khối WIT đã chọn (đã tính bằng code, KHÔNG được tự cộng lại)]"`, PHẢI DÙNG THẲNG con số đã
+      cộng sẵn (đã gộp cả Taxpayer/Spouse, cả nhiều bản ghi cùng loại), không tự tính lại.
+    - **Đổi tên file** `wit-capital-gains.ts` → `wit-income-summary.ts` (`git mv`, cập nhật 1 nơi
+      import duy nhất trong `crm-doc-compare.ts`) — phản ánh đúng phạm vi mới, không còn chỉ về
+      capital gains.
+    - **Verify sống đầy đủ** (`BY306702`, WIT "W&I" 2 người + TTS thật, hỏi "So sánh Wages,
+      Taxable interest, Dividends, và Capital Gains"): **Wages** gộp đúng 1 dòng `$74,202.00` (=
+      $37,547 Chau + $36,655 Thien) vs TTS `$74,203.00`. **Taxable Interest** đúng `$704.00` (=
+      $667 US Treasury + $37 Robinhood, CẢ 2 bản ghi CÙNG 1 người Thien) vs TTS `$38.00`.
+      **Ordinary Dividends** — category MỚI lần đầu xuất hiện đúng — `$83.00` vs TTS `$84.00`.
+      **Capital Gains** vẫn đúng `$-58,704.00` vs TTS `$-3,000.00` (không hồi quy so mục #17).
+      Mất **~17.4 giây**. `tsc --noEmit`/`eslint` sạch. **Không cần bước production nào** (không
+      đổi schema/feature-permission).
+
 ## 4. Giới hạn đã biết
 
 - Không có OCR/fallback nếu CRM đổi định dạng PDF hoàn toàn khác — Gemini vẫn đọc được text lộn
