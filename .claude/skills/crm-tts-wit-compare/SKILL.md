@@ -90,11 +90,17 @@ KHÔNG khôi phục lại trừ khi người dùng yêu cầu rõ ràng.
    Đây là kiến trúc HIỆN TẠI, mô tả đầy đủ ở mục 2 dưới đây (mục 5 phía trên chỉ còn giá trị lịch
    sử, ĐỪNG code theo mô tả đó).
 
-**Tính năng SONG SONG dùng CHUNG `GEMINI_API_KEY` (thêm 2026-08-27, KHÔNG thuộc phạm vi skill
-này)**: nút "Trợ lý AI" trên toolbar bảng Hồ sơ (cạnh "My Notes") — chat Gemini free tier TỰ DO,
-KHÔNG gắn hồ sơ/CRM nào, KHÔNG dùng chung code với tính năng ở đây (client riêng trong
-`src/lib/gemini-general-chat.ts`, route riêng `POST /api/ai-chat`, error class riêng
-`GeminiChatConfigError`) — 2 tính năng độc lập hoàn toàn, sửa 1 bên không ảnh hưởng bên kia.
+**[ĐÃ XOÁ 2026-08-27] Tính năng song song "Trợ lý AI"**: từng có 1 nút chat Gemini free tier TỰ
+DO trên toolbar bảng Hồ sơ (cạnh "My Notes", KHÔNG gắn hồ sơ/CRM nào, client riêng
+`src/lib/gemini-general-chat.ts`, route riêng `POST /api/ai-chat`) — đã **XOÁ HOÀN TOÀN** theo
+yêu cầu người dùng sau khi liên tục gặp lỗi 429 (giới hạn tốc độ/quota free tier) trên
+production ngay cả sau khi đã thêm retry (`withGeminiRetry`, xem mục dưới) — nghi ngờ quota
+NGÀY (không phải phút) đã cạn do dùng chung 1 `GEMINI_API_KEY` cho cả 2 tính năng, retry ngắn
+không giúp được. Đã xoá sạch: `src/components/ai-chat-dialog.tsx`,
+`src/lib/gemini-general-chat.ts`, `src/app/api/ai-chat/`, action `askAiChat` (`api-client.ts`/
+`app-store.ts`), i18n key `aiChat.*`, và 2 lần gọi `<AiChatDialog>` trong `cases/page.tsx`. Nếu
+sau này cần lại 1 chat AI tự do tương tự, cân nhắc dùng **RIÊNG 1 API key khác** (không chung
+với tính năng so sánh WIT/1040/TTS ở skill này) để tránh 2 tính năng cùng cạnh tranh 1 quota.
 
 ## 1. Ba tài liệu đang so sánh — vai trò khác nhau
 
@@ -284,7 +290,11 @@ khác biệt so với 2 biến thể đã biết) thay vì đoán mò sửa lạ
   429, lỗi khác ném ngay không retry. Hết lượt retry vẫn 429 thì ném `GeminiRateLimitError`,
   cả 2 route (`ai-chat`, `compare-tts-wit-chat`) bắt riêng lỗi này, trả về status 429 kèm thông
   báo rõ ràng "Gemini đang bị giới hạn tốc độ (free tier) — thử lại sau ít phút" thay vì lỗi
-  chung chung "Không gọi được AI"/"Không so sánh được tài liệu". Vẫn có thể gặp lại nếu dùng dồn
-  dập trong thời gian ngắn (free tier RPM thấp) — đây là giới hạn cố hữu, không phải bug, chỉ có
-  thể giảm bằng cách giãn request hoặc nâng lên tier trả phí (KHÔNG tự ý đổi, xem mục lịch sử
-  quyết định #3).
+  chung chung "Không gọi được AI"/"Không so sánh được tài liệu". **Vẫn tiếp tục gặp lại ngay cả
+  sau 1 phút** (không phải chỉ RPM ngắn hạn — nghi ngờ quota NGÀY của free tier đã cạn, vì 2
+  tính năng dùng CHUNG 1 `GEMINI_API_KEY` cộng dồn số request) → dẫn tới quyết định **XOÁ HẲN
+  tính năng "Trợ lý AI"** (xem mục "[ĐÃ XOÁ 2026-08-27]" ở đầu file) để giảm tải quota cho đúng
+  tính năng so sánh WIT/1040/TTS ở skill này. `withGeminiRetry()`/`gemini-retry.ts` vẫn giữ
+  nguyên, chỉ còn dùng bởi `crm-doc-compare.ts` — vẫn hữu ích cho rate-limit NGẮN HẠN (RPM),
+  không giải quyết được nếu là quota NGÀY đã cạn (chỉ hết khi Google tự reset, hoặc nâng lên
+  tier trả phí — KHÔNG tự ý đổi, xem mục lịch sử quyết định #3).

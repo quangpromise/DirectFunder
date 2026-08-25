@@ -28,7 +28,6 @@ import { AssignMenu } from "@/components/assign-menu";
 import { AddColumnDialog } from "@/components/add-column-dialog";
 import { ColumnVisibilityButton } from "@/components/column-visibility-button";
 import { MyNotesDialog } from "@/components/my-notes-dialog";
-import { AiChatDialog } from "@/components/ai-chat-dialog";
 import { loadHiddenColumnIds, saveHiddenColumnIds } from "@/lib/hidden-columns";
 import { AgentC3ImportDialog } from "@/components/agentc3-import-dialog";
 import { ColumnSettingsDialog } from "@/components/column-settings-dialog";
@@ -262,7 +261,6 @@ export default function CasesPage() {
   const myNotesData = useAppStore((s) => s.myNotesData);
   const fetchMyNotes = useAppStore((s) => s.fetchMyNotes);
   const saveMyNotes = useAppStore((s) => s.saveMyNotes);
-  const askAiChat = useAppStore((s) => s.askAiChat);
   const sendCaseRowToSheet = useAppStore((s) => s.sendCaseRowToSheet);
   const markCaseSheetSent = useAppStore((s) => s.markCaseSheetSent);
   const sendCaseRowToCpaReview = useAppStore((s) => s.sendCaseRowToCpaReview);
@@ -763,7 +761,6 @@ export default function CasesPage() {
             </button>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <AiChatDialog onAsk={askAiChat} />
             <MyNotesDialog myNotesData={myNotesData} fetchMyNotes={fetchMyNotes} saveMyNotes={saveMyNotes} />
             <ForProcessorButton />
             <EcQualificationBox />
@@ -1029,7 +1026,6 @@ export default function CasesPage() {
                   </button>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  <AiChatDialog onAsk={askAiChat} />
                   <MyNotesDialog myNotesData={myNotesData} fetchMyNotes={fetchMyNotes} saveMyNotes={saveMyNotes} />
                   <ForProcessorButton />
                   <EcQualificationBox />

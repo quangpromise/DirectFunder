@@ -445,13 +445,6 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
-  /** Chat AI tự do (nút nổi "Trợ lý AI", mọi màn hình dashboard) — Gemini API free tier, hỏi
-   * bất kỳ điều gì, KHÔNG gắn với hồ sơ/CRM nào. */
-  askAiChat: (payload: { message: string; history: { role: "user" | "assistant"; content: string }[] }) =>
-    request<{ ok: true; reply: string }>("/api/ai-chat", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }),
 
   listNotifications: () => request<AppNotification[]>("/api/notifications"),
   markNotificationRead: (id: string) => request<{ ok: true }>(`/api/notifications/${id}`, { method: "PATCH" }),
