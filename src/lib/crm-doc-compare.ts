@@ -1,5 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import Groq from "groq-sdk";
+import * as cheerio from "cheerio";
 import { withAiRetry, AiRateLimitError } from "@/lib/ai-retry";
 
 /**
@@ -44,6 +45,25 @@ export async function extractPdfText(buffer: Buffer): Promise<string> {
     pages.push(content.items.map((item: { str?: string }) => item.str ?? "").join(" "));
   }
   return pages.join("\n");
+}
+
+/** File bắt đầu bằng "%PDF-" là PDF thật (chuẩn định dạng) — kiểm tra magic bytes trước khi
+ * cố parse bằng `pdfjs`, thay vì bắt lỗi `InvalidPDFException` sau khi thử. */
+function looksLikePdf(buffer: Buffer): boolean {
+  return buffer.subarray(0, 5).toString("latin1") === "%PDF-";
+}
+
+/** Trích text từ 1 tài liệu CRM ĐÃ CHỌN — có thể là PDF thật HOẶC file `.html` (lỗi thật gặp
+ * trên production 2026-08-27: CRM đôi khi lưu WIT dưới dạng `.html` thay vì `.pdf`, vd
+ * "2024,W&I,THIEN T NGUYEN 0034 11-10-2025 0131.html" — `extractPdfText()` ném thẳng
+ * `InvalidPDFException: Invalid PDF structure` nếu cố parse HTML bằng `pdfjs`, khiến cả lượt so
+ * sánh lỗi ngay từ bước đọc file, TRƯỚC KHI kịp gọi Gemini/Groq). Hàm này tự nhận diện định
+ * dạng qua magic bytes rồi chọn đường trích đúng — route gọi hàm NÀY (không gọi thẳng
+ * `extractPdfText`) cho MỌI tài liệu chọn từ dropdown TTS/WIT/1040. */
+export async function extractDocumentText(buffer: Buffer): Promise<string> {
+  if (looksLikePdf(buffer)) return extractPdfText(buffer);
+  const $ = cheerio.load(buffer.toString("utf-8"));
+  return $("body").text().replace(/\s+/g, " ").trim();
 }
 
 /** 1 trang được coi là "Form 1040 gốc" (KHÔNG phải Schedule/Form khác đính kèm, dù nhiều trang

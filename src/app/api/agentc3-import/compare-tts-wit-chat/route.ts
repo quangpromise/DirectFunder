@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
 import { canViewCase } from "@/lib/rbac";
 import { AgentC3ConfigError, AgentC3LoginError, AgentC3NotFoundError, fetchAgentC3FileBytes } from "@/lib/agentc3-client";
-import { askCompareDocs, extractPdfText, AiProviderConfigError, type CompareChatMessage, type SelectedDocEntry } from "@/lib/crm-doc-compare";
+import { askCompareDocs, extractDocumentText, AiProviderConfigError, type CompareChatMessage, type SelectedDocEntry } from "@/lib/crm-doc-compare";
 import { AiRateLimitError } from "@/lib/ai-retry";
 
 export const runtime = "nodejs";
@@ -20,7 +20,10 @@ interface DocSelection {
 async function fetchEntry(sel: DocSelection | null | undefined): Promise<SelectedDocEntry | null> {
   if (!sel?.url) return null;
   const bytes = await fetchAgentC3FileBytes(sel.url);
-  const text = await extractPdfText(bytes);
+  // extractDocumentText (không phải extractPdfText thẳng) — CRM đôi khi lưu WIT dạng ".html"
+  // thay vì ".pdf", tự nhận diện định dạng thay vì luôn ép parse bằng pdfjs (xem
+  // crm-doc-compare.ts, lỗi thật gặp trên production "InvalidPDFException").
+  const text = await extractDocumentText(bytes);
   return { label: sel.label, text };
 }
 

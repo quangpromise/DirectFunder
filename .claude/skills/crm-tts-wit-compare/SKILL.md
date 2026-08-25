@@ -365,6 +365,18 @@ dùng báo lại LẦN 3 vẫn thiếu tên ở 1 hồ sơ khác, gần như ch�
 chưa biết, lặp lại đúng quy trình debug này (xin link → dump raw title/linkText/url → tìm điểm
 khác biệt so với 2 biến thể đã biết) thay vì đoán mò sửa lại code hiện có.**
 
+4. **(2026-08-27, phát hiện sau khi triển khai hybrid Gemini+Groq) CRM lưu 1 số file WIT dưới
+   dạng `.html` thay vì `.pdf`** — log production lộ `InvalidPDFException: Invalid PDF
+   structure`, lỗi ngay ở BƯỚC ĐỌC FILE (trước khi kịp gọi Gemini/Groq), route trả về lỗi chung
+   chung "Không so sánh được tài liệu". Đã xác nhận thật: `BY4849` có file WIT
+   ("2025,W&I,TO, VIVIAN...html") mở ra là HTML thật (`<!DOCTYPE html>...`), không phải PDF —
+   `extractPdfText()` cũ luôn cố parse mọi file bằng `pdfjs` nên crash ngay khi gặp file này.
+   **Cách sửa**: thêm `extractDocumentText()` (dùng THAY `extractPdfText` tại route) — kiểm tra
+   magic bytes `"%PDF-"` ở đầu file trước, PDF thật thì đi đường `pdfjs` như cũ, không phải thì
+   trích text qua `cheerio` (`$("body").text()`, đã có sẵn dependency, dùng chung với
+   `agentc3-client.ts`). Đã verify lại đúng file `.html` thật của `BY4849` — trích đúng
+   506.818 ký tự nội dung WIT thật ("Wage and Income Transcript Request Date...").
+
 ## 4. Giới hạn đã biết
 
 - Không có OCR/fallback nếu CRM đổi định dạng PDF hoàn toàn khác — Gemini vẫn đọc được text lộn
