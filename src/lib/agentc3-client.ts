@@ -62,9 +62,23 @@ async function login(): Promise<string> {
   return cookie;
 }
 
+/** Gộp các lượt gọi `login()` đang chạy đồng thời thành 1 — lỗi thật đo được (2026-08-28): route
+ * so sánh WIT/TTS tải TTS + tối đa 2 WIT SONG SONG (`Promise.all`), lúc cache cookie còn trống
+ * (request đầu phiên) cả 3 lượt gọi `getSessionCookie()` gần như cùng lúc đều thấy cache trống
+ * nên tự đăng nhập RIÊNG (xác nhận qua log: 3 lượt `login()` cách nhau <50ms) — tốn 3 round-trip
+ * đăng nhập tới CRM thay vì 1, cộng dồn tải lên server ngoài không cần thiết. Biến này giữ lại
+ * promise `login()` ĐANG chạy — lượt gọi thứ 2/3 tới trong lúc lượt đầu chưa xong sẽ `await`
+ * chung đúng promise đó thay vì tự gọi lại. */
+let inFlightLogin: Promise<string> | null = null;
+
 async function getSessionCookie(): Promise<string> {
   if (cachedCookie && Date.now() - cachedCookieAt < SESSION_TTL_MS) return cachedCookie;
-  return login();
+  if (!inFlightLogin) {
+    inFlightLogin = login().finally(() => {
+      inFlightLogin = null;
+    });
+  }
+  return inFlightLogin;
 }
 
 async function fetchWithSession(path: string): Promise<Response> {

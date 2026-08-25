@@ -722,6 +722,25 @@ khác biệt so với 2 biến thể đã biết) thay vì đoán mò sửa lạ
     file WIT lớn — lần 1 mất `13.045s`, lần 2 (cache hit) mất **`0ms`**, nội dung text giống hệt
     nhau (`r1.text === r2.text`). `tsc --noEmit`/`eslint` sạch. **Không cần bước production
     nào**.
+20. **(2026-08-28, sau mục #19) Người dùng hỏi lại "giảm tải thời gian sum" — đo lại xác nhận
+    KHÔNG PHẢI vấn đề, phát hiện + vá 1 lỗi thật khác (race-condition đăng nhập trùng lặp)** — đo
+    lại độc lập với hồ sơ `BY306702`: bước sum/aggregate (regex, `summarizeCapitalGains` +
+    `summarizeOtherWitForms` + `stripAllWitRecordsFromText`) chỉ **~2ms**, xác nhận lại đúng kết
+    luận mục #19 (không đáng kể, không phải chỗ chậm — có thể "sum" trong câu hỏi người dùng thực
+    ra là cảm nhận độ trễ TỔNG THỂ, không phải đúng nghĩa bước cộng dồn).
+    **Phát hiện phụ khi đo (không phải điều được hỏi trực tiếp, nhưng là tối ưu thật)**: route
+    `compare-tts-wit-chat` tải TTS + tối đa 2 WIT SONG SONG (`Promise.all`) — lúc cache cookie
+    CRM còn trống (request đầu phiên/sau 15 phút TTL), cả 2-3 lượt gọi `getSessionCookie()` gần
+    như đồng thời đều thấy cache trống nên **mỗi lượt tự đăng nhập RIÊNG** — xác nhận qua log
+    debug thật: 3 lượt gọi `login()` cách nhau <50ms thay vì 1. Tốn thêm round-trip đăng nhập
+    thừa tới CRM ngoài không cần thiết (lãng phí, cộng dồn tải lên server ngoài, có thể làm chậm
+    thêm nếu CRM xử lý đăng nhập chậm/giới hạn concurrent login cho cùng 1 tài khoản). Đã vá bằng
+    biến module-scope `inFlightLogin` (`agentc3-client.ts`, `getSessionCookie()`) — lượt gọi đầu
+    giữ lại promise `login()` đang chạy, lượt gọi thứ 2/3 tới trong lúc lượt đầu CHƯA xong sẽ
+    `await` CHUNG đúng promise đó thay vì tự gọi `login()` lại. Verify sống bằng log debug tạm:
+    trước vá — 3 lượt `login()` riêng biệt khi 3 `fetchAgentC3FileBytes()` chạy song song lúc
+    cache nguội; sau vá — đúng 1 lượt `login()` duy nhất cho cùng kịch bản. `tsc --noEmit`/
+    `eslint` sạch. **Không cần bước production nào** (thuần logic, không đổi schema/API).
 
 ## 4. Giới hạn đã biết
 
