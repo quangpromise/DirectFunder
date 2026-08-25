@@ -10,9 +10,10 @@ import {
   parseAgentC3CustomerId,
 } from "@/lib/agentc3-client";
 
-/** Nút "TTS & WIT" ở cột "Check CRM" — đọc trực tiếp CRM agentc3, trả về ngày upload mới nhất
- * của TTS/WIT cho từng năm 2023/2024/2025 để hiện popup kết quả ngay. Chỉ đọc, không ghi/so
- * sánh/thông báo gì (đơn giản hoá 2026-08-23). */
+/** Nút "TTS & WIT" ở cột "Check CRM" — đọc trực tiếp CRM agentc3, trả về mọi file (ngày upload
+ * + link tải trực tiếp trên CRM) của TTS/WIT VÀ "1040 Tax Return" (thêm 2026-08-25) cho từng
+ * năm 2023/2024/2025 để hiện popup kết quả ngay. Chỉ đọc, không ghi/so sánh/thông báo gì (đơn
+ * giản hoá 2026-08-23). */
 export async function POST(request: NextRequest) {
   const me = await requireUser();
   if (!me) return NextResponse.json({ ok: false, error: "Chưa đăng nhập" }, { status: 401 });
@@ -44,8 +45,8 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const { tts, wit } = await fetchTtsWitDatesByYear(customerId);
-    return NextResponse.json({ ok: true, tts, wit });
+    const { tts, wit, taxReturns, other } = await fetchTtsWitDatesByYear(customerId);
+    return NextResponse.json({ ok: true, tts, wit, taxReturns, other });
   } catch (err) {
     if (err instanceof AgentC3ConfigError) {
       return NextResponse.json({ ok: false, error: "Chưa cấu hình tài khoản CRM agentc3" }, { status: 501 });

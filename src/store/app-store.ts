@@ -450,9 +450,16 @@ interface AppState {
   /** Tra số row trên tab CPA Review khớp SSN — dùng cho popup chọn năm gửi mail CPA mới
    * (điền {cpaReviewRow} vào nội dung mail). Đọc-chỉ, không cần optimistic/log lịch sử. */
   lookupCpaReviewRow: (ssn: string) => Promise<{ found: boolean; rowNumber?: number }>;
-  /** Nút "TTS & WIT" ở cột "Check CRM" — đọc ngày TTS/WIT mới nhất theo năm từ CRM agentc3. */
+  /** Nút "TTS & WIT" ở cột "Check CRM" — đọc mọi file TTS/WIT upload đúng ngày mới nhất theo
+   * năm (ngày + link tải) từ CRM agentc3. */
   checkCrmLatestTts: (caseId: string) => Promise<
-    | { ok: true; tts: Record<"2023" | "2024" | "2025", string | null>; wit: Record<"2023" | "2024" | "2025", string | null> }
+    | {
+        ok: true;
+        tts: Record<"2023" | "2024" | "2025", { timestamp: string; url: string; personName: string | null }[]>;
+        wit: Record<"2023" | "2024" | "2025", { timestamp: string; url: string; personName: string | null }[]>;
+        taxReturns: Record<"2023" | "2024" | "2025", { timestamp: string; url: string; personName: string | null }[]>;
+        other: { timestamp: string; url: string; personName: string | null } | null;
+      }
     | { ok: false; error: string }
   >;
   /** Nạp "My Notes" của chính user đang đăng nhập — gọi lần đầu mở popup (xem

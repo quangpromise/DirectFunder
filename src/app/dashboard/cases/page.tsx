@@ -1521,7 +1521,13 @@ function RowCells({
     isCustom: boolean
   ) => void;
   checkCrmLatestTts: (caseId: string) => Promise<
-    | { ok: true; tts: Record<"2023" | "2024" | "2025", string | null>; wit: Record<"2023" | "2024" | "2025", string | null> }
+    | {
+        ok: true;
+        tts: Record<"2023" | "2024" | "2025", { timestamp: string; url: string; personName: string | null }[]>;
+        wit: Record<"2023" | "2024" | "2025", { timestamp: string; url: string; personName: string | null }[]>;
+        taxReturns: Record<"2023" | "2024" | "2025", { timestamp: string; url: string; personName: string | null }[]>;
+        other: { timestamp: string; url: string; personName: string | null } | null;
+      }
     | { ok: false; error: string }
   >;
   deleteRow: (caseId: string, deletedByUserId: string) => void;
@@ -1855,13 +1861,14 @@ function RowCells({
             <OrderCell
               editable={canEditColumn(user.role, col) && canEditRow}
               hasClientLink={Boolean(row.clientLink)}
+              clientName={getFullName(row)}
               onCheckCrm={async () => {
                 const res = await checkCrmLatestTts(row.id);
                 if (!res.ok) {
                   await alertWarn(res.error, { title: t("crmTtsWit.checkFailedTitle") });
                   return null;
                 }
-                return { tts: res.tts, wit: res.wit };
+                return { tts: res.tts, wit: res.wit, taxReturns: res.taxReturns, other: res.other };
               }}
             />
           </div>

@@ -13,16 +13,20 @@ import { CrmTtsWitCheckButton, CrmTtsWitResult } from "@/components/crm-tts-wit-
 export function OrderCell({
   editable,
   hasClientLink,
+  clientName,
   onCheckCrm,
 }: {
   editable: boolean;
   hasClientLink: boolean;
+  /** Tên khách hàng (dòng 1) của hồ sơ — đính kèm vào tên/text hiển thị mỗi link TTS/WIT lấy
+   * được, để phân biệt dễ dàng khi mở nhiều tab/nhiều hồ sơ cùng lúc (thêm 2026-08-25). */
+  clientName: string;
   onCheckCrm: () => Promise<CrmTtsWitResult | null>;
 }) {
   return (
     <div className="flex h-full min-w-0 flex-col items-center justify-center gap-0.5 px-1 py-1">
       {hasClientLink ? (
-        <CrmTtsWitCheckButton disabled={!editable} onCheck={onCheckCrm} />
+        <CrmTtsWitCheckButton disabled={!editable} clientName={clientName} onCheck={onCheckCrm} />
       ) : (
         <span className="text-[10px] text-text-faint">—</span>
       )}

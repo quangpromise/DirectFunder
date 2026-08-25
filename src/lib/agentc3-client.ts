@@ -341,20 +341,94 @@ export async function saveCrmConversationLog(
 export type CrmDocYear = "2023" | "2024" | "2025";
 const TARGET_YEARS: CrmDocYear[] = ["2023", "2024", "2025"];
 
-export interface CrmTtsWitDates {
-  tts: Record<CrmDocYear, string | null>;
-  wit: Record<CrmDocYear, string | null>;
+export interface CrmTtsWitDoc {
+  timestamp: string;
+  /** Link tải/xem trực tiếp file PDF trên CRM (href gốc của thẻ <a> trong dòng lịch sử upload). */
+  url: string;
+  /** Tên khách hàng đọc TRỰC TIẾP từ tên file trên CRM (qua `extractPersonNameFromDocUrl`,
+   * thêm 2026-08-25) — phân biệt đúng Taxpayer/Spouse khi hồ sơ có nhiều người, mỗi người có
+   * file lên cùng ngày (vd 2 WIT cùng ngày, 1 của "Le, Hannie Ngoc" 1 của "Nguyen, Pyon Ngoc").
+   * null nếu CRM dùng định dạng tên file cũ không đọc được — phía hiển thị tự fallback về tên
+   * khách hàng của hồ sơ trong Direct Funder. */
+  personName: string | null;
 }
 
-/** Đọc tab Documentation của khách hàng, tìm ngày upload MỚI NHẤT của file TTS và WIT cho
- * từng năm 2023/2024/2025 — dùng cho nút "TTS & WIT" ở cột "Check CRM" (xem POST
- * /api/agentc3-import/check-latest-tts), hiện thẳng lên popup kết quả mỗi lần bấm (KHÔNG so
- * sánh/lưu mốc, không tạo Notification — đơn giản hoá 2026-08-23 sau phản hồi thực tế). Đã
- * khảo sát thật cấu trúc trang: mỗi loại tài liệu là 1 dòng "header" (vd "Pitbulltax 2024 TTS",
- * "2023 WI Transcript" — tên WIT thật trên CRM là "{năm} WI Transcript", KHÔNG phải "Wage &
- * Income Transcript" như tưởng ban đầu, dò được qua toàn bộ danh mục title_ind 1-103), theo sau
- * là 0..N dòng "lịch sử upload" (cột đầu là số thứ tự thuần, kèm timestamp thật "YYYY-MM-DD
- * HH:MM:SS" ở cột thứ 3) cho tới khi gặp dòng header kế tiếp. */
+/** Đọc tên khách hàng từ chính tên file upload trên CRM — đường dẫn/query "key" của link tải
+ * (`download_s3?key=...`) luôn có dạng đã khảo sát thật:
+ * "{năm},{LOẠI},{Họ}, {Tên đệm} {số} {MM-DD-YYYY} {HHMM}.{ext}" (vd
+ * "2023,W&I,Nguyen, Pyon Ngoc 9190 08-12-2026 0104.pdf" -> "Nguyen, Pyon Ngoc"). Trả `null` nếu
+ * không khớp định dạng này — CRM có 1 số ít file cũ dùng kiểu đặt tên khác (viết-liền-dấu-gạch,
+ * không có timestamp cùng dạng), không cố đoán, để phía hiển thị tự fallback. */
+function extractPersonNameFromDocUrl(url: string): string | null {
+  let decoded: string;
+  try {
+    const parsed = new URL(url);
+    const key = parsed.searchParams.get("key");
+    decoded = decodeURIComponent(key ?? url);
+  } catch {
+    decoded = url;
+  }
+  const basename = decoded.split("/").pop() ?? "";
+  const parts = basename.split(",");
+  if (parts.length < 4) return null;
+  const lastName = parts[2].trim();
+  if (!lastName) return null;
+  const rest = parts.slice(3).join(",");
+  const m = /^\s*(.+?)\s+\d{2,6}\s+\d{2}-\d{2}-\d{4}\s+\d{3,4}\.\w+$/.exec(rest);
+  if (!m) return null;
+  const firstMiddle = m[1].trim();
+  return firstMiddle ? `${lastName}, ${firstMiddle}` : lastName;
+}
+
+/** Bỏ đuôi mở rộng (".pdf", ".html"...) khỏi tên file hiển thị — dùng cho nhãn của link "1040
+ * Tax Return" (xem bên dưới). */
+function stripFileExtension(name: string): string {
+  return name.replace(/\.[a-zA-Z0-9]{1,5}$/, "").trim();
+}
+
+/** Với mỗi năm/loại tài liệu: tìm NGÀY (phần "YYYY-MM-DD" của timestamp) lớn nhất, giữ lại
+ * MỌI file upload đúng ngày đó (không chỉ file có giờ:phút lớn nhất — nhiều file có thể lên
+ * cùng ngày, vd 1 người upload nhiều trang/phần cùng lúc, hoặc Taxpayer+Spouse cùng ngày), sắp
+ * xếp mới nhất trước. Dùng chung cho TTS/WIT lẫn "1040 Tax Return". */
+function latestDayOnly(docs: CrmTtsWitDoc[]): CrmTtsWitDoc[] {
+  if (docs.length === 0) return [];
+  const latestDate = docs.reduce((max, d) => (d.timestamp.slice(0, 10) > max ? d.timestamp.slice(0, 10) : max), "");
+  return docs
+    .filter((d) => d.timestamp.slice(0, 10) === latestDate)
+    .sort((a, b) => (a.timestamp < b.timestamp ? 1 : a.timestamp > b.timestamp ? -1 : 0));
+}
+
+export interface CrmTtsWitDates {
+  tts: Record<CrmDocYear, CrmTtsWitDoc[]>;
+  wit: Record<CrmDocYear, CrmTtsWitDoc[]>;
+  /** Bảng "1040 Tax Return" mới (thêm 2026-08-25) — mọi file "{năm} 1040 Tax return" upload
+   * vào đúng ngày mới nhất, năm 2023-2025 (bỏ 2022 theo yêu cầu). */
+  taxReturns: Record<CrmDocYear, CrmTtsWitDoc[]>;
+  /** Field "Other" (thêm 2026-08-25) — CHỈ 1 link MỚI NHẤT (không phải mọi link cùng ngày như
+   * 3 bảng trên, đúng yêu cầu "lấy link mới nhất của nó kèm tên") — mục "Other" trên CRM không
+   * theo năm, không có cấu trúc tên file cố định (thường là ảnh chụp màn hình/tin nhắn tự do,
+   * đã khảo sát thật). `null` nếu hồ sơ chưa có file "Other" nào. */
+  other: CrmTtsWitDoc | null;
+}
+
+/** Đọc tab Documentation của khách hàng 1 LẦN, trả về mọi file TTS/WIT VÀ "1040 Tax Return"
+ * upload vào ĐÚNG NGÀY gần nhất (không chỉ 1 file mới nhất — nhiều file có thể lên cùng ngày,
+ * vd 1 người upload nhiều trang/phần cùng lúc, thêm 2026-08-25 sau yêu cầu "lấy tất cả link
+ * mới nhất được up cùng ngày") cho từng năm 2023/2024/2025, cộng field "Other" (không theo
+ * năm, chỉ lấy 1 link MỚI NHẤT — thêm 2026-08-25) — dùng cho nút "TTS & WIT" ở cột "Check CRM"
+ * (xem POST /api/agentc3-import/check-latest-tts), hiện thẳng lên popup kết quả mỗi lần bấm
+ * (KHÔNG so sánh/lưu mốc, không tạo Notification — đơn giản hoá 2026-08-23 sau phản hồi thực
+ * tế; thêm link 2026-08-24; thêm bảng "1040 Tax Return"/"Other" 2026-08-25). Đã khảo sát
+ * thật cấu trúc trang: mỗi loại tài liệu là 1 dòng "header" (vd "Pitbulltax 2024 TTS", "2023 WI
+ * Transcript" — tên WIT thật trên CRM là "{năm} WI Transcript", KHÔNG phải "Wage & Income
+ * Transcript" như tưởng ban đầu, dò được qua toàn bộ danh mục title_ind 1-103; "2023 1040 Tax
+ * return" cho bảng mới), theo sau là 0..N dòng "lịch sử upload" (cột đầu là số thứ tự thuần,
+ * kèm timestamp thật "YYYY-MM-DD HH:MM:SS" ở cột thứ 3) cho tới khi gặp dòng header kế tiếp.
+ * KHÁC TTS/WIT: link "1040 Tax Return" KHÔNG theo 1 định dạng tên file cố định nào (đã khảo sát
+ * thật — có khi chỉ "2022.pdf", có khi "Tax 2023 Jose E Sanchez- Ngoc Anh T Nguyen.pdf") nên
+ * KHÔNG cố regex-parse tên người như TTS/WIT — lấy nguyên TEXT hiển thị của link trên CRM (tên
+ * file gốc lúc upload, đã tự mang đủ thông tin phân biệt trong đa số trường hợp thực tế, bỏ
+ * đuôi mở rộng) làm nhãn hiển thị (`personName`). */
 export async function fetchTtsWitDatesByYear(customerId: string): Promise<CrmTtsWitDates> {
   const res = await fetchWithSession(`/customer/info/${encodeURIComponent(customerId)}/documentation_edil`);
   if (res.status === 404) throw new AgentC3NotFoundError(`Không tìm thấy khách hàng ${customerId} trên CRM`);
@@ -362,9 +436,18 @@ export async function fetchTtsWitDatesByYear(customerId: string): Promise<CrmTts
   const html = await res.text();
   const $ = cheerio.load(html);
 
-  const result: CrmTtsWitDates = {
-    tts: { "2023": null, "2024": null, "2025": null },
-    wit: { "2023": null, "2024": null, "2025": null },
+  // Thu thập TOÀN BỘ dòng lịch sử upload trước (chưa lọc theo ngày) — chỉ sau khi có đủ dữ
+  // liệu 1 năm/loại mới xác định được ngày mới nhất thật sự là ngày nào.
+  const all: {
+    tts: Record<CrmDocYear, CrmTtsWitDoc[]>;
+    wit: Record<CrmDocYear, CrmTtsWitDoc[]>;
+    taxReturns: Record<CrmDocYear, CrmTtsWitDoc[]>;
+    other: CrmTtsWitDoc[];
+  } = {
+    tts: { "2023": [], "2024": [], "2025": [] },
+    wit: { "2023": [], "2024": [], "2025": [] },
+    taxReturns: { "2023": [], "2024": [], "2025": [] },
+    other: [],
   };
   let currentTitle = "";
 
@@ -377,21 +460,65 @@ export async function fetchTtsWitDatesByYear(customerId: string): Promise<CrmTts
       if (firstText) currentTitle = firstText;
       return;
     }
+
+    // "Other" không theo năm nào — kiểm tra riêng TRƯỚC yêu cầu năm bên dưới (khớp CHÍNH XÁC
+    // "Other", không dùng includes để tránh khớp nhầm "Other IRS letters").
+    if (currentTitle.trim().toLowerCase() === "other") {
+      const timestamp = $(tds[2]).text().trim();
+      const linkEl = $(tds[1]).find("a").first();
+      const url = linkEl.attr("href");
+      if (!timestamp || !url) return;
+      const fileName = stripFileExtension(linkEl.text().trim());
+      all.other.push({ timestamp, url, personName: fileName || null });
+      return;
+    }
+
     const yearMatch = /\b(20\d{2})\b/.exec(currentTitle);
     const year = yearMatch?.[1];
     if (!year || !TARGET_YEARS.includes(year as CrmDocYear)) return;
     const isTts = /TTS/i.test(currentTitle);
     const isWit = /WI Transcript/i.test(currentTitle);
-    if (!isTts && !isWit) return;
+    const isTaxReturn = /1040 Tax return/i.test(currentTitle);
+    if (!isTts && !isWit && !isTaxReturn) return;
 
     const timestamp = $(tds[2]).text().trim();
-    if (!timestamp) return;
-    const bucket = isTts ? result.tts : result.wit;
-    const y = year as CrmDocYear;
-    if (!bucket[y] || timestamp > bucket[y]!) bucket[y] = timestamp;
+    const linkEl = $(tds[1]).find("a").first();
+    const url = linkEl.attr("href");
+    if (!timestamp || !url) return;
+
+    if (isTaxReturn) {
+      const fileName = stripFileExtension(linkEl.text().trim());
+      all.taxReturns[year as CrmDocYear].push({ timestamp, url, personName: fileName || null });
+      return;
+    }
+    const bucket = isTts ? all.tts : all.wit;
+    bucket[year as CrmDocYear].push({ timestamp, url, personName: extractPersonNameFromDocUrl(url) });
   });
 
-  return result;
+  // "Other" chỉ lấy ĐÚNG 1 link mới nhất (khác 3 bảng trên lấy mọi link cùng ngày).
+  const latestOther = all.other.reduce<CrmTtsWitDoc | null>(
+    (latest, d) => (!latest || d.timestamp > latest.timestamp ? d : latest),
+    null
+  );
+
+  return {
+    tts: {
+      "2023": latestDayOnly(all.tts["2023"]),
+      "2024": latestDayOnly(all.tts["2024"]),
+      "2025": latestDayOnly(all.tts["2025"]),
+    },
+    wit: {
+      "2023": latestDayOnly(all.wit["2023"]),
+      "2024": latestDayOnly(all.wit["2024"]),
+      "2025": latestDayOnly(all.wit["2025"]),
+    },
+    taxReturns: {
+      "2023": latestDayOnly(all.taxReturns["2023"]),
+      "2024": latestDayOnly(all.taxReturns["2024"]),
+      "2025": latestDayOnly(all.taxReturns["2025"]),
+    },
+    other: latestOther,
+  };
 }
 
 /** Ô tài liệu "{năm} 1040X - Submitted" trong tab Documentation ứng với đúng số thứ tự

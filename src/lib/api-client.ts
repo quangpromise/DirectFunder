@@ -413,13 +413,16 @@ export const api = {
     );
   },
 
-  /** Nút "TTS & WIT" ở cột "Check CRM" — đọc trực tiếp CRM agentc3, trả về ngày upload mới
-   * nhất của TTS/WIT cho từng năm 2023/2024/2025 để hiện popup kết quả. */
+  /** Nút "TTS & WIT" ở cột "Check CRM" — đọc trực tiếp CRM agentc3, trả về MỌI file TTS/WIT
+   * upload vào đúng ngày mới nhất (không chỉ 1 file, xem `fetchTtsWitDatesByYear`) cho từng
+   * năm 2023/2024/2025 để hiện popup kết quả. */
   checkCrmLatestTts: (caseId: string) =>
     request<{
       ok: true;
-      tts: Record<"2023" | "2024" | "2025", string | null>;
-      wit: Record<"2023" | "2024" | "2025", string | null>;
+      tts: Record<"2023" | "2024" | "2025", { timestamp: string; url: string; personName: string | null }[]>;
+      wit: Record<"2023" | "2024" | "2025", { timestamp: string; url: string; personName: string | null }[]>;
+      taxReturns: Record<"2023" | "2024" | "2025", { timestamp: string; url: string; personName: string | null }[]>;
+      other: { timestamp: string; url: string; personName: string | null } | null;
     }>("/api/agentc3-import/check-latest-tts", { method: "POST", body: JSON.stringify({ caseId }) }),
 
   listNotifications: () => request<AppNotification[]>("/api/notifications"),
