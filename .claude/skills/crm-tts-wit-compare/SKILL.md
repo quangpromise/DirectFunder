@@ -573,6 +573,62 @@ khác biệt so với 2 biến thể đã biết) thay vì đoán mò sửa lạ
     `tsc --noEmit`/`eslint` sạch. **Không cần bước production nào** (không đổi schema/feature-
     permission) — chỉ cần deploy code.
 
+16. **(2026-08-27, cùng ngày, sau mục #15) 3 bug tiếp theo phát hiện khi test với hồ sơ 2 người
+    thật (`BY306702`, Thien Nguyen + Chau Pham, Married Filing Joint) — gộp 1099-B/DA thành 1
+    dòng, phát hiện + sửa bug "nuốt mất 1099-INT" khi cắt text** — người dùng báo "check TTS với
+    W&I ra kết quả không giống W&IS", "tổng của 1099B và 1099DA nên gộp lại", "cũng không có
+    1099-INT".
+    - **Phát hiện kiến trúc quan trọng**: "W&I" và "W&IS" KHÔNG PHẢI Taxpayer/Spouse — là **2
+      LOẠI SẢN PHẨM KHÁC NHAU** của cùng 1 người: "W&I" = Wage & Income Transcript CHI TIẾT (mọi
+      W-2/1099 riêng lẻ), "W&IS" = "Wage & Income **Summary**" — bản TÓM TẮT do CHÍNH IRS tính
+      sẵn (chỉ ~1-1.2KB, có field `"Wages:"`/`"Interest:"`/`"Proceeds:"`/`"Cost or Basis:"`/
+      `"Wash Sale Loss Disallowed:"` đã cộng dồn toàn bộ payer). Đã dùng nó làm NGUỒN ĐỐI CHỨNG
+      để verify code: lấy `"W&I"` chi tiết của Thien Nguyen (2025, 472 giao dịch 1099-B) chạy
+      qua `summarizeCapitalGains()` → Cost or Basis $3,418,070.00 khớp CHÍNH XÁC, Wash Sale
+      $66,605.00 khớp CHÍNH XÁC, Proceeds lệch chỉ $27/$3.29M (~0.0008%, sai số làm tròn không
+      đáng kể) so với số IRS tự tính sẵn trong "W&IS" — xác nhận code trích đúng. **"Kết quả
+      khác nhau giữa W&I và W&IS"** người dùng báo là ĐÚNG NHƯ THIẾT KẾ (không phải bug) — 2
+      dropdown WIT hiện liệt kê PHẲNG cả "W&I" lẫn "W&IS" như thể ngang hàng, người dùng dễ chọn
+      nhầm 1 người dùng "W&I" + người kia dùng "W&IS" (2 định dạng khác nhau) hoặc so trực tiếp
+      2 định dạng của CÙNG 1 người — bản chất khác định dạng nên số liệu trình bày khác nhau là
+      bình thường, KHÔNG sửa gì ở đây (chưa đủ thời gian làm UI cảnh báo/ưu tiên chọn 1 định
+      dạng — có thể làm sau nếu người dùng yêu cầu).
+    - **Bug #1 — gộp 1099-B + 1099-DA thành 1 dòng DUY NHẤT** (theo yêu cầu trực tiếp): thêm
+      field `combinedGain` vào `CapitalGainsSummary` (`= form1099B.gain + form1099DACovered.gain`,
+      CHƯA gồm phần `noncoveredProceeds` vì không tính được Gain thật) — `CHAT_SYSTEM_INSTRUCTION`
+      đổi từ "2 category `Capital Gains (1099-B)`/`Capital Gains (1099-DA)`" thành ĐÚNG 1
+      category `"Capital Gains (1099-B + 1099-DA)"`, dùng thẳng `combinedGain`. Lý do: TTS/IRS
+      luôn báo GỘP CHUNG 1 con số duy nhất (không tách theo loại form), tách riêng khiến không
+      so sánh 1-1 được với TTS.
+    - **Bug #2 (NGHIÊM TRỌNG, tự phát hiện khi verify — đây là bug thật khiến "không có
+      1099-INT")**: `stripCapitalGainsRecordsFromText()` bản đầu chỉ tìm ranh giới
+      `"Form 1099-B"`/`"Form 1099-DA"` — record 1099-B/DA CUỐI CÙNG trong file (không có giao
+      dịch 1099-B/DA nào theo sau) bị coi là "kéo dài tới HẾT VĂN BẢN", NUỐT MẤT mọi nội dung
+      nằm sau nó. Xác nhận thật: 2 dòng `"Form 1099-INT"` của `BY306702` (Thien Nguyen, lãi US
+      Treasury $667 + Robinhood $37 = $704) nằm NGAY SAU giao dịch 1099-B cuối cùng — bị cắt mất
+      hoàn toàn (text sau cắt chỉ còn 1.701/514.864 ký tự, mất luôn cả 1099-INT thay vì giữ lại).
+      **Cách sửa**: `findFormBoundaries()` mới — nhận diện ranh giới theo BẤT KỲ mã Form nào
+      trong 1 WHITELIST cố định (`WIT_FORM_TYPES`: W-2/1099-B/1099-DA/1099-INT/1099-DIV/1099-R/
+      1099-NEC/1099-MISC/1099-G/1099-K/1099-C/1099-OID/1099-Q/1099-SA/1098[-E/-T]/5498[-SA]/
+      SSA-1099), không chỉ 1099-B/DA — mỗi record 1099-B/DA giờ kết thúc ĐÚNG tại ranh giới Form
+      TIẾP THEO (bất kỳ loại nào), không tràn sang nội dung khác. **Bug lồng #2b phát hiện ngay
+      khi sửa #2**: thử dùng regex TỔNG QUÁT "Form + 4 chữ số bất kỳ" (không whitelist) trước —
+      SAI vì mỗi record 1099-B tự chứa câu tham chiếu nội bộ *"...Applicable Check Box on **Form
+      8949**: Long term transaction..."* — "Form 8949" bị hiểu nhầm thành ranh giới mới, cắt vụn
+      record giữa chừng, khiến phần còn lại của record 1099-B thật (từ "Applicable..." tới hết)
+      bị coi thuộc "form 8949" nên KHÔNG bị cắt bỏ (kết quả: chỉ giảm còn 181K/514K ký tự thay vì
+      đúng ra ~4-20K). Đổi hẳn sang whitelist các mã Form THẬT LÀ 1 loại thu nhập độc lập (không
+      gồm "8949"/"8814"/"4972" — các form chỉ được THAM CHIẾU nội bộ, không phải tiêu đề record)
+      mới hết bug. Verify lại: text sau cắt còn ĐÚNG 3.837/514.864 ký tự, giữ nguyên "1099-INT".
+    - **Verify sống đầy đủ cuối cùng** (`BY306702`, 2 người, WIT "W&I" + TTS thật, hỏi "So sánh
+      Wages, Taxable interest, Capital Gains"): **Wages (W-2)** gộp đúng cả 2 người ($74,202 WIT
+      = $37,547 Chau + $36,655 Thien, vs $74,203 TTS, lệch $1 do làm tròn). **Taxable interest
+      (1099-INT)** GIỜ ĐÃ HIỆN ĐÚNG ($704 WIT = $667 US Treasury + $37 Robinhood, vs $38 TTS,
+      lệch $666 — phát hiện thật quan trọng, trước đây hoàn toàn bị bỏ sót). **Capital Gains
+      (1099-B + 1099-DA)** đúng 1 dòng gộp ($-63,138 WIT vs $-3,000 TTS, AI tự giải thích đúng
+      luật giới hạn khấu trừ lỗ vốn $3.000/năm — Capital Loss Carryover). Mất ~37 giây (vẫn dưới
+      50s timeout). `tsc --noEmit`/`eslint` sạch. **Không cần bước production nào**.
+
 ## 4. Giới hạn đã biết
 
 - Không có OCR/fallback nếu CRM đổi định dạng PDF hoàn toàn khác — Gemini vẫn đọc được text lộn
