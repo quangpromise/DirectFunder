@@ -914,9 +914,10 @@ tiên đọc cookie, verify sống 2-process). **KHÔNG đụng `DEFAULT_COLUMNS
 nên **không cần** script merge `AppConfig`, chỉ cần migration.
 
 **Sau khi deploy code này lên production PHẢI làm đủ các bước sau** (xoá mục này khỏi file khi đã làm xong):
-1. `prisma migrate deploy` nhắm production (migration `20260825151332_add_agentc3_session_cookie`
-   — 2 cột mới trên `app_config`, an toàn/additive/nullable).
-2. Đăng nhập production, bấm nút "Check log"/"TTS & WIT" ở 1 hồ sơ đã liên kết CRM → ngay sau đó
+1. ✅ **Đã xong 2026-08-26** — `prisma migrate deploy` nhắm production đã chạy (migration
+   `20260825151332_add_agentc3_session_cookie` — 2 cột mới trên `app_config`, an toàn/additive/
+   nullable).
+2. [CHỜ XÁC NHẬN QUA UI] Đăng nhập production, bấm nút "Check log"/"TTS & WIT" ở 1 hồ sơ đã liên kết CRM → ngay sau đó
    (trong vòng vài giây) mở popup "Get Files" → chọn TTS + WIT → hỏi 1 câu bất kỳ trong chat so
    sánh → xác nhận phản hồi nhanh hơn hẳn so với trước (không phải chờ thêm 1 lượt đăng nhập CRM
    ẩn phía sau — khó đo trực tiếp qua UI, có thể kiểm tra gián tiếp qua thời gian phản hồi tổng
