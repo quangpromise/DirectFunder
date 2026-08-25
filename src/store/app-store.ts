@@ -462,6 +462,26 @@ interface AppState {
       }
     | { ok: false; error: string }
   >;
+  /** Chat hỏi-đáp tự do "So sánh WIT / 1040 Tax Return / TTS" — Gemini API free tier, trả về
+   * DẠNG BẢNG (xem `.claude/skills/crm-tts-wit-compare/SKILL.md`). Người dùng CHỌN CHÍNH XÁC
+   * file nào qua 3 trường select, `wit` là mảng tối đa 2 file (Taxpayer + Spouse). */
+  compareTtsWitChat: (payload: {
+    caseId: string;
+    tts?: { url: string; label: string } | null;
+    taxReturn?: { url: string; label: string } | null;
+    wit?: { url: string; label: string }[];
+    message: string;
+    history: { role: "user" | "assistant"; content: string }[];
+  }) => Promise<
+    | { ok: true; rows: { category: string; wit: string; taxReturn: string; tts: string; note: string }[] }
+    | { ok: false; error: string }
+  >;
+  /** Chat AI tự do (nút "Trợ lý AI" trên toolbar bảng Hồ sơ, cạnh My Notes) — Gemini API free
+   * tier, hỏi bất kỳ điều gì, KHÔNG gắn với hồ sơ/CRM nào. */
+  askAiChat: (payload: {
+    message: string;
+    history: { role: "user" | "assistant"; content: string }[];
+  }) => Promise<{ ok: true; reply: string } | { ok: false; error: string }>;
   /** Nạp "My Notes" của chính user đang đăng nhập — gọi lần đầu mở popup (xem
    * myNotesData trong state, null = chưa nạp). */
   fetchMyNotes: () => Promise<void>;
@@ -2312,6 +2332,22 @@ export const useAppStore = create<AppState>()(
         try {
           const result = await api.checkCrmLatestTts(caseId);
           return result;
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Lỗi không xác định" };
+        }
+      },
+
+      compareTtsWitChat: async (payload) => {
+        try {
+          return await api.compareTtsWitChat(payload);
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Lỗi không xác định" };
+        }
+      },
+
+      askAiChat: async (payload) => {
+        try {
+          return await api.askAiChat(payload);
         } catch (err) {
           return { ok: false, error: err instanceof Error ? err.message : "Lỗi không xác định" };
         }

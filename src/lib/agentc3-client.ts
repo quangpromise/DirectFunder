@@ -87,6 +87,28 @@ async function fetchWithSession(path: string): Promise<Response> {
   return res;
 }
 
+/** Tải bytes 1 file bất kỳ trên CRM (dùng cho link tải TTS/WIT/1040/Other lấy được từ
+ * `fetchTtsWitDatesByYear()`, xem tính năng "So sánh WIT vs TTS" —
+ * `.claude/skills/crm-tts-wit-compare/SKILL.md`) qua ĐÚNG session cookie đã đăng nhập — khác
+ * `fetchWithSession()` (nhận PATH tương đối trên chính CRM), hàm này nhận URL TUYỆT ĐỐI vì
+ * link tải file (`download_s3?key=...` hoặc `/uploads/pdfs/...`) là URL đầy đủ CRM trả về sẵn.
+ * BẮT BUỘC `url` phải thuộc domain CRM (`BASE_URL`) — chặn SSRF vì URL này do CLIENT gửi lên
+ * lại (dù trong luồng UI bình thường client chỉ gửi lại đúng URL đã nhận từ server, request
+ * API vẫn có thể bị gọi trực tiếp với URL tuỳ ý). */
+export async function fetchAgentC3FileBytes(url: string): Promise<Buffer> {
+  if (!url.startsWith(`${BASE_URL}/`)) {
+    throw new AgentC3NotFoundError("URL file không thuộc domain CRM agentc3 — từ chối tải");
+  }
+  const cookie = await getSessionCookie();
+  const res = await fetch(url, {
+    headers: { Cookie: cookie, "User-Agent": BROWSER_USER_AGENT, Referer: `${BASE_URL}/` },
+  });
+  if (!res.ok) {
+    throw new AgentC3NotFoundError(`CRM trả lỗi ${res.status} khi tải file`);
+  }
+  return Buffer.from(await res.arrayBuffer());
+}
+
 /** Parse id khách hàng (vd "BY306393") từ link dán vào — chấp nhận cả URL đầy đủ lẫn chỉ id. */
 export function parseAgentC3CustomerId(input: string): string | null {
   const trimmed = input.trim();
@@ -380,6 +402,27 @@ function extractPersonNameFromDocUrl(url: string): string | null {
   return firstMiddle ? `${lastName}, ${firstMiddle}` : lastName;
 }
 
+/** Đọc loại tài liệu WIT (token thứ 2 trong tên file CRM, vd "W&I" = Wage & Income Transcript
+ * gốc, "W&IS" = bản Summary — CRM lưu 2 loại khác nhau CÙNG dưới 1 mục "{năm} WI Transcript",
+ * thêm 2026-08-25) — dùng để hiện đúng tên loại tài liệu trong nhãn lựa chọn thay vì gộp chung
+ * "WIT" chung chung. Cùng định dạng key với `extractPersonNameFromDocUrl()`, trả `null` nếu
+ * không khớp (fallback không hiện loại). */
+function extractDocSubType(url: string): string | null {
+  let decoded: string;
+  try {
+    const parsed = new URL(url);
+    const key = parsed.searchParams.get("key");
+    decoded = decodeURIComponent(key ?? url);
+  } catch {
+    decoded = url;
+  }
+  const basename = decoded.split("/").pop() ?? "";
+  const parts = basename.split(",");
+  if (parts.length < 4) return null;
+  const subType = parts[1].trim();
+  return subType || null;
+}
+
 /** Bỏ đuôi mở rộng (".pdf", ".html"...) khỏi tên file hiển thị — dùng cho nhãn của link "1040
  * Tax Return" (xem bên dưới). */
 function stripFileExtension(name: string): string {
@@ -491,8 +534,17 @@ export async function fetchTtsWitDatesByYear(customerId: string): Promise<CrmTts
       all.taxReturns[year as CrmDocYear].push({ timestamp, url, personName: fileName || null });
       return;
     }
-    const bucket = isTts ? all.tts : all.wit;
-    bucket[year as CrmDocYear].push({ timestamp, url, personName: extractPersonNameFromDocUrl(url) });
+    if (isWit) {
+      // WIT gộp 2 loại tài liệu khác nhau ("W&I"/"W&IS") dưới cùng 1 mục "{năm} WI
+      // Transcript" trên CRM — đưa tên loại lên ĐẦU nhãn (vd "W&I - Nguyen, Pyon Ngoc") để
+      // phân biệt khi chọn (thêm 2026-08-27 theo yêu cầu "W&I và W&IS sẽ đưa lên đầu tên").
+      const person = extractPersonNameFromDocUrl(url);
+      const subType = extractDocSubType(url);
+      const label = subType ? (person ? `${subType} - ${person}` : subType) : person;
+      all.wit[year as CrmDocYear].push({ timestamp, url, personName: label });
+      return;
+    }
+    all.tts[year as CrmDocYear].push({ timestamp, url, personName: extractPersonNameFromDocUrl(url) });
   });
 
   // "Other" chỉ lấy ĐÚNG 1 link mới nhất (khác 3 bảng trên lấy mọi link cùng ngày).

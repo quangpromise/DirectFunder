@@ -425,6 +425,34 @@ export const api = {
       other: { timestamp: string; url: string; personName: string | null } | null;
     }>("/api/agentc3-import/check-latest-tts", { method: "POST", body: JSON.stringify({ caseId }) }),
 
+  /** Chat hỏi-đáp tự do "So sánh WIT / 1040 Tax Return / TTS" — Gemini API free tier, trả về
+   * DẠNG BẢNG (xem `.claude/skills/crm-tts-wit-compare/SKILL.md`). Người dùng CHỌN CHÍNH XÁC
+   * file nào qua 3 trường select (đổi 2026-08-26 — không còn tự lấy theo năm), `wit` là mảng
+   * tối đa 2 file (Taxpayer + Spouse). */
+  compareTtsWitChat: (payload: {
+    caseId: string;
+    tts?: { url: string; label: string } | null;
+    taxReturn?: { url: string; label: string } | null;
+    wit?: { url: string; label: string }[];
+    message: string;
+    history: { role: "user" | "assistant"; content: string }[];
+  }) =>
+    request<{
+      ok: true;
+      rows: { category: string; wit: string; taxReturn: string; tts: string; note: string }[];
+    }>("/api/agentc3-import/compare-tts-wit-chat", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  /** Chat AI tự do (nút nổi "Trợ lý AI", mọi màn hình dashboard) — Gemini API free tier, hỏi
+   * bất kỳ điều gì, KHÔNG gắn với hồ sơ/CRM nào. */
+  askAiChat: (payload: { message: string; history: { role: "user" | "assistant"; content: string }[] }) =>
+    request<{ ok: true; reply: string }>("/api/ai-chat", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
   listNotifications: () => request<AppNotification[]>("/api/notifications"),
   markNotificationRead: (id: string) => request<{ ok: true }>(`/api/notifications/${id}`, { method: "PATCH" }),
   markAllNotificationsRead: () => request<{ ok: true }>("/api/notifications/mark-all-read", { method: "POST" }),

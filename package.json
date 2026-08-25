@@ -12,6 +12,7 @@
     "mcp": "tsx mcp-server/index.ts"
   },
   "dependencies": {
+    "@google/genai": "^2.18.0",
     "@prisma/adapter-pg": "^7.9.1",
     "@prisma/client": "^7.9.1",
     "@vercel/blob": "^2.8.0",

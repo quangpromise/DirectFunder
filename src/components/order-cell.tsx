@@ -1,6 +1,6 @@
 "use client";
 
-import { CrmTtsWitCheckButton, CrmTtsWitResult } from "@/components/crm-tts-wit-check-button";
+import { CrmTtsWitCheckButton, CrmTtsWitResult, CompareTtsWitChatFn } from "@/components/crm-tts-wit-check-button";
 
 /**
  * Cột "TTS & WIT Lastest" (trước đây tên "Order", đổi 2026-08-23, đổi tiếp cùng ngày) — trước
@@ -15,6 +15,7 @@ export function OrderCell({
   hasClientLink,
   clientName,
   onCheckCrm,
+  onCompareChat,
 }: {
   editable: boolean;
   hasClientLink: boolean;
@@ -22,11 +23,14 @@ export function OrderCell({
    * được, để phân biệt dễ dàng khi mở nhiều tab/nhiều hồ sơ cùng lúc (thêm 2026-08-25). */
   clientName: string;
   onCheckCrm: () => Promise<CrmTtsWitResult | null>;
+  /** Chat hỏi-đáp tự do "So sánh WIT / 1040 Tax Return / TTS" (Gemini API free tier) trong
+   * popup — bảng regex cũ đã bỏ, xem `.claude/skills/crm-tts-wit-compare/SKILL.md`. */
+  onCompareChat: CompareTtsWitChatFn;
 }) {
   return (
     <div className="flex h-full min-w-0 flex-col items-center justify-center gap-0.5 px-1 py-1">
       {hasClientLink ? (
-        <CrmTtsWitCheckButton disabled={!editable} clientName={clientName} onCheck={onCheckCrm} />
+        <CrmTtsWitCheckButton disabled={!editable} clientName={clientName} onCheck={onCheckCrm} onCompareChat={onCompareChat} />
       ) : (
         <span className="text-[10px] text-text-faint">—</span>
       )}

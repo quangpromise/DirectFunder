@@ -28,6 +28,7 @@ import { AssignMenu } from "@/components/assign-menu";
 import { AddColumnDialog } from "@/components/add-column-dialog";
 import { ColumnVisibilityButton } from "@/components/column-visibility-button";
 import { MyNotesDialog } from "@/components/my-notes-dialog";
+import { AiChatDialog } from "@/components/ai-chat-dialog";
 import { loadHiddenColumnIds, saveHiddenColumnIds } from "@/lib/hidden-columns";
 import { AgentC3ImportDialog } from "@/components/agentc3-import-dialog";
 import { ColumnSettingsDialog } from "@/components/column-settings-dialog";
@@ -252,6 +253,7 @@ export default function CasesPage() {
   const permissions = useAppStore((s) => s.featurePermissions);
   const updateCell = useAppStore((s) => s.updateCell);
   const checkCrmLatestTts = useAppStore((s) => s.checkCrmLatestTts);
+  const compareTtsWitChat = useAppStore((s) => s.compareTtsWitChat);
   const cpaEmailDefaults = useAppStore((s) => s.cpaEmailDefaults);
   const cpaSenderEmail = useAppStore((s) => s.cpaSenderEmail);
   const sendCpaEmail = useAppStore((s) => s.sendCpaEmail);
@@ -260,6 +262,7 @@ export default function CasesPage() {
   const myNotesData = useAppStore((s) => s.myNotesData);
   const fetchMyNotes = useAppStore((s) => s.fetchMyNotes);
   const saveMyNotes = useAppStore((s) => s.saveMyNotes);
+  const askAiChat = useAppStore((s) => s.askAiChat);
   const sendCaseRowToSheet = useAppStore((s) => s.sendCaseRowToSheet);
   const markCaseSheetSent = useAppStore((s) => s.markCaseSheetSent);
   const sendCaseRowToCpaReview = useAppStore((s) => s.sendCaseRowToCpaReview);
@@ -760,6 +763,7 @@ export default function CasesPage() {
             </button>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            <AiChatDialog onAsk={askAiChat} />
             <MyNotesDialog myNotesData={myNotesData} fetchMyNotes={fetchMyNotes} saveMyNotes={saveMyNotes} />
             <ForProcessorButton />
             <EcQualificationBox />
@@ -1025,6 +1029,7 @@ export default function CasesPage() {
                   </button>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
+                  <AiChatDialog onAsk={askAiChat} />
                   <MyNotesDialog myNotesData={myNotesData} fetchMyNotes={fetchMyNotes} saveMyNotes={saveMyNotes} />
                   <ForProcessorButton />
                   <EcQualificationBox />
@@ -1248,6 +1253,7 @@ export default function CasesPage() {
               processorUsers={processorUsers}
               updateCell={updateCell}
               checkCrmLatestTts={checkCrmLatestTts}
+              compareTtsWitChat={compareTtsWitChat}
               deleteRow={deleteRow}
               assignCase={assignCase}
               updateClientLink={updateClientLink}
@@ -1457,6 +1463,7 @@ function RowCells({
   processorUsers,
   updateCell,
   checkCrmLatestTts,
+  compareTtsWitChat,
   deleteRow,
   assignCase,
   updateClientLink,
@@ -1528,6 +1535,17 @@ function RowCells({
         taxReturns: Record<"2023" | "2024" | "2025", { timestamp: string; url: string; personName: string | null }[]>;
         other: { timestamp: string; url: string; personName: string | null } | null;
       }
+    | { ok: false; error: string }
+  >;
+  compareTtsWitChat: (payload: {
+    caseId: string;
+    tts?: { url: string; label: string } | null;
+    taxReturn?: { url: string; label: string } | null;
+    wit?: { url: string; label: string }[];
+    message: string;
+    history: { role: "user" | "assistant"; content: string }[];
+  }) => Promise<
+    | { ok: true; rows: { category: string; wit: string; taxReturn: string; tts: string; note: string }[] }
     | { ok: false; error: string }
   >;
   deleteRow: (caseId: string, deletedByUserId: string) => void;
@@ -1870,6 +1888,7 @@ function RowCells({
                 }
                 return { tts: res.tts, wit: res.wit, taxReturns: res.taxReturns, other: res.other };
               }}
+              onCompareChat={(payload) => compareTtsWitChat({ caseId: row.id, ...payload })}
             />
           </div>
         ) : col.id === "caseLabel" ? (
