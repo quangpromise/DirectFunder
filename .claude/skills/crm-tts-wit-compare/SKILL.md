@@ -741,6 +741,36 @@ khác biệt so với 2 biến thể đã biết) thay vì đoán mò sửa lạ
     trước vá — 3 lượt `login()` riêng biệt khi 3 `fetchAgentC3FileBytes()` chạy song song lúc
     cache nguội; sau vá — đúng 1 lượt `login()` duy nhất cho cùng kịch bản. `tsc --noEmit`/
     `eslint` sạch. **Không cần bước production nào** (thuần logic, không đổi schema/API).
+21. **(2026-08-28, cùng ngày, ngay sau mục #20) Người dùng hỏi tiếp "lúc bấm Get File đã đăng
+    nhập rồi, sao mất công đăng nhập lại" — phát hiện nguyên nhân THẬT: cache cookie module-scope
+    KHÔNG dùng chung được giữa các route khác nhau trên Vercel** — mỗi `route.ts` biên dịch
+    thành 1 Serverless Function RIÊNG, mỗi function có module state (biến `cachedCookie`) TÁCH
+    BIỆT hoàn toàn dù cùng import chung 1 file `agentc3-client.ts`. Bấm nút "Check log"/"TTS &
+    WIT" (route `check-latest-tts`, tự đăng nhập xong) rồi mở chat so sánh WIT/TTS (route
+    `compare-tts-wit-chat`, module instance KHÁC) vẫn phải đăng nhập lại — dedupe `inFlightLogin`
+    ở mục #20 KHÔNG giải quyết được ca này (chỉ gộp các lượt gọi ĐỒNG THỜI trong CÙNG 1 instance,
+    không giúp gì giữa 2 route khác nhau).
+    **Đã vá bằng tầng cache thứ 2 ở Postgres** — thêm `AppConfig.agentc3SessionCookie String?` +
+    `AppConfig.agentc3SessionCookieAt DateTime?` (cột mới, additive, migration
+    `20260825151332_add_agentc3_session_cookie` — cùng pattern `ringcentralSubscriptionId`/
+    `ringcentralSubscriptionExpiresAt` đã có sẵn cho RingCentral). `login()` giờ lưu cookie vừa
+    đăng nhập xuống DB (`saveDbCookie()`, best-effort — lỗi DB không chặn login coi là thất bại).
+    `getSessionCookie()` đổi thứ tự ưu tiên: cache module-scope (tầng 1, nhanh nhất, chỉ hit nếu
+    trùng instance) → cache DB (tầng 2, `loadDbCookie()`, ~vài chục ms, dùng chung được MỌI
+    route/MỌI instance) → chỉ thật sự gọi `login()` (~1-2s, round-trip CRM thật) nếu cả 2 tầng
+    đều trống/hết hạn (so `SESSION_TTL_MS` 15 phút). `inFlightLogin` (mục #20) vẫn giữ nguyên,
+    giờ bọc quanh `resolveSessionCookie()` (đọc DB rồi mới login nếu cần) thay vì bọc thẳng
+    `login()`. Cookie không nhạy cảm bằng mật khẩu thật (chỉ token phiên tạm của 1 tài khoản chức
+    năng dùng chung, TTL 15 phút, không phải secret per-user) nên lưu Postgres chấp nhận được,
+    cùng mức rủi ro với các token khác đã lưu tương tự (`ringcentralSubscriptionId`,
+    `googleRefreshToken`...).
+    Verify sống — mô phỏng đúng 2 process Node RIÊNG (module state tách biệt hoàn toàn, giống 2
+    Serverless Function khác nhau thật): xoá cookie DB trước → process A gọi
+    `fetchAgentC3FileBytes()` → log xác nhận `login()` CÓ chạy (cache cả 2 tầng đều trống) →
+    process B (process Node MỚI, khởi động lại từ đầu) gọi lại cùng hàm → log xác nhận `login()`
+    KHÔNG chạy lần nào (đọc được cookie process A vừa lưu qua DB). `tsc --noEmit`/`eslint` sạch.
+    **Production: cần `prisma migrate deploy`** (2 cột mới trên `app_config`, an toàn/additive/
+    nullable) — không cần script merge `AppConfig` (không đụng `columns`/`featurePermissions`).
 
 ## 4. Giới hạn đã biết
 

@@ -1,4 +1,5 @@
 import * as cheerio from "cheerio";
+import { prisma } from "@/lib/prisma";
 
 /**
  * Đăng nhập + đọc dữ liệu khách hàng từ CRM ngoài `tax.agentc3.com` (hệ thống PHP/
@@ -10,6 +11,16 @@ import * as cheerio from "cheerio";
  * `fetch()` là đủ, KHÔNG cần trình duyệt headless/Playwright. Đăng nhập KHÔNG có CSRF token,
  * nhưng CodeIgniter âm thầm trả lại nguyên form login (không lỗi rõ ràng) nếu thiếu field
  * `login=Login` (đúng tên/giá trị nút submit) hoặc `User-Agent` trông như bot.
+ *
+ * **Cache cookie 2 tầng (thêm 2026-08-28)** — tầng 1 (biến module-scope `cachedCookie`) chỉ có
+ * tác dụng nếu CÙNG 1 instance serverless xử lý các request liên tiếp, nhưng mỗi route.ts trên
+ * Vercel là 1 Serverless Function RIÊNG (module state tách biệt) — bấm nút "Check log" (route
+ * check-latest-tts, tự đăng nhập xong) rồi mở chat so sánh WIT/TTS (route compare-tts-wit-chat)
+ * vẫn phải đăng nhập lại dù vừa đăng nhập vài giây trước, vì 2 route không chia sẻ bộ nhớ. Tầng
+ * 2 (cột `AppConfig.agentc3SessionCookie`/`agentc3SessionCookieAt`, đọc/ghi qua Postgres) giải
+ * quyết đúng vấn đề này — MỌI route đọc lại được cookie route khác vừa lưu, chỉ thật sự đăng
+ * nhập khi cả 2 tầng đều trống/hết hạn. 1 lượt đọc/ghi DB (~vài chục ms) rẻ hơn nhiều so với 1
+ * lượt POST đăng nhập CRM thật (~1-2s).
  */
 
 const BASE_URL = "https://tax.agentc3.com";
@@ -59,22 +70,62 @@ async function login(): Promise<string> {
   }
   cachedCookie = cookie;
   cachedCookieAt = Date.now();
+  await saveDbCookie(cookie);
   return cookie;
 }
 
-/** Gộp các lượt gọi `login()` đang chạy đồng thời thành 1 — lỗi thật đo được (2026-08-28): route
- * so sánh WIT/TTS tải TTS + tối đa 2 WIT SONG SONG (`Promise.all`), lúc cache cookie còn trống
- * (request đầu phiên) cả 3 lượt gọi `getSessionCookie()` gần như cùng lúc đều thấy cache trống
- * nên tự đăng nhập RIÊNG (xác nhận qua log: 3 lượt `login()` cách nhau <50ms) — tốn 3 round-trip
- * đăng nhập tới CRM thay vì 1, cộng dồn tải lên server ngoài không cần thiết. Biến này giữ lại
- * promise `login()` ĐANG chạy — lượt gọi thứ 2/3 tới trong lúc lượt đầu chưa xong sẽ `await`
- * chung đúng promise đó thay vì tự gọi lại. */
+/** Đọc cookie đã lưu ở tầng DB (route KHÁC vừa đăng nhập, hoặc chính route này ở 1 lượt gọi
+ * nguội trước đó) — best-effort, lỗi DB (mất kết nối, migration chưa chạy...) không nên chặn
+ * hẳn tính năng, cứ coi như không có gì trong cache rồi tự đăng nhập lại như hành vi cũ. */
+async function loadDbCookie(): Promise<{ cookie: string; at: number } | null> {
+  try {
+    const config = await prisma.appConfig.findUnique({
+      where: { id: "singleton" },
+      select: { agentc3SessionCookie: true, agentc3SessionCookieAt: true },
+    });
+    if (!config?.agentc3SessionCookie || !config.agentc3SessionCookieAt) return null;
+    return { cookie: config.agentc3SessionCookie, at: config.agentc3SessionCookieAt.getTime() };
+  } catch {
+    return null;
+  }
+}
+
+/** Lưu cookie vừa đăng nhập xuống DB cho route khác dùng lại — best-effort (không throw), 1
+ * request đăng nhập vẫn coi là thành công dù bước lưu DB lỗi. */
+async function saveDbCookie(cookie: string): Promise<void> {
+  try {
+    await prisma.appConfig.update({
+      where: { id: "singleton" },
+      data: { agentc3SessionCookie: cookie, agentc3SessionCookieAt: new Date() },
+    });
+  } catch {
+    // best-effort
+  }
+}
+
+/** Gộp các lượt gọi đang chạy đồng thời thành 1 — lỗi thật đo được (2026-08-28): route so sánh
+ * WIT/TTS tải TTS + tối đa 2 WIT SONG SONG (`Promise.all`), lúc cache cookie còn trống (request
+ * đầu phiên) cả 3 lượt gọi `getSessionCookie()` gần như cùng lúc đều thấy cache trống nên tự
+ * đăng nhập RIÊNG (xác nhận qua log: 3 lượt `login()` cách nhau <50ms) — tốn 3 round-trip đăng
+ * nhập tới CRM thay vì 1, cộng dồn tải lên server ngoài không cần thiết. Biến này giữ lại promise
+ * ĐANG chạy (đọc DB rồi tự đăng nhập nếu cần) — lượt gọi thứ 2/3 tới trong lúc lượt đầu chưa
+ * xong sẽ `await` chung đúng promise đó thay vì tự gọi lại. */
 let inFlightLogin: Promise<string> | null = null;
+
+async function resolveSessionCookie(): Promise<string> {
+  const fromDb = await loadDbCookie();
+  if (fromDb && Date.now() - fromDb.at < SESSION_TTL_MS) {
+    cachedCookie = fromDb.cookie;
+    cachedCookieAt = fromDb.at;
+    return fromDb.cookie;
+  }
+  return login();
+}
 
 async function getSessionCookie(): Promise<string> {
   if (cachedCookie && Date.now() - cachedCookieAt < SESSION_TTL_MS) return cachedCookie;
   if (!inFlightLogin) {
-    inFlightLogin = login().finally(() => {
+    inFlightLogin = resolveSessionCookie().finally(() => {
       inFlightLogin = null;
     });
   }

@@ -898,6 +898,30 @@ DB dev). `tsc --noEmit`/`eslint` sạch.
 6. Vào lại Quản lý tài khoản (Admin), bấm nút mắt thu hồi quyền vừa cấp ở bước 3 → đăng nhập lại
    tài khoản đó → xác nhận panel biến mất khỏi dropdown.
 
+### 4.44 [CHỜ XỬ LÝ] Cache cookie đăng nhập CRM agentc3 xuống DB (tầng 2) — bớt đăng nhập lại thừa giữa các route (thêm 2026-08-28)
+
+Cache cookie session CRM agentc3 (`src/lib/agentc3-client.ts`) trước đây chỉ có 1 tầng — biến
+module-scope `cachedCookie`, TTL 15 phút — nhưng mỗi `route.ts` trên Vercel là 1 Serverless
+Function RIÊNG, module state tách biệt hoàn toàn: bấm nút "Check log"/"TTS & WIT" (route
+`check-latest-tts`, tự đăng nhập xong) rồi mở chat so sánh WIT/TTS (route `compare-tts-wit-chat`)
+vẫn phải đăng nhập lại dù vừa đăng nhập vài giây trước — người dùng nhận ra đúng vấn đề này
+("lúc bấm get file đã đăng nhập và lấy link rồi, tại sao mất thời gian đăng nhập lại"). Thêm
+`AppConfig.agentc3SessionCookie String?` + `AppConfig.agentc3SessionCookieAt DateTime?` (2 cột
+mới, additive — cùng pattern `ringcentralSubscriptionId`/`ringcentralSubscriptionExpiresAt` đã
+có sẵn) làm tầng cache thứ 2 dùng chung được giữa MỌI route/MỌI instance — xem
+`.claude/skills/crm-tts-wit-compare/SKILL.md` mục lịch sử #21 cho chi tiết đầy đủ (thứ tự ưu
+tiên đọc cookie, verify sống 2-process). **KHÔNG đụng `DEFAULT_COLUMNS`/`DEFAULT_FEATURE_PERMISSIONS`**
+nên **không cần** script merge `AppConfig`, chỉ cần migration.
+
+**Sau khi deploy code này lên production PHẢI làm đủ các bước sau** (xoá mục này khỏi file khi đã làm xong):
+1. `prisma migrate deploy` nhắm production (migration `20260825151332_add_agentc3_session_cookie`
+   — 2 cột mới trên `app_config`, an toàn/additive/nullable).
+2. Đăng nhập production, bấm nút "Check log"/"TTS & WIT" ở 1 hồ sơ đã liên kết CRM → ngay sau đó
+   (trong vòng vài giây) mở popup "Get Files" → chọn TTS + WIT → hỏi 1 câu bất kỳ trong chat so
+   sánh → xác nhận phản hồi nhanh hơn hẳn so với trước (không phải chờ thêm 1 lượt đăng nhập CRM
+   ẩn phía sau — khó đo trực tiếp qua UI, có thể kiểm tra gián tiếp qua thời gian phản hồi tổng
+   thể ngắn hơn rõ rệt so với lúc DB cookie đã hết hạn 15 phút).
+
 Mục 2–5 bên dưới là kiến trúc/quy trình đề xuất (phần lớn đã áp dụng đúng như mô tả, trừ Auth đã nêu ở trên). Mục 6 là checklist hành động cụ thể để đưa app này lên cloud thật.
 
 ## 2. Kiến trúc đề xuất

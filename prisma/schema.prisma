@@ -259,6 +259,19 @@ model AppConfig {
   /// xoá qua UI (NoticeSplitterCareOfManager). null/thiếu = dùng
   /// DEFAULT_CARE_OF_ELIGIBLE_NOTICE_TYPES trong src/lib/irs-splitter/care-of-eligibility.ts.
   careOfEligibleNoticeTypes Json?
+  /// Session cookie (`ci_session`) hiện tại của tài khoản CRM agentc3 dùng chung (đăng nhập
+  /// qua AGENTC3_USERNAME/PASSWORD) — thêm 2026-08-28 vì cache module-scope thuần trong
+  /// `agentc3-client.ts` KHÔNG dùng chung được giữa các route Next.js khác nhau (mỗi route
+  /// là 1 Serverless Function riêng trên Vercel, module state tách biệt) — vd bấm nút "Check
+  /// log" (route check-latest-tts, tự đăng nhập) rồi mở chat so sánh WIT/TTS (route
+  /// compare-tts-wit-chat) vẫn phải đăng nhập lại dù vừa đăng nhập xong vài giây trước. Lưu
+  /// xuống đây để MỌI route đọc lại được, chỉ tự đăng nhập khi cột này trống/hết hạn (so
+  /// SESSION_TTL_MS trong agentc3-client.ts). Không nhạy cảm bằng mật khẩu thật — chỉ là
+  /// token phiên tạm của 1 tài khoản chức năng dùng chung, không phải secret theo từng user.
+  agentc3SessionCookie String?
+  /// Thời điểm cookie trên được lưu (dùng so với SESSION_TTL_MS để biết còn hạn dùng hay
+  /// phải đăng nhập lại).
+  agentc3SessionCookieAt DateTime?
   updatedAt          DateTime @updatedAt
 
   @@map("app_config")
