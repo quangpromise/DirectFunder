@@ -377,6 +377,20 @@ khác biệt so với 2 biến thể đã biết) thay vì đoán mò sửa lạ
    `agentc3-client.ts`). Đã verify lại đúng file `.html` thật của `BY4849` — trích đúng
    506.818 ký tự nội dung WIT thật ("Wage and Income Transcript Request Date...").
 
+5. **(2026-08-27) UI thêm badge báo AI nào vừa trả lời** — theo yêu cầu "show đang sử dụng AI
+   nào" (trước đó chỉ đoán được qua log Vercel, xem dòng `console.warn` trong `askCompareDocs`).
+   `askCompareDocs()` giờ trả `{rows, provider: "gemini" | "groq"}` (kiểu `AskCompareResult`)
+   thay vì mảng trần — xuyên suốt route → `api-client.ts` → `app-store.ts` →
+   `crm-tts-wit-check-button.tsx` đều thêm field `provider`. UI hiện badge nhỏ (xanh dương
+   "Gemini" / cam "Groq") cạnh tiêu đề popup "Kết quả phân tích AI" (`AiProviderBadge`, đặt cạnh
+   `crmCompareChat.analysisTitle`). Đã verify trực tiếp qua `askCompareDocs()` (script tạm, key
+   Gemini còn quota) — trả đúng `provider: "gemini"`. Không verify được nhánh `"groq"` qua code
+   thật (cần Gemini hết quota thật để trigger fallback) — chỉ verify bằng đọc code (`askGroq()`
+   luôn được gọi kèm `provider: "groq"` ở đúng 1 nơi trong `askCompareDocs`, không có đường nào
+   khác gán sai). Nếu 1 hồ sơ đang chọn 2/3 loại tài liệu mà thấy badge "Groq", nghĩa là Gemini
+   đã hết 20 request/ngày hôm đó (dấu hiệu duy nhất người dùng cần để biết, không cần hỏi lại
+   log Vercel nữa).
+
 ## 4. Giới hạn đã biết
 
 - Không có OCR/fallback nếu CRM đổi định dạng PDF hoàn toàn khác — Gemini vẫn đọc được text lộn

@@ -440,6 +440,7 @@ export const api = {
     request<{
       ok: true;
       rows: { category: string; wit: string; taxReturn: string; tts: string; note: string }[];
+      provider: "gemini" | "groq";
     }>("/api/agentc3-import/compare-tts-wit-chat", {
       method: "POST",
       body: JSON.stringify(payload),

@@ -79,14 +79,14 @@ export async function POST(request: NextRequest) {
       Promise.all(wit.map((w) => fetchEntry(w))),
     ]);
 
-    const rows = await askCompareDocs({
+    const { rows, provider } = await askCompareDocs({
       wit: witEntries.filter((e): e is NonNullable<typeof e> => e !== null),
       taxReturn: taxReturnEntry,
       tts: ttsEntry,
       history,
       message: message.trim(),
     });
-    return NextResponse.json({ ok: true, rows });
+    return NextResponse.json({ ok: true, rows, provider });
   } catch (err) {
     if (err instanceof AgentC3ConfigError) {
       return NextResponse.json({ ok: false, error: "Chưa cấu hình tài khoản CRM agentc3" }, { status: 501 });

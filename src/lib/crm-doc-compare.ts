@@ -240,6 +240,16 @@ function parseRowsFromJsonText(text: string): AiCompareRow[] {
   }
 }
 
+/** Provider thực sự đã trả lời — hiện ra UI (badge cạnh bảng kết quả) để người dùng biết đang
+ * dùng Gemini hay đã tự động rớt xuống Groq (thêm 2026-08-27 theo yêu cầu "show đang sử dụng AI
+ * nào"), không cần tự đoán/xem log Vercel nữa. */
+export type AiProvider = "gemini" | "groq";
+
+export interface AskCompareResult {
+  rows: AiCompareRow[];
+  provider: AiProvider;
+}
+
 /** Gọi Gemini — nhận NGUYÊN VĂN đầy đủ (không rút gọn 1040), vì Gemini xử lý tài liệu dài tốt,
  * giới hạn của nó là SỐ LƯỢT/ngày chứ không phải kích thước mỗi lượt. */
 async function askGemini(params: AskParams): Promise<AiCompareRow[]> {
@@ -309,7 +319,7 @@ async function askGroq(params: AskParams): Promise<AiCompareRow[]> {
  * cơ chế lưu context phía server cho luồng đơn giản này). `wit` là MẢNG (thêm 2026-08-26 — WIT
  * có thể chọn 2 file vì có 2 người khai, Taxpayer + Spouse) — route gọi hàm này chịu trách
  * nhiệm tải/trích trước, hàm này chỉ lắp ráp prompt + gọi model. */
-export async function askCompareDocs(params: AskParams): Promise<AiCompareRow[]> {
+export async function askCompareDocs(params: AskParams): Promise<AskCompareResult> {
   const geminiOk = isGeminiConfigured();
   const groqOk = isGroqConfigured();
   if (!geminiOk && !groqOk) {
@@ -317,11 +327,11 @@ export async function askCompareDocs(params: AskParams): Promise<AiCompareRow[]>
   }
   if (geminiOk) {
     try {
-      return await askGemini(params);
+      return { rows: await askGemini(params), provider: "gemini" };
     } catch (err) {
       if (!(err instanceof AiRateLimitError) || !groqOk) throw err;
       console.warn("[crm-doc-compare] Gemini hết quota, tự động chuyển sang Groq");
     }
   }
-  return askGroq(params);
+  return { rows: await askGroq(params), provider: "groq" };
 }
