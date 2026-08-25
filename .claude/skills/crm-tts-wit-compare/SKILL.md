@@ -771,6 +771,41 @@ khác biệt so với 2 biến thể đã biết) thay vì đoán mò sửa lạ
     KHÔNG chạy lần nào (đọc được cookie process A vừa lưu qua DB). `tsc --noEmit`/`eslint` sạch.
     **Production: cần `prisma migrate deploy`** (2 cột mới trên `app_config`, an toàn/additive/
     nullable) — không cần script merge `AppConfig` (không đụng `columns`/`featurePermissions`).
+22. **(2026-08-26, sau mục #21) Thêm bảng "Rate Limit" trong popup — mức dùng Gemini free tier
+    thật so với hạn mức** — theo yêu cầu người dùng, hiện RPM/TPM/RPD hiện tại so với hạn mức
+    free tier `gemini-3.5-flash-lite` (15 RPM / 250.000 TPM / 500 RPD, đúng giá trị người dùng
+    cung cấp). Bảng mới hoàn toàn `GeminiUsageLog` (Prisma, migration
+    `20260825173145_add_gemini_usage_log`) — chỉ 2 field (`requestedAt`, `totalTokens`), ghi 1
+    dòng sau MỖI lượt gọi Gemini THÀNH CÔNG (`askCompareDocs()`, dùng
+    `response.usageMetadata.totalTokenCount`, `await` trước khi return — KHÔNG fire-and-forget vì
+    Vercel có thể dừng function ngay khi handler resolve, promise chưa await xong dễ bị cắt
+    ngang). Logic tính ở `src/lib/gemini-usage.ts` (`getGeminiUsageSummary()`):
+    - RPM/TPM: cửa sổ TRƯỢT 60 giây gần nhất (đếm/`sum` các dòng `requestedAt >= now - 60s`) —
+      đúng cách Google enforce rate limit thật (sliding window theo timestamp request, KHÔNG
+      phải theo phút đồng hồ cố định).
+    - RPD: đếm từ 00:00:00 hôm nay theo múi giờ **Pacific Time** (`America/Los_Angeles`, đúng
+      múi giờ Google reset quota hằng ngày thật — KHÁC UTC/giờ server) tới hiện tại. Tính offset
+      Pacific/UTC ĐỘNG (`pacificOffsetMinutes()`, không hard-code UTC-7/UTC-8 — tự đúng cho cả
+      PDT lẫn PST tuỳ mùa).
+    Route `GET /api/agentc3-import/gemini-usage` (chỉ cần đăng nhập, không cần `canViewCase` —
+    usage dùng CHUNG 1 API key cho mọi user, không phải dữ liệu riêng theo hồ sơ nào). UI:
+    `GeminiRateLimitTable` (`crm-tts-wit-check-button.tsx`) — 3 cột RPM/TPM/RPD kèm thanh tiến
+    độ, đặt ở ĐẦU `CompareChatSection` (trước cả 2 dropdown chọn TTS/WIT) để người dùng thấy mức
+    dùng TRƯỚC khi bấm gửi câu hỏi. Đọc lỗi (mất mạng/DB lỗi) chỉ ÂM THẦM ẩn bảng (`if (!usage)
+    return null`) — không chặn/báo lỗi cả popup vì đây chỉ là thông tin tham khảo thêm.
+    Dọn log cũ hơn 2 ngày (`cleanupOldGeminiUsageLogs()`) piggyback trên `cron/blob-cleanup` có
+    sẵn (chạy 1 lần/ngày, cùng lý do các piggyback khác trong repo — giới hạn Cron Job gói
+    Hobby) — chỉ cần giữ dữ liệu ~1 ngày Pacific là đủ cho RPD, không cần lưu mãi mãi.
+    Verify sống bằng script `tsx` độc lập (không qua UI): xoá sạch bảng test → xác nhận usage
+    rỗng trả `0/15, 0/250000, 0/500` đúng hạn mức → ghi 2 log (1234 + 5000 token) → xác nhận
+    RPM=2, TPM=6234, RPD=2 → chèn 1 log "5 phút trước" (ngoài cửa sổ RPM 60s nhưng cùng ngày
+    Pacific) → xác nhận RPM VẪN=2 (không tính) nhưng RPD=3 (có tính) → chèn 1 log "26 giờ trước"
+    (khác ngày Pacific) → xác nhận RPD VẪN=3 (không tính log hôm qua) — cả 5 assertion pass.
+    `tsc --noEmit` sạch (phải chạy lại `npx prisma generate` sau khi thêm model mới — đúng
+    gotcha "Prisma Client staleness" đã gặp nhiều lần trong dự án, xem `workflow-conventions.md`
+    dạng tương tự), `eslint` sạch, `next build` production sạch.
+    **Production: cần `prisma migrate deploy`** (bảng `gemini_usage_logs` mới, an toàn/additive)
+    — không cần script merge `AppConfig` (không đụng `columns`/`featurePermissions`).
 
 ## 4. Giới hạn đã biết
 

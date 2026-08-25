@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { X, Send, ChevronDown } from "lucide-react";
 import { Spinner } from "@/components/spinner";
 import { useT } from "@/lib/i18n";
+import { api } from "@/lib/api-client";
 
 type CrmDocYear = "2023" | "2024" | "2025";
 const YEARS: CrmDocYear[] = ["2023", "2024", "2025"];
@@ -395,6 +396,71 @@ function buildDocOptions(docsByYear: Record<CrmDocYear, CrmTtsWitDoc[]>): DocSel
   return options;
 }
 
+/** Bảng "Rate Limit" (thêm 2026-08-26) — mức dùng Gemini free tier HIỆN TẠI so với hạn mức
+ * thật (`gemini-3.5-flash-lite`: 15 RPM / 250.000 TPM / 500 RPD), tính từ log usage thật lưu ở
+ * server (mỗi lượt gọi Gemini THÀNH CÔNG ghi 1 dòng — xem `src/lib/gemini-usage.ts`), KHÔNG
+ * phải số ước tính. Đặt ở đầu `CompareChatSection` để người dùng thấy TRƯỚC khi bấm gửi câu
+ * hỏi — biết ngay có đang gần chạm hạn mức hay không. Đọc lỗi (mất mạng, DB lỗi...) chỉ ÂM THẦM
+ * ẩn bảng (không phải thông tin quan trọng tới mức phải chặn/báo lỗi cả popup). Fetch 1 lần lúc
+ * mount — đủ dùng cho 1 phiên chat ngắn, không cần tự làm mới liên tục. */
+function GeminiRateLimitTable() {
+  const t = useT();
+  const [usage, setUsage] = useState<{
+    rpm: { used: number; limit: number };
+    tpm: { used: number; limit: number };
+    rpd: { used: number; limit: number };
+  } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getGeminiUsage()
+      .then((res) => {
+        if (!cancelled) setUsage(res.usage);
+      })
+      .catch(() => {
+        // best-effort — ẩn bảng nếu không đọc được, không chặn/báo lỗi cả popup vì đây chỉ là
+        // thông tin tham khảo thêm, không phải phần cốt lõi của tính năng so sánh.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!usage) return null;
+
+  const rows: { key: string; label: string; used: number; limit: number }[] = [
+    { key: "rpm", label: "RPM", used: usage.rpm.used, limit: usage.rpm.limit },
+    { key: "tpm", label: "TPM", used: usage.tpm.used, limit: usage.tpm.limit },
+    { key: "rpd", label: "RPD", used: usage.rpd.used, limit: usage.rpd.limit },
+  ];
+
+  return (
+    <div className="mb-2 rounded-lg border border-border bg-bg-elevated p-2">
+      <div className="mb-1.5 text-[10px] uppercase tracking-wide text-text-faint">{t("crmCompareChat.rateLimitTitle")}</div>
+      <div className="grid grid-cols-3 gap-2">
+        {rows.map((r) => {
+          const pct = r.limit > 0 ? Math.min(100, (r.used / r.limit) * 100) : 0;
+          const isHigh = pct >= 80;
+          return (
+            <div key={r.key}>
+              <div className="flex items-baseline justify-between gap-1 text-[10px]">
+                <span className="text-text-faint">{r.label}</span>
+                <span className={isHigh ? "font-semibold text-red-400 light:text-red-600" : "text-text"}>
+                  {r.used.toLocaleString()}/{r.limit.toLocaleString()}
+                </span>
+              </div>
+              <div className="mt-0.5 h-1 overflow-hidden rounded-full bg-black/20 light:bg-black/10">
+                <div className={`h-full rounded-full ${isHigh ? "bg-red-500" : "bg-accent"}`} style={{ width: `${pct}%` }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /** Chat "So sánh WIT / TTS" (Gemini API free tier) — DUY NHẤT cơ chế so sánh trong popup (thêm
  * 2026-08-25, bảng regex cố định ban đầu đã BỎ 2026-08-26 — xem
  * `.claude/skills/crm-tts-wit-compare/SKILL.md`). Đặt ở ĐẦU popup. **Đã bỏ 1040 khỏi so sánh
@@ -464,6 +530,8 @@ function CompareChatSection({
   return (
     <div>
       <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-text-faint">{t("crmCompareChat.title")}</div>
+
+      <GeminiRateLimitTable />
 
       <div className="mb-2 grid grid-cols-2 gap-2">
         <div>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { list, del } from "@vercel/blob";
 import { cleanupOldHistory } from "@/lib/history-cleanup";
+import { cleanupOldGeminiUsageLogs } from "@/lib/gemini-usage";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -29,9 +30,10 @@ const MAX_AGE_MS = 2 * 60 * 60 * 1000;
  * Xác thực bằng CRON_SECRET (cùng cơ chế `cron/ringcentral-renew`) — KHÔNG dùng
  * session/requireUser() vì Vercel Cron không đăng nhập.
  *
- * Cũng piggyback dọn lịch sử sửa/xoá hồ sơ quá 30 ngày ở đây (xem
- * `src/lib/history-cleanup.ts`) — cùng lý do "không đăng ký thêm Cron Job riêng" như các
- * piggyback khác trong repo, 2 việc độc lập, lỗi bên nào không chặn bên kia.
+ * Cũng piggyback dọn lịch sử sửa/xoá hồ sơ quá 30 ngày (xem `src/lib/history-cleanup.ts`) VÀ
+ * dọn log usage Gemini quá 2 ngày (xem `src/lib/gemini-usage.ts`, dùng cho bảng "Rate Limit"
+ * trong popup "Get Files") ở đây — cùng lý do "không đăng ký thêm Cron Job riêng" như các
+ * piggyback khác trong repo, các việc độc lập nhau, lỗi bên nào không chặn bên kia.
  */
 export async function GET(request: NextRequest) {
   const expected = process.env.CRON_SECRET;
@@ -46,6 +48,14 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     console.error("[cron blob-cleanup] dọn lịch sử thất bại:", err);
     historyCleanup = { error: "Dọn lịch sử quá 30 ngày thất bại." };
+  }
+
+  let geminiUsageCleanup: { deletedRows: number } | { error: string };
+  try {
+    geminiUsageCleanup = { deletedRows: await cleanupOldGeminiUsageLogs() };
+  } catch (err) {
+    console.error("[cron blob-cleanup] dọn log usage Gemini thất bại:", err);
+    geminiUsageCleanup = { error: "Dọn log usage Gemini quá 2 ngày thất bại." };
   }
 
   const cutoff = Date.now() - MAX_AGE_MS;
@@ -67,9 +77,12 @@ export async function GET(request: NextRequest) {
       cursor = page.cursor;
     }
 
-    return NextResponse.json({ ok: true, scannedCount, deletedCount, historyCleanup });
+    return NextResponse.json({ ok: true, scannedCount, deletedCount, historyCleanup, geminiUsageCleanup });
   } catch (err) {
     console.error("[cron blob-cleanup]", err);
-    return NextResponse.json({ ok: false, error: "Dọn dẹp Blob thất bại.", historyCleanup }, { status: 502 });
+    return NextResponse.json(
+      { ok: false, error: "Dọn dẹp Blob thất bại.", historyCleanup, geminiUsageCleanup },
+      { status: 502 }
+    );
   }
 }

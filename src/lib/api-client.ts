@@ -425,6 +425,19 @@ export const api = {
       other: { timestamp: string; url: string; personName: string | null } | null;
     }>("/api/agentc3-import/check-latest-tts", { method: "POST", body: JSON.stringify({ caseId }) }),
 
+  /** Bảng "Rate Limit" trong popup "Get Files" — mức dùng Gemini free tier hiện tại (RPM/TPM/
+   * RPD) so với hạn mức, tính từ log usage thật lưu ở server (xem `src/lib/gemini-usage.ts`). */
+  getGeminiUsage: () =>
+    request<{
+      ok: true;
+      usage: {
+        rpm: { used: number; limit: number };
+        tpm: { used: number; limit: number };
+        rpd: { used: number; limit: number };
+        rpdResetsAt: string;
+      };
+    }>("/api/agentc3-import/gemini-usage"),
+
   /** Chat hỏi-đáp tự do "So sánh WIT / TTS" — Gemini API free tier, trả về DẠNG BẢNG (xem
    * `.claude/skills/crm-tts-wit-compare/SKILL.md`). Người dùng CHỌN CHÍNH XÁC file nào qua 2
    * trường select (đã bỏ "1040 Tax Return" khỏi so sánh 2026-08-27), `wit` là mảng tối đa 2

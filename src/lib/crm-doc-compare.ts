@@ -1,6 +1,7 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import * as cheerio from "cheerio";
 import { withAiRetry } from "@/lib/ai-retry";
+import { logGeminiUsage } from "@/lib/gemini-usage";
 import {
   summarizeCapitalGains,
   formatCapitalGainsSummaryBlock,
@@ -253,5 +254,10 @@ export async function askCompareDocs(params: AskParams): Promise<AiCompareRow[]>
     GEMINI_TIMEOUT_MS,
     "Gemini xử lý quá lâu — thử lại, hoặc chọn ít tài liệu hơn (vd bớt 1 file WIT)."
   );
+  // Ghi log usage cho bảng "Rate Limit" trong popup — CHỈ log lượt GỌI THÀNH CÔNG (khớp đúng
+  // cách Google tính request vào quota: request bị lỗi 429/timeout trước khi tới Google không
+  // tính vào RPM/RPD thật). await trước khi return (không fire-and-forget) vì Vercel có thể
+  // dừng function ngay khi handler resolve — promise chưa await xong dễ bị cắt ngang.
+  await logGeminiUsage(response.usageMetadata?.totalTokenCount ?? 0);
   return parseRowsFromJsonText(response.text ?? "[]");
 }

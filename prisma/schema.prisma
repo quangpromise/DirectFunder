@@ -281,6 +281,20 @@ model AppConfig {
 /// quy định nội bộ. Xoá KHÔNG xoá hẳn (soft-delete qua deletedAt/deletedBy) — rule bị xoá
 /// vẫn hiện trong danh sách, bị đẩy xuống cuối + gạch ngang chữ (xem GET /api/rules cho
 /// thứ tự sắp xếp, src/components/rule-card.tsx cho UI gạch ngang).
+/// Log 1 dòng MỖI lần gọi Gemini thành công (thêm 2026-08-26) — dùng để tính bảng "Rate Limit"
+/// (RPM/TPM/RPD so với hạn mức free tier) hiện trong popup "Get Files" (so sánh WIT/TTS AI).
+/// Chỉ 2 field tối thiểu — không cần lưu nội dung request/response, chỉ cần đủ để tính tổng
+/// theo cửa sổ thời gian. Dọn định kỳ (piggyback cron/blob-cleanup, xem gemini-usage.ts) vì
+/// chỉ cần giữ dữ liệu trong ~1 ngày (RPD) là đủ, không cần lưu mãi mãi.
+model GeminiUsageLog {
+  id          String   @id @default(cuid())
+  requestedAt DateTime @default(now())
+  totalTokens Int
+
+  @@index([requestedAt])
+  @@map("gemini_usage_logs")
+}
+
 model Rule {
   id        String    @id @default(cuid())
   content   String
