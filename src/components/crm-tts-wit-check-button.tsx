@@ -435,30 +435,38 @@ function GeminiRateLimitTable() {
     { key: "rpd", label: "RPD", used: usage.rpd.used, limit: usage.rpd.limit },
   ];
 
+  // Bản trước (grid-cols-3 kéo hết chiều rộng popup, mỗi thanh tiến độ dài cả cột) bị người
+  // dùng phản hồi "làm bảng nhỏ lại vừa đủ font chữ" — đổi hẳn sang 1 hàng ngang gọn
+  // (inline-flex, tự co theo nội dung, KHÔNG kéo giãn hết container), thanh tiến độ rút xuống
+  // cỡ cố định rất nhỏ (w-6) thay vì full-width theo cột.
   return (
-    <div className="mb-2 rounded-lg border border-border bg-bg-elevated p-2">
-      <div className="mb-1.5 text-[10px] uppercase tracking-wide text-text-faint">{t("crmCompareChat.rateLimitTitle")}</div>
-      <div className="grid grid-cols-3 gap-2">
-        {rows.map((r) => {
-          const pct = r.limit > 0 ? Math.min(100, (r.used / r.limit) * 100) : 0;
-          const isHigh = pct >= 80;
-          return (
-            <div key={r.key}>
-              <div className="flex items-baseline justify-between gap-1 text-[10px]">
-                <span className="text-text-faint">{r.label}</span>
-                <span className={isHigh ? "font-semibold text-red-400 light:text-red-600" : "text-text"}>
-                  {r.used.toLocaleString()}/{r.limit.toLocaleString()}
-                </span>
-              </div>
-              <div className="mt-0.5 h-1 overflow-hidden rounded-full bg-black/20 light:bg-black/10">
-                <div className={`h-full rounded-full ${isHigh ? "bg-red-500" : "bg-accent"}`} style={{ width: `${pct}%` }} />
-              </div>
+    <div className="mb-2 inline-flex flex-wrap items-center gap-3 rounded-md border border-border bg-bg-elevated px-2 py-1 text-[10px]">
+      <span className="uppercase tracking-wide text-text-faint">{t("crmCompareChat.rateLimitTitle")}</span>
+      {rows.map((r) => {
+        const pct = r.limit > 0 ? Math.min(100, (r.used / r.limit) * 100) : 0;
+        const isHigh = pct >= 80;
+        return (
+          <div key={r.key} className="flex items-center gap-1">
+            <span className="text-text-faint">{r.label}</span>
+            <div className="h-1 w-6 overflow-hidden rounded-full bg-black/20 light:bg-black/10">
+              <div className={`h-full rounded-full ${isHigh ? "bg-red-500" : "bg-accent"}`} style={{ width: `${pct}%` }} />
             </div>
-          );
-        })}
-      </div>
+            <span className={isHigh ? "font-semibold text-red-400 light:text-red-600" : "text-text"}>
+              {formatCompactNumber(r.used)}/{formatCompactNumber(r.limit)}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
+}
+
+/** Rút gọn số lớn thành dạng "175.5K" (1 chữ số thập phân, bỏ ".0" nếu tròn) — chỉ ảnh hưởng
+ * hạn mức TPM (250.000), RPM/RPD nhỏ (15/500) vẫn hiện nguyên số. */
+function formatCompactNumber(n: number): string {
+  if (n < 1000) return String(n);
+  const k = n / 1000;
+  return `${k % 1 === 0 ? k.toFixed(0) : k.toFixed(1)}K`;
 }
 
 /** Chat "So sánh WIT / TTS" (Gemini API free tier) — DUY NHẤT cơ chế so sánh trong popup (thêm
