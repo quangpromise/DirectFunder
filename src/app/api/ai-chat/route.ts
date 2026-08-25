@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/api-auth";
 import { askGeneralChat, GeminiChatConfigError, type GeneralChatMessage } from "@/lib/gemini-general-chat";
+import { GeminiRateLimitError } from "@/lib/gemini-retry";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -25,6 +26,9 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     if (err instanceof GeminiChatConfigError) {
       return NextResponse.json({ ok: false, error: "Chưa cấu hình GEMINI_API_KEY" }, { status: 501 });
+    }
+    if (err instanceof GeminiRateLimitError) {
+      return NextResponse.json({ ok: false, error: err.message }, { status: 429 });
     }
     console.error("[ai-chat] Lỗi không xác định:", err);
     return NextResponse.json({ ok: false, error: "Không gọi được AI — thử lại sau" }, { status: 502 });

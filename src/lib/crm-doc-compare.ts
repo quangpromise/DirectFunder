@@ -1,4 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
+import { withGeminiRetry } from "@/lib/gemini-retry";
 
 /**
  * So sánh WIT / "1040 Tax Return" / TTS trong popup "Get Files" — chat hỏi-đáp tự do dùng
@@ -139,17 +140,21 @@ export async function askCompareDocs(params: {
     { role: "user", parts: [{ text: params.message }] },
   ];
 
-  const response = await ai.models.generateContent({
-    // "gemini-2.5-flash" đã ngừng cấp cho user mới (xác nhận thật 2026-08-25 — gọi API trả
-    // lỗi 404 kèm khuyến nghị đổi sang model này) — vẫn thuộc free tier.
-    model: "gemini-3.6-flash",
-    contents,
-    config: {
-      systemInstruction: CHAT_SYSTEM_INSTRUCTION,
-      responseMimeType: "application/json",
-      responseSchema: CHAT_RESPONSE_SCHEMA,
-    },
-  });
+  // Tự retry ngắn nếu Gemini free tier trả 429 (giới hạn tốc độ) — lỗi thật đã gặp trên
+  // production, xem gemini-retry.ts.
+  const response = await withGeminiRetry(() =>
+    ai.models.generateContent({
+      // "gemini-2.5-flash" đã ngừng cấp cho user mới (xác nhận thật 2026-08-25 — gọi API trả
+      // lỗi 404 kèm khuyến nghị đổi sang model này) — vẫn thuộc free tier.
+      model: "gemini-3.6-flash",
+      contents,
+      config: {
+        systemInstruction: CHAT_SYSTEM_INSTRUCTION,
+        responseMimeType: "application/json",
+        responseSchema: CHAT_RESPONSE_SCHEMA,
+      },
+    })
+  );
 
   const text = response.text ?? "[]";
   try {

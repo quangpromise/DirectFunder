@@ -1,4 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
+import { withGeminiRetry } from "@/lib/gemini-retry";
 
 /**
  * Chat AI TỰ DO (Gemini API free tier) — nút nổi "Trợ lý AI" hiện ở MỌI màn hình dashboard
@@ -44,13 +45,17 @@ export async function askGeneralChat(history: GeneralChatMessage[], message: str
     { role: "user", parts: [{ text: message }] },
   ];
 
-  const response = await ai.models.generateContent({
-    // "gemini-2.5-flash" đã ngừng cấp cho user mới (xác nhận thật — gọi API trả lỗi 404 kèm
-    // khuyến nghị đổi sang model này) — vẫn thuộc free tier, xem crm-doc-compare.ts.
-    model: "gemini-3.6-flash",
-    contents,
-    config: { systemInstruction: SYSTEM_INSTRUCTION },
-  });
+  // Tự retry ngắn nếu Gemini free tier trả 429 (giới hạn tốc độ) — lỗi thật đã gặp trên
+  // production, xem gemini-retry.ts.
+  const response = await withGeminiRetry(() =>
+    ai.models.generateContent({
+      // "gemini-2.5-flash" đã ngừng cấp cho user mới (xác nhận thật — gọi API trả lỗi 404 kèm
+      // khuyến nghị đổi sang model này) — vẫn thuộc free tier, xem crm-doc-compare.ts.
+      model: "gemini-3.6-flash",
+      contents,
+      config: { systemInstruction: SYSTEM_INSTRUCTION },
+    })
+  );
 
   return response.text ?? "";
 }

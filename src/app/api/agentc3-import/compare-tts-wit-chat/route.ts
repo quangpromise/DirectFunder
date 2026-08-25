@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/api-auth";
 import { canViewCase } from "@/lib/rbac";
 import { AgentC3ConfigError, AgentC3LoginError, AgentC3NotFoundError, fetchAgentC3FileBytes } from "@/lib/agentc3-client";
 import { askCompareDocs, extractPdfText, GeminiConfigError, type CompareChatMessage, type SelectedDocEntry } from "@/lib/crm-doc-compare";
+import { GeminiRateLimitError } from "@/lib/gemini-retry";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -88,6 +89,9 @@ export async function POST(request: NextRequest) {
     }
     if (err instanceof GeminiConfigError) {
       return NextResponse.json({ ok: false, error: "Chưa cấu hình GEMINI_API_KEY" }, { status: 501 });
+    }
+    if (err instanceof GeminiRateLimitError) {
+      return NextResponse.json({ ok: false, error: err.message }, { status: 429 });
     }
     if (err instanceof AgentC3LoginError) return NextResponse.json({ ok: false, error: err.message }, { status: 502 });
     if (err instanceof AgentC3NotFoundError) return NextResponse.json({ ok: false, error: err.message }, { status: 404 });

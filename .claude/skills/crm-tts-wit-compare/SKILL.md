@@ -252,5 +252,15 @@ không cần đụng gì tới Vercel/production.
 - Nếu 1 năm có NHIỀU bản "1040 Tax Return"/TTS (hiếm, nhưng có thể xảy ra nếu khách sửa/nộp lại)
   route chỉ lấy bản `[0]` (mới nhất theo `fetchTtsWitDatesByYear`, đã sắp mới-nhất-trước) — WIT
   thì lấy TẤT CẢ (khử trùng theo người) vì WIT vốn nhiều người (Taxpayer+Spouse) là bình thường.
-- Free tier Gemini có giới hạn request/phút không công khai rõ ràng (ẩn sau dashboard cá nhân) —
-  nếu người dùng thật gặp lỗi rate limit khi dùng nhiều, đây là điểm cần điều tra đầu tiên.
+- **Free tier Gemini có giới hạn request/phút — ĐÃ GẶP THẬT trên production (2026-08-27)**: log
+  server lộ `Error [ApiError]... { status: 429 }`, xác nhận qua nút "Trợ lý AI" (route
+  `/api/ai-chat`) khi test dồn dập nhiều request trong ngày. Đã vá bằng `withGeminiRetry()`
+  (`src/lib/gemini-retry.ts`, dùng chung cho cả `crm-doc-compare.ts` lẫn
+  `gemini-general-chat.ts`) — tự retry tối đa 2 lần (cách nhau 1.5s rồi 3s) khi gặp đúng lỗi
+  429, lỗi khác ném ngay không retry. Hết lượt retry vẫn 429 thì ném `GeminiRateLimitError`,
+  cả 2 route (`ai-chat`, `compare-tts-wit-chat`) bắt riêng lỗi này, trả về status 429 kèm thông
+  báo rõ ràng "Gemini đang bị giới hạn tốc độ (free tier) — thử lại sau ít phút" thay vì lỗi
+  chung chung "Không gọi được AI"/"Không so sánh được tài liệu". Vẫn có thể gặp lại nếu dùng dồn
+  dập trong thời gian ngắn (free tier RPM thấp) — đây là giới hạn cố hữu, không phải bug, chỉ có
+  thể giảm bằng cách giãn request hoặc nâng lên tier trả phí (KHÔNG tự ý đổi, xem mục lịch sử
+  quyết định #3).
