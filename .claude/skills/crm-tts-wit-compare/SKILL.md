@@ -837,6 +837,23 @@ khác biệt so với 2 biến thể đã biết) thay vì đoán mò sửa lạ
     Verify: `tsc --noEmit`/`eslint` sạch; test `node -e` xác nhận `parseNonTaxableNote()` tách
     đúng marker + giữ nguyên note khi không có marker. Không cần bước production (không đổi
     schema, không đổi feature-permission — thuần prompt AI + logic client).
+25. **(2026-08-28, sau mục #24) Chọn TTS năm nào thì WIT chỉ hiện đúng năm đó** — trước đây
+    dropdown WIT luôn liệt kê CẢ 3 năm (2023-2025) bất kể đã chọn TTS năm nào, dễ chọn nhầm WIT
+    khác năm với TTS đang so (2 tài liệu phải cùng 1 năm thuế mới có ý nghĩa đối chiếu).
+    `buildDocOptions()` đổi kiểu trả về từ `DocSelection[]` sang `YearedDocOption[]` (thêm field
+    `year` cục bộ, KHÔNG đụng interface `DocSelection` xuất ra ngoài — vẫn dùng làm kiểu payload
+    gửi `onCompareChat`, thừa field `year` không vi phạm gì vì giá trị lấy qua `.find()`/
+    `.filter()` chứ không phải object literal mới nên TS không excess-property-check).
+    `CompareChatSection`: `witOptionsAll` (đủ 3 năm) → `witOptions` (đã lọc theo
+    `selectedTtsYear`, tính từ `ttsOptions.find(url).year`) — dropdown WIT chỉ render
+    `witOptions`. Đổi TTS sang năm khác qua `handleTtsChange()` (thay `setTtsUrl` trực tiếp) —
+    tự bỏ chọn mọi `witUrls` không thuộc năm mới (tránh state giữ url đã ẩn khỏi dropdown nhưng
+    vẫn tính vào "ready"/payload gửi AI, lệch với những gì người dùng đang thấy). Chưa chọn TTS
+    (rỗng) → `selectedTtsYear = null` → vẫn hiện đủ mọi năm như cũ, KHÔNG xoá `witUrls` đã chọn
+    trước đó. Thêm hint "(2024, tối đa 2)" (kèm năm) cạnh nhãn "WIT", và thông báo riêng "không
+    có WIT năm {year}" (`crmCompareChat.witNoneForYear`, i18n mới) khi năm đã chọn không có file
+    WIT nào — phân biệt với "—" mặc định lúc chưa chọn TTS. `tsc --noEmit`/`eslint` sạch. Không
+    cần bước production (thuần logic client, không đổi schema/API).
 
 ## 4. Giới hạn đã biết
 

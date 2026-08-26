@@ -407,15 +407,24 @@ function AiRowsTable({ rows, columns, wrap }: { rows: AiCompareRow[]; columns: C
   );
 }
 
+/** `DocSelection` + năm gốc (thêm 2026-08-28) — giữ riêng `year` để lọc WIT theo đúng năm TTS
+ * đang chọn (`CompareChatSection`), KHÔNG đụng interface `DocSelection` xuất ra ngoài (dùng làm
+ * kiểu payload gửi API `onCompareChat` — chỉ cần `{url, label}`, thêm field thừa vẫn khớp cấu
+ * trúc vì TS không excess-check trên giá trị lấy từ `.find()`/`.filter()`, chỉ check object
+ * literal mới). */
+interface YearedDocOption extends DocSelection {
+  year: CrmDocYear;
+}
+
 /** Gộp mọi file 1 loại tài liệu thành danh sách lựa chọn — nhãn gồm sẵn năm + tên người (vd
  * "2025 - Sanchez, Jose E", fallback ngày nếu không đọc được tên) để hiện trong dropdown/
  * checkbox (thêm 2026-08-26 theo yêu cầu "list tất cả tên đang có trong bảng TTS... kèm theo
  * năm"). Duyệt qua mọi năm 2023-2025, không giới hạn 1 năm như thiết kế cũ. */
-function buildDocOptions(docsByYear: Record<CrmDocYear, CrmTtsWitDoc[]>): DocSelection[] {
-  const options: DocSelection[] = [];
+function buildDocOptions(docsByYear: Record<CrmDocYear, CrmTtsWitDoc[]>): YearedDocOption[] {
+  const options: YearedDocOption[] = [];
   for (const year of YEARS) {
     for (const doc of docsByYear[year]) {
-      options.push({ url: doc.url, label: `${year} - ${doc.personName ?? dateOnly(doc.timestamp)}` });
+      options.push({ url: doc.url, label: `${year} - ${doc.personName ?? dateOnly(doc.timestamp)}`, year });
     }
   }
   return options;
@@ -540,7 +549,7 @@ function CompareChatSection({
 }) {
   const t = useT();
   const ttsOptions = buildDocOptions(result.tts);
-  const witOptions = buildDocOptions(result.wit);
+  const witOptionsAll = buildDocOptions(result.wit);
 
   const [ttsUrl, setTtsUrl] = useState("");
   const [witUrls, setWitUrls] = useState<string[]>([]);
@@ -549,7 +558,23 @@ function CompareChatSection({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
 
+  // Chọn TTS năm nào thì WIT chỉ hiện đúng năm đó (thêm 2026-08-28, theo yêu cầu — 2 tài liệu
+  // luôn đối chiếu cùng 1 năm thuế, hiện lẫn năm khác chỉ gây rối/dễ chọn nhầm). Chưa chọn TTS
+  // (rỗng) thì vẫn hiện đủ mọi năm như cũ.
+  const selectedTtsYear = ttsOptions.find((o) => o.url === ttsUrl)?.year ?? null;
+  const witOptions = selectedTtsYear ? witOptionsAll.filter((o) => o.year === selectedTtsYear) : witOptionsAll;
+
   const ready = Boolean(ttsUrl) && witUrls.length > 0;
+
+  function handleTtsChange(newTtsUrl: string) {
+    setTtsUrl(newTtsUrl);
+    // Đổi TTS sang năm khác -> bỏ chọn mọi WIT KHÔNG thuộc năm mới (không còn hiện trong
+    // dropdown nữa, giữ lại state cũ sẽ khiến "ready"/payload gửi lệch với những gì người dùng
+    // đang thấy trên màn hình).
+    const newYear = ttsOptions.find((o) => o.url === newTtsUrl)?.year ?? null;
+    if (!newYear) return;
+    setWitUrls((prev) => prev.filter((u) => witOptionsAll.find((o) => o.url === u)?.year === newYear));
+  }
 
   function toggleWit(url: string) {
     setWitUrls((prev) => {
@@ -594,7 +619,7 @@ function CompareChatSection({
           <div className="mb-1 text-[10px] uppercase tracking-wide text-text-faint">TTS</div>
           <select
             value={ttsUrl}
-            onChange={(e) => setTtsUrl(e.target.value)}
+            onChange={(e) => handleTtsChange(e.target.value)}
             className="w-full rounded-md border border-border bg-bg-elevated px-1.5 py-1 text-xs text-text"
           >
             <option value="">—</option>
@@ -607,9 +632,14 @@ function CompareChatSection({
         </div>
 
         <div>
-          <div className="mb-1 text-[10px] uppercase tracking-wide text-text-faint">WIT ({t("crmCompareChat.witPickHint")})</div>
+          <div className="mb-1 text-[10px] uppercase tracking-wide text-text-faint">
+            WIT ({selectedTtsYear ? `${selectedTtsYear}, ` : ""}
+            {t("crmCompareChat.witPickHint")})
+          </div>
           {witOptions.length === 0 ? (
-            <div className="rounded-md border border-border bg-bg-elevated px-1.5 py-1 text-xs text-text-faint">—</div>
+            <div className="rounded-md border border-border bg-bg-elevated px-1.5 py-1 text-xs text-text-faint">
+              {selectedTtsYear ? t("crmCompareChat.witNoneForYear", { year: selectedTtsYear }) : "—"}
+            </div>
           ) : (
             <details className="group rounded-md border border-border bg-bg-elevated text-xs [&_summary::-webkit-details-marker]:hidden">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-1 px-1.5 py-1 text-text">
