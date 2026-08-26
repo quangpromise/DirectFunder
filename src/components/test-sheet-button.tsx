@@ -14,6 +14,7 @@ import { SendingProgressToast } from "@/components/sending-progress-toast";
 const NOTE_OPTIONS: { id: string; label: string }[] = [
   { id: "no_amend", label: "No Amend" },
   { id: "agent_guarantees_sc", label: "Agent guarantees SC" },
+  { id: "income_variance_no_amend", label: "Income Variance but No Amend" },
 ];
 
 function formatMoney(n: number): string {
