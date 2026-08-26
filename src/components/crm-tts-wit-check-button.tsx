@@ -22,7 +22,8 @@ export interface CrmTtsWitDoc {
 export interface CrmTtsWitResult {
   tts: Record<CrmDocYear, CrmTtsWitDoc[]>;
   wit: Record<CrmDocYear, CrmTtsWitDoc[]>;
-  /** Bảng "1040 Tax Return" (thêm 2026-08-25) — năm 2023-2025 (bỏ 2022 theo yêu cầu). */
+  /** Bảng "1040 Tax Return" (thêm 2026-08-25) — TOÀN BỘ file đã upload (mọi ngày, không chỉ
+   * ngày gần nhất — đổi 2026-08-28), năm 2023-2025 (bỏ 2022 theo yêu cầu). */
   taxReturns: Record<CrmDocYear, CrmTtsWitDoc[]>;
   /** Field "Other" (thêm 2026-08-25) — chỉ 1 link MỚI NHẤT (không theo năm), null nếu chưa có
    * file "Other" nào. */
@@ -66,8 +67,9 @@ export type CompareTtsWitChatFn = (payload: {
 /**
  * Nút "Check log" ở cột "TTS & WIT Lastest" (thay cho 2 nút "Order 8821"/"TTS & WIT" đặt lệnh
  * cho Support đã ẩn khỏi bảng Hồ sơ chính, thêm 2026-08-23) — bấm để đọc trực tiếp CRM agentc3,
- * hiện popup MỌI file TTS/WIT/"1040 Tax Return" upload vào đúng ngày mới nhất (không chỉ 1 file
- * — nhiều file có thể lên cùng ngày, thêm 2026-08-25) cho từng năm 2023/2024/2025, cộng field
+ * hiện popup MỌI file TTS/WIT upload vào đúng ngày mới nhất (không chỉ 1 file — nhiều file có
+ * thể lên cùng ngày, thêm 2026-08-25) cho từng năm 2023/2024/2025; RIÊNG "1040 Tax Return" hiện
+ * TOÀN BỘ file đã upload (mọi ngày — đổi 2026-08-28), cộng field
  * "Other" (không theo năm, chỉ lấy 1 link mới nhất, thêm 2026-08-25) (đơn giản hoá 2026-08-23
  * sau phản hồi thực tế — bỏ hẳn cơ chế Notification/so-mốc trước đó, vì người bấm không thấy
  * kết quả tức thời). Chỉ hiện khi hồ sơ đã liên kết CRM (`hasClientLink`) — component cha tự

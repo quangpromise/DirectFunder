@@ -509,7 +509,7 @@ function stripFileExtension(name: string): string {
 /** Với mỗi năm/loại tài liệu: tìm NGÀY (phần "YYYY-MM-DD" của timestamp) lớn nhất, giữ lại
  * MỌI file upload đúng ngày đó (không chỉ file có giờ:phút lớn nhất — nhiều file có thể lên
  * cùng ngày, vd 1 người upload nhiều trang/phần cùng lúc, hoặc Taxpayer+Spouse cùng ngày), sắp
- * xếp mới nhất trước. Dùng chung cho TTS/WIT lẫn "1040 Tax Return". */
+ * xếp mới nhất trước. Dùng cho TTS/WIT (vẫn chỉ lấy ngày mới nhất). */
 function latestDayOnly(docs: CrmTtsWitDoc[]): CrmTtsWitDoc[] {
   if (docs.length === 0) return [];
   const latestDate = docs.reduce((max, d) => (d.timestamp.slice(0, 10) > max ? d.timestamp.slice(0, 10) : max), "");
@@ -518,11 +518,19 @@ function latestDayOnly(docs: CrmTtsWitDoc[]): CrmTtsWitDoc[] {
     .sort((a, b) => (a.timestamp < b.timestamp ? 1 : a.timestamp > b.timestamp ? -1 : 0));
 }
 
+/** Sắp xếp mọi doc theo thời gian mới nhất trước — KHÔNG lọc theo ngày (khác `latestDayOnly`) —
+ * dùng riêng cho "1040 Tax Return" (thêm 2026-08-28 theo yêu cầu "lấy tất cả các link đang có
+ * trong các field đó", thay cho hành vi cũ chỉ giữ file(s) upload vào ngày gần nhất). */
+function sortedNewestFirst(docs: CrmTtsWitDoc[]): CrmTtsWitDoc[] {
+  return [...docs].sort((a, b) => (a.timestamp < b.timestamp ? 1 : a.timestamp > b.timestamp ? -1 : 0));
+}
+
 export interface CrmTtsWitDates {
   tts: Record<CrmDocYear, CrmTtsWitDoc[]>;
   wit: Record<CrmDocYear, CrmTtsWitDoc[]>;
-  /** Bảng "1040 Tax Return" mới (thêm 2026-08-25) — mọi file "{năm} 1040 Tax return" upload
-   * vào đúng ngày mới nhất, năm 2023-2025 (bỏ 2022 theo yêu cầu). */
+  /** Bảng "1040 Tax Return" (thêm 2026-08-25) — TOÀN BỘ file "{năm} 1040 Tax return" đã upload
+   * (không chỉ ngày gần nhất — đổi 2026-08-28 theo yêu cầu "lấy tất cả các link đang có trong
+   * field", khác TTS/WIT vẫn chỉ giữ ngày mới nhất), năm 2023-2025 (bỏ 2022 theo yêu cầu). */
   taxReturns: Record<CrmDocYear, CrmTtsWitDoc[]>;
   /** Field "Other" (thêm 2026-08-25) — CHỈ 1 link MỚI NHẤT (không phải mọi link cùng ngày như
    * 3 bảng trên, đúng yêu cầu "lấy link mới nhất của nó kèm tên") — mục "Other" trên CRM không
@@ -531,11 +539,13 @@ export interface CrmTtsWitDates {
   other: CrmTtsWitDoc | null;
 }
 
-/** Đọc tab Documentation của khách hàng 1 LẦN, trả về mọi file TTS/WIT VÀ "1040 Tax Return"
- * upload vào ĐÚNG NGÀY gần nhất (không chỉ 1 file mới nhất — nhiều file có thể lên cùng ngày,
- * vd 1 người upload nhiều trang/phần cùng lúc, thêm 2026-08-25 sau yêu cầu "lấy tất cả link
- * mới nhất được up cùng ngày") cho từng năm 2023/2024/2025, cộng field "Other" (không theo
- * năm, chỉ lấy 1 link MỚI NHẤT — thêm 2026-08-25) — dùng cho nút "TTS & WIT" ở cột "Check CRM"
+/** Đọc tab Documentation của khách hàng 1 LẦN, trả về mọi file TTS/WIT upload vào ĐÚNG NGÀY gần
+ * nhất (không chỉ 1 file mới nhất — nhiều file có thể lên cùng ngày, vd 1 người upload nhiều
+ * trang/phần cùng lúc, thêm 2026-08-25 sau yêu cầu "lấy tất cả link mới nhất được up cùng
+ * ngày") cho từng năm 2023/2024/2025; RIÊNG "1040 Tax Return" trả về TOÀN BỘ file đã upload
+ * (mọi ngày, không chỉ ngày gần nhất — đổi 2026-08-28 theo yêu cầu "lấy tất cả các link đang có
+ * trong field"), cộng field "Other" (không theo năm, chỉ lấy 1 link MỚI NHẤT — thêm 2026-08-25)
+ * — dùng cho nút "TTS & WIT" ở cột "Check CRM"
  * (xem POST /api/agentc3-import/check-latest-tts), hiện thẳng lên popup kết quả mỗi lần bấm
  * (KHÔNG so sánh/lưu mốc, không tạo Notification — đơn giản hoá 2026-08-23 sau phản hồi thực
  * tế; thêm link 2026-08-24; thêm bảng "1040 Tax Return"/"Other" 2026-08-25). Đã khảo sát
@@ -650,9 +660,9 @@ export async function fetchTtsWitDatesByYear(customerId: string): Promise<CrmTts
       "2025": latestDayOnly(all.wit["2025"]),
     },
     taxReturns: {
-      "2023": latestDayOnly(all.taxReturns["2023"]),
-      "2024": latestDayOnly(all.taxReturns["2024"]),
-      "2025": latestDayOnly(all.taxReturns["2025"]),
+      "2023": sortedNewestFirst(all.taxReturns["2023"]),
+      "2024": sortedNewestFirst(all.taxReturns["2024"]),
+      "2025": sortedNewestFirst(all.taxReturns["2025"]),
     },
     other: latestOther,
   };
