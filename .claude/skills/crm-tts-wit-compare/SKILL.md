@@ -893,6 +893,36 @@ khác biệt so với 2 biến thể đã biết) thay vì đoán mò sửa lạ
     sẵn từ mục #18 ("dùng thẳng con số đã cộng dồn sẵn... category tương ứng") tự động áp dụng
     cho K-1 ngay khi nó xuất hiện trong khối tính sẵn, không cần thêm quy tắc riêng. Không cần
     bước production (thuần logic trích xuất, không đổi schema/API).
+27. **(2026-08-28, ngay sau mục #26) Yêu cầu tường minh "quy tắc bắt buộc: review kỹ không bỏ lỡ
+    bất cứ form nào dù không có chữ Form đằng trước, trước khi cắt và gửi AI"** — người dùng muốn
+    1 cơ chế TỔNG QUÁT (không phải vá từng mã K-1 riêng lẻ mỗi lần gặp lỗi) để đảm bảo KHÔNG BAO
+    GIỜ mất dữ liệu form nào trước bước `stripAllWitRecordsFromText()`. 2 thay đổi:
+    1. **Bỏ whitelist mã K-1 cố định** (`WIT_K1_FORM_TYPES` — đã xoá hẳn) — nhánh
+       `Schedule\s+K-1\s+({mã})\b` giờ chấp nhận BẤT KỲ mã nào theo sau (không giới hạn
+       1065/1120-S/1041 như bản vá mục #26), verify bằng mã giả lập "9999-Z" chưa từng khai báo
+       — nhận diện + cộng dồn đúng ngay. **ĐÃ THỬ rồi BỎ**: thêm 1 nhánh dự phòng "Schedule
+       {bất kỳ}" (không bắt buộc "K-1") định bắt luôn các loại Schedule khác chưa biết tên — verify
+       lại NGAY LẬP TỨC lộ ra false-positive thật: field NỘI BỘ "Schedule K-3:   Box is not
+       checked" bên trong chính 1 record "Schedule K-1 1065" (K-3 là 1 lịch trình liên quan, không
+       phải tiêu đề mục mới) bị khớp nhầm thành ranh giới, cắt vụn record K-1 1065 thật giữa
+       chừng — đúng lặp lại y hệt lỗi "Form 8949" (mục lịch sử #16) chỉ khác tên. Đã bỏ hẳn nhánh
+       này — bài học: KHÔNG mở rộng nhận diện ranh giới bằng pattern chung chung dựa 1 TỪ ĐƠN
+       ("Schedule"/"Form"), CHỈ mở rộng khi cụm từ đủ ĐẶC THÙ (3 từ "Schedule K-1" hiếm khi xuất
+       hiện tình cờ, khác 1 từ "Schedule" hay "Form" đứng riêng).
+    2. **Lớp an toàn ĐẾM TIỀN ĐỘC LẬP** trong `stripAllWitRecordsFromText()` — trước khi cắt 1
+       đoạn, đếm lại số cụm "$X.XX" có trong đúng đoạn đó (`countDollarAmounts()`, regex riêng,
+       KHÔNG dùng lại chính `extractDollarFields()` để tự kiểm tra chính nó) và so với số cụm mà
+       `extractDollarFields()` (hàm cộng dồn thật) đọc được — lệch (có tiền trong đoạn nhưng
+       không cộng dồn ở đâu cả, nghĩa là gặp 1 dạng tiêu đề/định dạng HOÀN TOÀN chưa biết) thì
+       đoạn đó KHÔNG bị cắt, giữ nguyên văn gửi AI — chấp nhận đánh đổi prompt lớn hơn 1 chút thay
+       vì có nguy cơ mất trắng dữ liệu. Verify bằng 1 "form" giả lập không khớp cả "Form "/
+       "Schedule K-1 " lẫn định dạng "{Nhãn}: $X.XX" ("Total reportable amount for this
+       transaction is $9,999.00 as disclosed above.") — xác nhận đoạn đó (và cả khối bị nuốt
+       chung do không có ranh giới nào tách ra) được GIỮ NGUYÊN thay vì mất trắng.
+    Regression test: dữ liệu K-1 thật (`BY309185`) vẫn cộng dồn đúng sau khi bỏ whitelist mã cố
+    định; 1099-B (2 record, có field nội bộ "Applicable Check Box on Form 8949") vẫn tính đúng
+    Proceeds/Cost Basis không bị ảnh hưởng bởi thay đổi. `tsc --noEmit`/`eslint` sạch. Không cần
+    bước production (thuần logic trích xuất, không đổi schema/API/prompt).
 
 ## 4. Giới hạn đã biết
 

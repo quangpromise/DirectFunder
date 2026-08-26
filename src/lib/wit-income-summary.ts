@@ -128,23 +128,34 @@ const WIT_FORM_TYPES = [
  * liền TRƯỚC rồi bị `stripAllWitRecordsFromText()` xoá sạch trước khi kịp gửi AI — K-1 hoàn toàn
  * biến mất khỏi so sánh dù có mặt rõ ràng trên WIT (đã xác nhận qua dữ liệu thật: hồ sơ có tới
  * 3/4 file WIT bị mất trắng nội dung K-1 sau bước strip, chỉ còn sót 1 file W&IS bản tóm tắt vì
- * quá ngắn nên strip không chạm tới). */
-const WIT_K1_FORM_TYPES = ["1065", "1120-S", "1041"] as const;
-
+ * quá ngắn nên strip không chạm tới).
+ *
+ * **Mở rộng 2026-08-28 (theo yêu cầu "review kỹ không bỏ lỡ bất cứ form nào dù không có chữ Form
+ * đằng trước")**: thay vì giới hạn K-1 vào 1 whitelist mã cố định (dễ tái diễn đúng lỗi này với
+ * 1 mã K-1 khác chưa từng gặp), nhánh "Schedule K-1 {mã}" giờ chấp nhận BẤT KỲ mã nào theo sau
+ * (không whitelist) — cụm "Schedule K-1" đủ đặc thù/hiếm để không lo trùng với text mô tả nội bộ
+ * của form khác (khác hẳn rủi ro đã gặp thật với "Form 8949" — 1 cụm 2 từ rất chung chung, dễ
+ * xuất hiện làm text tham chiếu bên trong record 1099-B, xem whitelist `WIT_FORM_TYPES` phía
+ * trên). **ĐÃ THỬ rồi BỎ**: 1 nhánh dự phòng "Schedule {bất kỳ}" (không bắt buộc "K-1" theo sau)
+ * — tưởng sẽ bắt thêm được các loại Schedule khác chưa biết tên, nhưng verify lại phát hiện ngay
+ * false-positive THẬT: chính bên trong 1 record "Schedule K-1 1065" có field nội bộ
+ * "Schedule K-3:   Box is not   checked" (tham chiếu 1 lịch trình liên quan, KHÔNG PHẢI tiêu đề
+ * mục mới) — nhánh chung khớp nhầm "Schedule K-3" thành 1 ranh giới MỚI, cắt vụn NGAY GIỮA record
+ * K-1 1065 thật, khiến "Ordinary Income K-1: -$5,885.00" bị gán nhầm sang bucket "SCHEDULE K-3"
+ * (đúng loại lỗi false-positive đã gặp với "Form 8949" trước đây, chỉ khác tên). Đã bỏ hẳn nhánh
+ * này — CHỈ còn "Form {whitelist}" (an toàn) + "Schedule K-1 {mã bất kỳ}" (an toàn, đặc thù). Với
+ * loại Form/Schedule HOÀN TOÀN chưa biết tên (không khớp cả 2 nhánh trên), dựa vào lớp AN TOÀN
+ * ĐẾM TIỀN riêng trong `stripAllWitRecordsFromText()` (xem doc-comment ở đó) — không cắt bỏ đoạn
+ * nào nếu chưa chắc đã trích hết số tiền trong đó, thay vì cố đoán thêm ranh giới mới dễ gây
+ * false-positive như trên. */
 function findFormBoundaries(text: string): { index: number; formType: string }[] {
   // Sắp xếp DÀI TỚI NGẮN trước khi ghép alternation — vd "1098-E" phải thử TRƯỚC "1098" (tiền
   // tố của nó), nếu không regex alternation sẽ khớp nhầm "1098" rồi dừng lại giữa "1098-E".
-  const escapeAll = (list: readonly string[]) =>
-    [...list]
-      .sort((a, b) => b.length - a.length)
-      .map((f) => f.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
-      .join("|");
-  const escapedForms = escapeAll(WIT_FORM_TYPES);
-  const escapedK1 = escapeAll(WIT_K1_FORM_TYPES);
-  // 2 nhánh riêng biệt (khác tiền tố "Form "/"Schedule K-1 ") — formType của nhánh K-1 thêm tiền
-  // tố "K-1 " (vd "K-1 1065") để phân biệt rõ với form gốc cùng số nếu có, dù hiện các mã trong
-  // WIT_K1_FORM_TYPES không trùng WIT_FORM_TYPES nên chưa thật sự đụng nhau.
-  const boundaryRe = new RegExp(`Form\\s+(${escapedForms})\\b|Schedule\\s+K-1\\s+(${escapedK1})\\b`, "gi");
+  const escapedForms = [...WIT_FORM_TYPES]
+    .sort((a, b) => b.length - a.length)
+    .map((f) => f.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("|");
+  const boundaryRe = new RegExp(`Form\\s+(${escapedForms})\\b|Schedule\\s+K-1\\s+([A-Za-z0-9][A-Za-z0-9-]{0,19})\\b`, "gi");
   const boundaries: { index: number; formType: string }[] = [];
   let m: RegExpExecArray | null;
   while ((m = boundaryRe.exec(text)) !== null) {
@@ -369,12 +380,31 @@ export function formatOtherWitFormsBlock(summaries: WitFormTypeSummary[]): strin
     .join("\n");
 }
 
-/** Cắt bỏ TOÀN BỘ record của MỌI loại Form trong whitelist (1099-B/DA lẫn các loại khác) khỏi 1
- * khối WIT — thay `stripCapitalGainsRecordsFromText` (chỉ cắt 1099-B/DA) vì giờ MỌI loại Form
- * đều đã được trích + cộng dồn sẵn trong code (`summarizeCapitalGains`/`summarizeOtherWitForms`),
- * không cần gửi nguyên văn cho AI đọc lại nữa — giảm đáng kể kích thước prompt (đa số dung lượng
- * 1 file WIT là các record này). Nội dung KHÔNG khớp Form nào trong whitelist (banner đầu file,
- * dòng tổng số...) vẫn giữ nguyên. */
+/** MỌI cụm "$X.XX" (kể cả có dấu "-" đứng trước, xem `extractDollarFields`) — dùng làm phép đếm
+ * ĐỘC LẬP để kiểm chứng đã trích đủ hết số tiền trong 1 đoạn trước khi cắt, không dựa vào chính
+ * `extractDollarFields` (nếu hàm đó có bug bỏ sót, dùng lại chính nó để tự kiểm tra sẽ không phát
+ * hiện ra bug của chính nó). */
+const DOLLAR_AMOUNT_RE = /-?\$[\d,]+\.\d{2}/g;
+
+function countDollarAmounts(s: string): number {
+  return (s.match(DOLLAR_AMOUNT_RE) ?? []).length;
+}
+
+/** Cắt bỏ TOÀN BỘ record của MỌI loại Form/Schedule khỏi 1 khối WIT — thay
+ * `stripCapitalGainsRecordsFromText` (chỉ cắt 1099-B/DA) vì giờ MỌI loại Form đều đã được trích +
+ * cộng dồn sẵn trong code (`summarizeCapitalGains`/`summarizeOtherWitForms`), không cần gửi
+ * nguyên văn cho AI đọc lại nữa — giảm đáng kể kích thước prompt (đa số dung lượng 1 file WIT là
+ * các record này). Nội dung KHÔNG khớp ranh giới nào (banner đầu file, dòng tổng số...) vẫn giữ
+ * nguyên.
+ *
+ * **Lớp an toàn bổ sung (2026-08-28, theo yêu cầu "review kỹ không bỏ lỡ bất cứ form nào... trước
+ * khi cắt và gửi AI")**: dù `findFormBoundaries()` đã mở rộng nhận diện thêm "Schedule K-1"/
+ * "Schedule {bất kỳ}", vẫn có thể tồn tại 1 kiểu tiêu đề HOÀN TOÀN KHÁC mà code chưa từng biết
+ * (không "Form "/không "Schedule "). Trước khi thật sự cắt bỏ 1 đoạn, ĐẾM LẠI ĐỘC LẬP số cụm
+ * "$X.XX" có trong đúng đoạn đó và so với số cụm mà `extractDollarFields()` (hàm cộng dồn thật
+ * dùng cho AI) đọc được — NẾU LỆCH (có tiền trong đoạn nhưng không được cộng dồn ở đâu cả), đoạn
+ * đó KHÔNG được cắt — giữ nguyên văn gửi AI thay vì âm thầm mất dữ liệu (đánh đổi: AI phải tự đọc
+ * thêm đúng phần chưa nhận diện được, thay vì mất trắng số liệu như bug K-1 đã gặp thật). */
 export function stripAllWitRecordsFromText(text: string): string {
   const boundaries = findFormBoundaries(text);
   if (boundaries.length === 0) return text;
@@ -394,7 +424,15 @@ export function stripAllWitRecordsFromText(text: string): string {
   let cursor = 0;
   for (const r of merged) {
     result += text.slice(cursor, r.start);
-    result += " [ĐÃ LƯỢC BỚT các record gốc — xem tổng đã tính sẵn ở khối riêng bên dưới] ";
+    const segment = text.slice(r.start, r.end);
+    const totalDollars = countDollarAmounts(segment);
+    const capturedDollars = extractDollarFields(segment).length;
+    if (totalDollars > 0 && capturedDollars < totalDollars) {
+      // An toàn hơn mất dữ liệu — giữ nguyên đoạn này, không cắt, không thay bằng placeholder.
+      result += segment;
+    } else {
+      result += " [ĐÃ LƯỢC BỚT các record gốc — xem tổng đã tính sẵn ở khối riêng bên dưới] ";
+    }
     cursor = r.end;
   }
   result += text.slice(cursor);
