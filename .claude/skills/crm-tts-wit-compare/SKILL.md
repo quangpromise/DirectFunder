@@ -924,6 +924,38 @@ khác biệt so với 2 biến thể đã biết) thay vì đoán mò sửa lạ
     Proceeds/Cost Basis không bị ảnh hưởng bởi thay đổi. `tsc --noEmit`/`eslint` sạch. Không cần
     bước production (thuần logic trích xuất, không đổi schema/API/prompt).
 
+28. **(2026-08-28, sau mục #27) Quy tắc riêng cho 1099-NEC — TTS không bao giờ có nguyên văn
+    "1099-NEC", phải so với "Gross receipts or sales" cộng dồn qua MỌI khối Schedule C, KHÔNG
+    phải "Business income or loss (Schedule C)" (số RÒNG)** — người dùng báo hồ sơ thật
+    (`BY309179`, CRM `tax.agentc3.com/customer/info/BY309179`) "2023 đang khớp số 1099 NEC,
+    nhưng lại báo TTS thiếu số". Debug trực tiếp CRM thật lộ ra: WIT 2023 có 3 bản ghi 1099-NEC
+    (2 người, tổng `Compensation` = $40,000 + $30,000 + $5,155 = **$75,155.00**, đã cộng dồn
+    đúng qua `summarizeOtherWitForms()` có sẵn — không phải lỗi trích xuất). TTS "Record of
+    Account" có **3 khối "Schedule C - Profit or Loss From Business" (Occurrence #1/#2/#3)**,
+    mỗi khối 1 dòng **"Gross receipts or sales"**: $40,000.00 + $30,000.00 + $5,155.00 = **đúng
+    $75,155.00** — khớp TUYỆT ĐỐI với WIT. Nhưng `CHAT_SYSTEM_INSTRUCTION` trước đó KHÔNG có quy
+    tắc nào dạy AI đi tìm field này — AI chỉ thấy dòng tóm tắt AGI **"Business income or loss
+    (Schedule C): $56,714.00"** (số RÒNG, đã trừ chi phí kinh doanh như Car and truck expenses
+    $6,443...) và báo nhầm "TTS thiếu số" vì $56,714 ≠ $75,155 khi so trực tiếp — thực ra 2 con
+    số này KHÔNG cùng bản chất (gộp vs ròng), không nên so với nhau. AI từng tự đoán đúng cách
+    ánh xạ này ở 1 lần verify trước đó (xem mục lịch sử #3 "Non-Employee Compensation $2,769 trên
+    WIT vs Gross Receipts Schedule C $156 trên TTS") nhưng KHÔNG ổn định vì không có quy tắc rõ
+    ràng — lần này AI không tự suy luận ra được.
+    **Cách sửa**: thêm 1 đoạn "QUY TẮC RIÊNG cho 1099-NEC" vào `CHAT_SYSTEM_INSTRUCTION`
+    (`crm-doc-compare.ts`, cùng vị trí/pattern với quy tắc 1099-B/1099-R có sẵn) — bắt buộc AI so
+    tổng "Compensation" 1099-NEC trên WIT với TỔNG "Gross receipts or sales" cộng dồn qua MỌI
+    occurrence Schedule C trên TTS (không phải dòng "Business income or loss (Schedule C)"/"...per
+    computer" ở tóm tắt AGI), và nêu rõ số ròng thấp hơn là BÌNH THƯỜNG (chi phí kinh doanh hợp
+    lệ) chứ không phải khai thiếu.
+    **Đã verify sống bằng dữ liệu thật** (script `tsx` tạm, gọi thẳng `askCompareDocs()` với WIT/
+    TTS 2023 thật của `BY309179`, hỏi "So sánh 1099-NEC giữa WIT và TTS"): TRƯỚC khi sửa, không
+    test lại (đã có báo cáo lỗi thật từ người dùng làm bằng chứng đủ). SAU khi sửa: AI trả đúng 1
+    dòng `category: "1099-NEC — Gross Receipts (Schedule C)"`, `wit: "$75,155.00"`,
+    `tts: "$75,155.00"`, note giải thích đúng phép cộng 3 khối Schedule C ($30,000 + $5,155 +
+    $40,000) và nói rõ "không dùng lợi nhuận ròng sau chi phí" — khớp hoàn toàn, không còn báo
+    thiếu. `tsc --noEmit`/`eslint` sạch. **Không cần bước production nào** (chỉ đổi text prompt,
+    không đổi schema/API/UI).
+
 ## 4. Giới hạn đã biết
 
 - Không có OCR/fallback nếu CRM đổi định dạng PDF hoàn toàn khác — Gemini vẫn đọc được text lộn
