@@ -806,6 +806,37 @@ khác biệt so với 2 biến thể đã biết) thay vì đoán mò sửa lạ
     dạng tương tự), `eslint` sạch, `next build` production sạch.
     **Production: cần `prisma migrate deploy`** (bảng `gemini_usage_logs` mới, an toàn/additive)
     — không cần script merge `AppConfig` (không đụng `columns`/`featurePermissions`).
+23. **(2026-08-28, sau mục #22) Thêm bộ đếm countdown reset RPD** cạnh chip RPD trong
+    `GeminiRateLimitTable` (dạng "(5h32m)") — dùng thẳng `rpdResetsAt` server đã trả sẵn (mục
+    #19), `setInterval` 60s tính lại chênh lệch, KHÔNG gọi lại API. `tsc`/`eslint` sạch, verify
+    hàm `formatCountdown` qua `node -e` (5h32m/45m/0m khi âm). Không cần bước production.
+24. **(2026-08-28, sau mục #23) Quy tắc riêng cho 1099-R "chỉ có Gross Distribution, không có
+    Taxable Amount"** — người dùng yêu cầu: nếu WIT có "Taxable Amount" cho 1099-R thì so số đó
+    với TTS như bình thường; nếu 1099-R CHỈ có "Gross Distribution" (không hề có "Taxable
+    Amount" nào — toàn bộ khoản phân phối KHÔNG chịu thuế, thường do rollover trực tiếp/hoàn trả
+    basis), dù TTS không có số tương ứng vẫn phải tô XANH (không phải xám trung tính như "chưa
+    khớp") kèm note giải thích rõ đây là thu nhập không chịu thuế — áp dụng CẢ 2 loại WIT (W&I
+    chi tiết lẫn W&IS tổng hợp).
+    Đã XÁC NHẬN kịch bản này có thật trên dữ liệu production (hồ sơ `BY4849`, file W&I): field
+    "Form 1099-R (1 bản ghi): Other Income: $321.00, Gross Distribution: $321.00" — hoàn toàn
+    KHÔNG có "Taxable Amount" trong nguyên văn WIT (đọc trực tiếp qua
+    `summarizeOtherWitForms()`, cùng cơ chế tổng quát hoá đã có từ mục #18 — 1099-R vốn đã nằm
+    trong `WIT_FORM_TYPES`, không cần sửa gì ở `wit-income-summary.ts`).
+    **Thiết kế**: chỉ sửa 2 lớp — (1) `CHAT_SYSTEM_INSTRUCTION` (`crm-doc-compare.ts`) thêm 1
+    đoạn quy tắc mới: dùng "Taxable Amount" nếu có; nếu chỉ có "Gross Distribution" thì tạo 1
+    dòng RIÊNG category "1099-R — Gross Distribution (không chịu thuế)", KHÔNG áp dụng quy tắc
+    "nêu nghĩa vụ Bắt buộc/Không bắt buộc" thông thường, note BẮT BUỘC bắt đầu ĐÚNG NGUYÊN VĂN
+    marker `"[KHÔNG CHỊU THUẾ]"` rồi mới tới câu giải thích. (2) Client
+    (`crm-tts-wit-check-button.tsx`) thêm `NON_TAXABLE_MARKER_RE`/`parseNonTaxableNote()` — tách
+    marker khỏi note trước khi hiển thị (`cleanNote`), và báo cho `computeDiff()` (thêm tham số
+    thứ 3 `isNonTaxable`) ép tô XANH + hiện nhãn "Không chịu thuế" (`crmCompare.nonTaxable`, i18n
+    mới) ở cột Chênh lệch NGAY CẢ KHI TTS không có số (logic thường yêu cầu ≥2 giá trị đọc được
+    mới tính diff, ở đây chỉ cần có giá trị WIT là đủ). Không đổi `wit-income-summary.ts`/schema
+    — thuần prompt + parse text phía UI, giống cách `MANDATORY_HIGHLIGHT_RE` đã làm với "Bắt
+    buộc"/"Không bắt buộc".
+    Verify: `tsc --noEmit`/`eslint` sạch; test `node -e` xác nhận `parseNonTaxableNote()` tách
+    đúng marker + giữ nguyên note khi không có marker. Không cần bước production (không đổi
+    schema, không đổi feature-permission — thuần prompt AI + logic client).
 
 ## 4. Giới hạn đã biết
 

@@ -277,14 +277,25 @@ function parseAmountLike(value: string): number | null {
 interface DiffResult {
   magnitude: number;
   witIsHighest: boolean | null;
+  /** true khi note bắt đầu bằng marker "[KHÔNG CHỊU THUẾ]" (thêm 2026-08-28 — quy tắc riêng
+   * cho 1099-R chỉ có Gross Distribution, không có Taxable Amount) — cột Chênh lệch hiện nhãn
+   * "Không chịu thuế" tô XANH thay vì số/dấu "—" trung tính, dù TTS không có số tương ứng. */
+  isNonTaxable?: boolean;
 }
 
 /** Chênh lệch giữa các cột giá trị SỐ đang hiện (2 hoặc 3 cột, tuỳ đã chọn mấy loại tài liệu) —
  * cách nhau xa nhất trừ gần nhất, đủ để bao quát cả trường hợp so 2 lẫn 3 tài liệu cùng lúc
  * trong 1 cột duy nhất (thêm 2026-08-27). `null` nếu chưa đủ 2 giá trị đọc được thành số (vd
  * hạng mục không phải số như "Filing status"). */
-function computeDiff(row: AiCompareRow, columns: CompareColumns): DiffResult | null {
+function computeDiff(row: AiCompareRow, columns: CompareColumns, isNonTaxable: boolean): DiffResult | null {
   const witVal = columns.wit ? parseAmountLike(row.wit) : null;
+  // 1099-R chỉ có Gross Distribution (không có Taxable Amount) — TTS thường KHÔNG có số tương
+  // ứng (đúng, vì khoản này không chịu thuế) nên logic thường bên dưới (cần >=2 giá trị đọc
+  // được) sẽ trả `null` (trung tính/xám) — ép tô XANH ngay khi có giá trị WIT, không cần chờ
+  // đủ 2 giá trị như trường hợp so sánh thông thường.
+  if (isNonTaxable && witVal !== null) {
+    return { magnitude: 0, witIsHighest: false, isNonTaxable: true };
+  }
   const others: number[] = [];
   if (columns.tts) {
     const n = parseAmountLike(row.tts);
@@ -311,6 +322,19 @@ function formatDiff(diff: number): string {
  * `(không\s+)?` đứng TRƯỚC "bắt buộc" trong chính pattern nên khi cụm "Không bắt buộc" xuất
  * hiện, điểm bắt đầu tô đỏ luôn tính từ "Không" (không phải từ "bắt buộc" nằm bên trong nó). */
 const MANDATORY_HIGHLIGHT_RE = /(không\s+)?bắt buộc/i;
+
+/** Marker riêng cho quy tắc 1099-R "chỉ có Gross Distribution, không có Taxable Amount" (thêm
+ * 2026-08-28) — AI được yêu cầu ghi ĐÚNG NGUYÊN VĂN cụm này ở ĐẦU note (xem
+ * `CHAT_SYSTEM_INSTRUCTION` trong crm-doc-compare.ts) khi khoản đó không chịu thuế. Tách khỏi
+ * note hiển thị (người dùng chỉ thấy câu giải thích tự nhiên phía sau), đồng thời báo cho
+ * `computeDiff` biết để tô XANH cột Chênh lệch dù TTS không có số tương ứng. */
+const NON_TAXABLE_MARKER_RE = /^\s*\[KHÔNG CHỊU THUẾ\]\s*/i;
+
+function parseNonTaxableNote(note: string): { isNonTaxable: boolean; cleanNote: string } {
+  const m = NON_TAXABLE_MARKER_RE.exec(note);
+  if (!m) return { isNonTaxable: false, cleanNote: note };
+  return { isNonTaxable: true, cleanNote: note.slice(m[0].length) };
+}
 
 /** Tô màu ô "Ghi chú" — nền chữ chính màu vàng (dễ nhìn hơn màu xám mờ cũ, theo yêu cầu
  * 2026-08-27), riêng đoạn TỪ cụm "Bắt buộc"/"Không bắt buộc" TRỞ ĐI (tới hết ghi chú) tô đỏ đậm
@@ -351,10 +375,11 @@ function AiRowsTable({ rows, columns, wrap }: { rows: AiCompareRow[]; columns: C
         </thead>
         <tbody>
           {rows.map((row, i) => {
-            const diff = computeDiff(row, columns);
+            const { isNonTaxable, cleanNote } = parseNonTaxableNote(row.note);
+            const diff = computeDiff(row, columns, isNonTaxable);
             // Đỏ CHỈ khi WIT là giá trị cao nhất trong các cột đang so (khai thiếu so với bên
-            // thứ ba báo cáo = rủi ro) — mọi trường hợp còn lại (khớp, WIT thấp hơn/bằng, hoặc
-            // không chọn cột WIT nên không có gốc so sánh) tô xanh, coi như ổn.
+            // thứ ba báo cáo = rủi ro) — mọi trường hợp còn lại (khớp, WIT thấp hơn/bằng, không
+            // chịu thuế, hoặc không chọn cột WIT nên không có gốc so sánh) tô xanh, coi như ổn.
             const isRed = diff !== null && diff.witIsHighest === true;
             return (
               <tr key={i} className="border-t border-border">
@@ -370,9 +395,9 @@ function AiRowsTable({ rows, columns, wrap }: { rows: AiCompareRow[]; columns: C
                         : "text-emerald-600 light:text-emerald-700"
                   }`}
                 >
-                  {diff === null ? "—" : formatDiff(diff.magnitude)}
+                  {diff === null ? "—" : diff.isNonTaxable ? t("crmCompare.nonTaxable") : formatDiff(diff.magnitude)}
                 </td>
-                <td className={`${cellCls} ${wrap ? "" : "whitespace-normal"} text-yellow-300 light:text-yellow-800`}>{renderNoteText(row.note)}</td>
+                <td className={`${cellCls} ${wrap ? "" : "whitespace-normal"} text-yellow-300 light:text-yellow-800`}>{renderNoteText(cleanNote)}</td>
               </tr>
             );
           })}
