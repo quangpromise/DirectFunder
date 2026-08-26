@@ -956,6 +956,35 @@ khác biệt so với 2 biến thể đã biết) thay vì đoán mò sửa lạ
     thiếu. `tsc --noEmit`/`eslint` sạch. **Không cần bước production nào** (chỉ đổi text prompt,
     không đổi schema/API/UI).
 
+29. **(2026-08-28, ngay sau mục #28) Quy tắc riêng cho W-2G (thắng cược) — cùng hồ sơ
+    `BY309179`, năm 2025** — người dùng ban đầu đề xuất "mặc định Other Income trên TTS là Gross
+    Winnings nếu WIT không có khoản Other Income nào khác", sau đó TỰ RÚT LẠI ("sorry lập luận
+    lại... tôi nghĩ AI sẽ biết") — test độc lập với câu hỏi tường minh "So sánh Other Income..."
+    xác nhận đúng: AI tự map "W-2G Gross Winnings" → "Other income" trên TTS bằng kiến thức thuế
+    chung, KHÔNG cần rule cứng, ra đúng WIT $14,498.00 vs TTS $12,706.00 (lệch $1,792.00 — khớp
+    CHÍNH XÁC với đúng 1 trong 7 phiếu W-2G, Date Won 11-21-2025, khả năng IRS nhận báo cáo SAU
+    khi tờ khai đã nộp — đây là lệch THẬT, không phải bug). Nhưng người dùng gửi ảnh chụp popup
+    thật cho thấy — với câu hỏi TỔNG QUÁT mặc định ("So sánh các tài liệu đã chọn, liệt kê chênh
+    lệch chi tiết", câu hỏi thật khi bấm nút Gửi không gõ gì, KHÁC câu hỏi tường minh đã test
+    trước đó) — AI lại báo `Form W-2G — Gross Winnings: WIT $14,498.00 vs TTS $0.00`, coi như
+    TTS hoàn toàn không có số này (không tìm ra dòng "Other income"). **Kết luận**: hành vi AI
+    KHÔNG ổn định giữa câu hỏi tường minh và câu hỏi tổng quát mặc định — đúng pattern đã gặp với
+    1099-NEC (mục #28), quy tắc mapping KHÔNG hiển nhiên/ổn định nếu chỉ dựa kiến thức chung của
+    model, cần ghi rõ trong system prompt.
+    **Cách sửa**: thêm đoạn "QUY TẮC RIÊNG cho W-2G" vào `CHAT_SYSTEM_INSTRUCTION`
+    (`crm-doc-compare.ts`, ngay sau quy tắc 1099-NEC) — bắt buộc AI tìm dòng "Other income" trên
+    TTS làm giá trị đối chiếu cho "Gross Winnings" (từ khối TÍNH TOÁN SẴN), TUYỆT ĐỐI không kết
+    luận TTS "$0.00" chỉ vì không thấy chữ "W-2G" nguyên văn.
+    **Đã verify sống lại ĐÚNG kịch bản lỗi trong ảnh** (câu hỏi mặc định "So sánh các tài liệu đã
+    chọn, liệt kê chênh lệch chi tiết", không gõ gì thêm — dùng lại WIT/TTS thật 2025 của
+    `BY309179`): SAU khi sửa, category đổi tên đúng thành `"Other Income (Form W-2G Gross
+    Winnings)"`, `wit: "$14,498.00"`, `tts: "$12,706.00"` (không còn "$0.00"), note nêu đúng
+    "gộp vào dòng 'Other income' trên TTS". Cùng lượt trả lời còn xác nhận đúng các category khác
+    không hồi quy: W-2 Wages lệch $1,768 đúng, Federal W/H lệch $52 đúng, K-1 khớp tuyệt đối
+    $126,404 = $126,404, Capital Gains (1099-B+1099-DA) $4,000 vs $0.00 giữ nguyên (khoản lệch
+    thật, không liên quan thay đổi này). `tsc --noEmit`/`eslint` sạch. **Không cần bước production
+    nào** (chỉ đổi text prompt).
+
 ## 4. Giới hạn đã biết
 
 - Không có OCR/fallback nếu CRM đổi định dạng PDF hoàn toàn khác — Gemini vẫn đọc được text lộn
