@@ -121,18 +121,35 @@ const WIT_FORM_TYPES = [
   "SSA-1099",
 ] as const;
 
+/** Schedule K-1 (thu nhập/lỗ từ hùn vốn công ty hợp danh, S-corp, uỷ thác) — KHÁC hẳn cấu trúc
+ * tiêu đề "Form {mã}" của mọi loại trong `WIT_FORM_TYPES`, thay vào đó là "Schedule K-1 {mã Form
+ * gốc}" (vd "Schedule K-1 1065", "Schedule K-1 1120-S") — lỗi thật gặp trên production: vì không
+ * khớp bất kỳ ranh giới nào trong whitelist cũ, toàn bộ nội dung K-1 bị NUỐT vào record của Form
+ * liền TRƯỚC rồi bị `stripAllWitRecordsFromText()` xoá sạch trước khi kịp gửi AI — K-1 hoàn toàn
+ * biến mất khỏi so sánh dù có mặt rõ ràng trên WIT (đã xác nhận qua dữ liệu thật: hồ sơ có tới
+ * 3/4 file WIT bị mất trắng nội dung K-1 sau bước strip, chỉ còn sót 1 file W&IS bản tóm tắt vì
+ * quá ngắn nên strip không chạm tới). */
+const WIT_K1_FORM_TYPES = ["1065", "1120-S", "1041"] as const;
+
 function findFormBoundaries(text: string): { index: number; formType: string }[] {
   // Sắp xếp DÀI TỚI NGẮN trước khi ghép alternation — vd "1098-E" phải thử TRƯỚC "1098" (tiền
   // tố của nó), nếu không regex alternation sẽ khớp nhầm "1098" rồi dừng lại giữa "1098-E".
-  const escaped = [...WIT_FORM_TYPES]
-    .sort((a, b) => b.length - a.length)
-    .map((f) => f.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
-    .join("|");
-  const boundaryRe = new RegExp(`Form\\s+(${escaped})\\b`, "gi");
+  const escapeAll = (list: readonly string[]) =>
+    [...list]
+      .sort((a, b) => b.length - a.length)
+      .map((f) => f.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+      .join("|");
+  const escapedForms = escapeAll(WIT_FORM_TYPES);
+  const escapedK1 = escapeAll(WIT_K1_FORM_TYPES);
+  // 2 nhánh riêng biệt (khác tiền tố "Form "/"Schedule K-1 ") — formType của nhánh K-1 thêm tiền
+  // tố "K-1 " (vd "K-1 1065") để phân biệt rõ với form gốc cùng số nếu có, dù hiện các mã trong
+  // WIT_K1_FORM_TYPES không trùng WIT_FORM_TYPES nên chưa thật sự đụng nhau.
+  const boundaryRe = new RegExp(`Form\\s+(${escapedForms})\\b|Schedule\\s+K-1\\s+(${escapedK1})\\b`, "gi");
   const boundaries: { index: number; formType: string }[] = [];
   let m: RegExpExecArray | null;
   while ((m = boundaryRe.exec(text)) !== null) {
-    boundaries.push({ index: m.index, formType: m[1].toUpperCase() });
+    const formType = m[1] ? m[1].toUpperCase() : `K-1 ${m[2].toUpperCase()}`;
+    boundaries.push({ index: m.index, formType });
   }
   return boundaries;
 }
@@ -210,8 +227,11 @@ export function summarizeCapitalGains(texts: string[]): CapitalGainsSummary | nu
   return { form1099B, form1099DACovered, form1099DANoncoveredProceeds: noncoveredProceeds, combinedGain };
 }
 
+/** Dấu "-" đặt TRƯỚC "$" (vd "-$11,660.00" — cách IRS ghi K-1 lỗ) thay vì sau như số âm JS mặc
+ * định in ra ("$-11,660.00") — khớp đúng định dạng gốc, tránh AI đọc nhầm cấu trúc lạ. */
 function formatMoney(n: number): string {
-  return `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const formatted = Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return n < 0 ? `-$${formatted}` : `$${formatted}`;
 }
 
 /** 1 field dạng tiền cộng dồn theo nhãn (vd "Wages, Tips and Other Compensation"), gộp qua MỌI
@@ -232,11 +252,21 @@ export interface WitFormTypeSummary {
  * "Wages, Tips **and** Other Compensation") mà không bị coi là điểm cắt. */
 const LABEL_CONNECTOR_WORDS = new Set(["of", "or", "and", "the", "to", "from", "on", "in", "for", "a", "an", "per", "at", "no"]);
 
+/** Từ HỢP LỆ dù chứa số/gạch ngang (thứ bị `isValidLabelWord` loại theo quy tắc chung, vì đó
+ * thường là dấu hiệu mã tài khoản/CUSIP kiểu "Z60J03-1") — "K-1" là phần THẬT SỰ của tên field
+ * (vd "Ordinary Income K-1" trên Schedule K-1) chứ không phải rác, nếu không whitelist riêng thì
+ * `cleanLabel()` quét ngược từ CUỐI nhãn sẽ gặp "K-1" (từ cuối cùng) coi là rác đầu tiên gặp phải
+ * rồi cắt bỏ TOÀN BỘ nhãn — bug thật đã tự gặp khi thêm hỗ trợ Schedule K-1 (2026-08-28):
+ * `extractDollarFields()` trả rỗng cho MỌI field K-1 dù regex "{Nhãn}: $X.XX" đã khớp đúng, chỉ
+ * vì bước làm sạch nhãn xoá sạch nhãn thật. */
+const KNOWN_HYPHENATED_LABEL_WORDS = new Set(["K-1"]);
+
 /** 1 "từ" trong nhãn field được coi HỢP LỆ nếu: chỉ gồm chữ cái + dấu câu thường gặp (KHÔNG chứa
  * chữ số/gạch ngang — loại được mã tài khoản/CUSIP kiểu "Z60J03-1"/"83Z45Y18TL0014550176" hay
- * lẫn vào), VÀ (bắt đầu bằng chữ hoa — đúng quy ước viết hoa đầu từ của nhãn IRS thật — HOẶC là
- * từ nối ngắn trong whitelist). */
+ * lẫn vào, TRỪ các từ nằm trong `KNOWN_HYPHENATED_LABEL_WORDS`), VÀ (bắt đầu bằng chữ hoa — đúng
+ * quy ước viết hoa đầu từ của nhãn IRS thật — HOẶC là từ nối ngắn trong whitelist). */
 function isValidLabelWord(word: string): boolean {
+  if (KNOWN_HYPHENATED_LABEL_WORDS.has(word)) return true;
   if (!/^[A-Za-z(),./&]+$/.test(word)) return false;
   const firstAlpha = word.match(/[A-Za-z]/)?.[0];
   if (!firstAlpha) return false;
@@ -264,19 +294,22 @@ function cleanLabel(rawLabel: string): string {
   return words.slice(startIdx).join(" ");
 }
 
-/** Trích MỌI field dạng "{Nhãn}: $X.XX" trong 1 đoạn record — TỔNG QUÁT, không cần biết trước
- * tên field cụ thể của từng loại Form (W-2 có "Wages, Tips and Other Compensation"/"Federal
- * Income Tax Withheld"/...; 1099-INT có "Interest"/...; 1099-DIV có "Ordinary Dividends"/
- * "Qualified Dividends"/...; 1099-G có "Unemployment Compensation"/...; mỗi loại Form field
- * khác nhau nhưng cùng 1 định dạng "Nhãn: $X.XX" nên dùng chung 1 regex được). Nhãn thô trích
- * xong luôn được lọc qua `cleanLabel()` để loại rác từ field liền trước lẫn vào. */
+/** Trích MỌI field dạng "{Nhãn}: $X.XX" (hoặc "{Nhãn}: -$X.XX" — K-1 báo LỖ rất phổ biến, dấu
+ * "-" đứng ngay trước "$") trong 1 đoạn record — TỔNG QUÁT, không cần biết trước tên field cụ
+ * thể của từng loại Form (W-2 có "Wages, Tips and Other Compensation"/"Federal Income Tax
+ * Withheld"/...; 1099-INT có "Interest"/...; 1099-DIV có "Ordinary Dividends"/"Qualified
+ * Dividends"/...; 1099-G có "Unemployment Compensation"/...; K-1 có "Ordinary Income K-1"/...;
+ * mỗi loại Form field khác nhau nhưng cùng 1 định dạng "Nhãn: $X.XX" nên dùng chung 1 regex
+ * được). Nhãn thô trích xong luôn được lọc qua `cleanLabel()` để loại rác từ field liền trước
+ * lẫn vào. */
 function extractDollarFields(segment: string): { label: string; amount: number }[] {
-  const re = /([A-Za-z][A-Za-z0-9,'()/\- ]{2,70}?):\s*\$([\d,]+\.\d{2})/g;
+  const re = /([A-Za-z][A-Za-z0-9,'()/\- ]{2,70}?):\s*(-?)\$([\d,]+\.\d{2})/g;
   const out: { label: string; amount: number }[] = [];
   let m: RegExpExecArray | null;
   while ((m = re.exec(segment)) !== null) {
     const label = cleanLabel(m[1]);
-    if (label) out.push({ label, amount: parseMoney(m[2]) });
+    const amount = parseMoney(m[3]);
+    if (label) out.push({ label, amount: m[2] === "-" ? -amount : amount });
   }
   return out;
 }

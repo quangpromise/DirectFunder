@@ -854,6 +854,45 @@ khác biệt so với 2 biến thể đã biết) thay vì đoán mò sửa lạ
     có WIT năm {year}" (`crmCompareChat.witNoneForYear`, i18n mới) khi năm đã chọn không có file
     WIT nào — phân biệt với "—" mặc định lúc chưa chọn TTS. `tsc --noEmit`/`eslint` sạch. Không
     cần bước production (thuần logic client, không đổi schema/API).
+26. **(2026-08-28, sau mục #25) 2 bug thật khiến Schedule K-1 (1065/1120-S — thu nhập/lỗ từ hùn
+    vốn công ty hợp danh/S-corp) HOÀN TOÀN không xuất hiện trong so sánh** — người dùng báo hồ sơ
+    CRM `BY309185` có K-1 1065 lẫn K-1 1120-S trên WIT nhưng không thấy compare với TTS, kèm yêu
+    cầu tổng quát "tất cả form dữ liệu có trên WIT&I hoặc WIT&IS đều được compare".
+    **Bug #1 — ranh giới nhận diện sai tiền tố**: `findFormBoundaries()` chỉ khớp `Form\s+{mã}` —
+    nhưng tiêu đề K-1 thật trên WIT là **"Schedule K-1 1065"/"Schedule K-1 1120-S"** (tiền tố
+    "Schedule K-1 ", KHÔNG PHẢI "Form "). Vì không khớp ranh giới nào trong whitelist cũ, nội
+    dung K-1 bị NUỐT vào record của Form liền TRƯỚC nó rồi bị `stripAllWitRecordsFromText()` xoá
+    sạch trước khi kịp gửi AI — xác nhận qua dữ liệu thật: 3/4 file WIT của hồ sơ mất TRẮNG nội
+    dung K-1 sau bước strip (chỉ sót 1 file W&IS quá ngắn nên chưa kịp bị cắt). Vá bằng cách thêm
+    `WIT_K1_FORM_TYPES = ["1065", "1120-S", "1041"]` + nhánh regex RIÊNG
+    `Schedule\s+K-1\s+({mã})\b` (khác hẳn nhánh `Form\s+({mã})\b` cũ) trong `findFormBoundaries()`
+    — formType trả về có tiền tố `"K-1 "` (vd `"K-1 1065"`) để phân biệt rõ, không đụng gì tới
+    whitelist `WIT_FORM_TYPES` gốc.
+    **Bug #2 — phát hiện NGAY SAU khi vá bug #1, verify vẫn thất bại**: dù ranh giới đã nhận diện
+    đúng (xác nhận qua log `findFormBoundaries` tạm export ra để debug), `extractDollarFields()`
+    vẫn trả RỖNG cho field "Ordinary Income K-1: -$5,885.00" — vì `cleanLabel()` quét NGƯỢC từ
+    CUỐI nhãn thô để cắt rác, gặp từ "K-1" (chứa gạch ngang + số) bị `isValidLabelWord()` coi là
+    "rác" (đúng như thiết kế gốc — dùng để loại mã tài khoản kiểu "Z60J03-1") NGAY LẬP TỨC vì đó
+    là từ CUỐI CÙNG trong nhãn "Ordinary Income K-1" → cắt bỏ TOÀN BỘ nhãn thành rỗng, khiến field
+    bị bỏ qua hoàn toàn dù regex "{Nhãn}: $X.XX" đã khớp đúng phần số. Vá bằng whitelist riêng
+    `KNOWN_HYPHENATED_LABEL_WORDS = new Set(["K-1"])`, `isValidLabelWord()` trả `true` ngay nếu
+    từ nằm trong whitelist này (bỏ qua check ký tự chung) — CHỈ áp dụng đúng 1 từ "K-1", không nới
+    lỏng cho mọi từ có gạch ngang/số khác (tránh làm yếu lại cơ chế lọc rác gốc).
+    **Bài học debug quan trọng**: lúc verify ban đầu bằng `node -e "..."` (bash `-e` string),
+    regex trông như KHÔNG khớp gì — hoá ra do bash tự nuốt mất `\\` trong chuỗi truyền qua `-e`
+    (dấu `\\s` bị rút gọn sai), KHÔNG PHẢI lỗi thật của regex. Chuyển sang viết file `.mjs`/`.ts`
+    riêng để test mới thấy đúng bản chất — từ nay debug regex phức tạp LUÔN dùng file thật, không
+    dùng `node -e` với chuỗi có backslash lồng nhau.
+    Đã verify lại bằng dữ liệu THẬT sao chép nguyên văn từ hồ sơ `BY309185` (không phải bịa):
+    2 record K-1 1065 (-$5,885.00 + -$1,200.00) cộng dồn đúng ra `-$7,085.00` (GIỮ ĐÚNG dấu âm —
+    tiện thể phát hiện + vá thêm 1 lỗ hổng thứ 3: `extractDollarFields()`/`formatMoney()` trước đó
+    KHÔNG bắt dấu "-" đứng trước "$" nên MỌI field âm trên WIT — không riêng K-1 — trước đây đều
+    bị mất dấu, hiện thành số dương sai hoàn toàn khi cộng dồn; đã thêm nhóm capture `(-?)` vào
+    `extractDollarFields()` + đổi `formatMoney()` in "-$X" thay vì "$-X"), K-1 1120-S = `$58,500`
+    đúng. `tsc --noEmit`/`eslint` sạch. Không đổi `CHAT_SYSTEM_INSTRUCTION` — quy tắc tổng quát có
+    sẵn từ mục #18 ("dùng thẳng con số đã cộng dồn sẵn... category tương ứng") tự động áp dụng
+    cho K-1 ngay khi nó xuất hiện trong khối tính sẵn, không cần thêm quy tắc riêng. Không cần
+    bước production (thuần logic trích xuất, không đổi schema/API).
 
 ## 4. Giới hạn đã biết
 
