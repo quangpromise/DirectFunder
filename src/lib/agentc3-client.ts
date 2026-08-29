@@ -442,8 +442,11 @@ export interface CrmTtsWitDoc {
 
 /** Regex phần đuôi CHUNG cho cả 2 biến thể tên file CRM (xem `extractPersonNameFromFileName`) —
  * "{tên} {số} {MM-DD-YYYY} {HHMM}.{ext}", vd " CHAU T PHAM 0035 11-10-2025 0132.pdf" ->
- * capture group 1 = "CHAU T PHAM". */
-const FILE_NAME_TRAILING_META = /^\s*(.+?)\s+\d{2,6}\s+\d{2}-\d{2}-\d{4}\s+\d{3,4}\.\w+$/;
+ * capture group 1 = "CHAU T PHAM". Hậu tố "(N)" TUỲ CHỌN trước phần mở rộng (thêm 2026-08-29,
+ * lỗi thật gặp trên production hồ sơ `BY309182`) — CRM tự thêm "(1)"/"(2)"... vào tên file khi
+ * upload trùng tên (vd "...0796 08-26-2026 2204(1).pdf") — thiếu phần này khiến regex không khớp
+ * CHO MỌI file loại này, TTS/WIT mất trắng tên trong dropdown (rơi về `null`). */
+const FILE_NAME_TRAILING_META = /^\s*(.+?)\s+\d{2,6}\s+\d{2}-\d{2}-\d{4}\s+\d{3,4}(?:\(\d+\))?\.\w+$/;
 
 /** Đọc tên khách hàng từ chính TÊN FILE HIỂN THỊ trên CRM (text của thẻ `<a>`, KHÔNG phải
  * `href` — thêm 2026-08-27, sửa lỗi thật gặp trên production) — đã khảo sát thật 2 biến thể:
@@ -504,6 +507,22 @@ function extractDocSubTypeFromFileName(fileName: string): string | null {
  * Tax Return" (xem bên dưới). */
 function stripFileExtension(name: string): string {
   return name.replace(/\.[a-zA-Z0-9]{1,5}$/, "").trim();
+}
+
+/** Fallback năm cho "1040 Tax returns" (mục gộp nhiều năm, thêm 2026-08-29) khi CẢ tiêu đề mục
+ * LẪN tên file đều không có năm 4 chữ số nào — CRM có kiểu đặt tên viết tắt khoảng năm 2 chữ số
+ * (vd "TAX 24-25 LIEN HA.pdf", gộp nội dung 2024+2025 trong 1 file) không khớp `\b(20\d{2})\b`.
+ * Tìm khoảng "NN-NN", quy đổi "20"+NN, trả về MỌI năm hợp lệ trong `TARGET_YEARS` — file này
+ * thật sự chứa nội dung của cả 2 năm nên đưa vào cả 2, không chỉ 1. */
+function extractTwoDigitYearRangeFromFileName(fileName: string): CrmDocYear[] {
+  const m = /\b(\d{2})-(\d{2})\b/.exec(fileName);
+  if (!m) return [];
+  const years: CrmDocYear[] = [];
+  for (const part of [m[1], m[2]]) {
+    const y = `20${part}` as CrmDocYear;
+    if (TARGET_YEARS.includes(y) && !years.includes(y)) years.push(y);
+  }
+  return years;
 }
 
 /** Với mỗi năm/loại tài liệu: tìm NGÀY (phần "YYYY-MM-DD" của timestamp) lớn nhất, giữ lại
@@ -620,15 +639,29 @@ export async function fetchTtsWitDatesByYear(customerId: string): Promise<CrmTts
     // đọc được qua chính tên file (vd "VIVIAN 2023.pdf") — đây là nguyên nhân thật khiến 1 số
     // năm "biến mất" khỏi bảng "1040 Tax Return" dù CRM có đủ file (bug đã sửa 2026-08-27, xem
     // .claude/skills/crm-tts-wit-compare/SKILL.md).
-    const titleYear = /\b(20\d{2})\b/.exec(currentTitle)?.[1];
-    const year = titleYear ?? (isTaxReturn ? /\b(20\d{2})\b/.exec(linkText)?.[1] : undefined);
-    if (!year || !TARGET_YEARS.includes(year as CrmDocYear)) return;
-
     if (isTaxReturn) {
       const fileName = stripFileExtension(linkText);
-      all.taxReturns[year as CrmDocYear].push({ timestamp, url, personName: fileName || null });
+      const titleYear4 = /\b(20\d{2})\b/.exec(currentTitle)?.[1] as CrmDocYear | undefined;
+      const linkYear4 = /\b(20\d{2})\b/.exec(linkText)?.[1] as CrmDocYear | undefined;
+      // Lỗi thật khác gặp CÙNG hồ sơ `BY309182` (2026-08-29): file gộp nhiều năm trong mục
+      // "1040 Tax returns" đôi khi đặt tên bằng năm VIẾT TẮT 2 chữ số dạng khoảng (vd "TAX 24-25
+      // LIEN HA.pdf" — gộp 2024+2025), không khớp `\b(20\d{2})\b` nào cả nên bị rớt hoàn toàn
+      // (khác trường hợp "VIVIAN 2023.pdf" ở trên, vốn có đủ 4 chữ số). Fallback: dò khoảng năm
+      // 2 chữ số "NN-NN" trong tên file, quy đổi "20"+NN, đưa file vào MỌI năm nằm trong khoảng
+      // đó (thuộc TARGET_YEARS) — file gộp thật sự chứa nội dung của cả 2 năm.
+      const years: CrmDocYear[] =
+        titleYear4 && TARGET_YEARS.includes(titleYear4)
+          ? [titleYear4]
+          : linkYear4 && TARGET_YEARS.includes(linkYear4)
+            ? [linkYear4]
+            : extractTwoDigitYearRangeFromFileName(linkText);
+      for (const y of years) all.taxReturns[y].push({ timestamp, url, personName: fileName || null });
       return;
     }
+
+    const titleYear = /\b(20\d{2})\b/.exec(currentTitle)?.[1];
+    const year = titleYear;
+    if (!year || !TARGET_YEARS.includes(year as CrmDocYear)) return;
     if (isWit) {
       // WIT gộp 2 loại tài liệu khác nhau ("W&I"/"W&IS") dưới cùng 1 mục "{năm} WI
       // Transcript" trên CRM — đưa tên loại lên ĐẦU nhãn (vd "W&I - Nguyen, Pyon Ngoc") để

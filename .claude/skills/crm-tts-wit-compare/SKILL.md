@@ -985,6 +985,38 @@ khác biệt so với 2 biến thể đã biết) thay vì đoán mò sửa lạ
     thật, không liên quan thay đổi này). `tsc --noEmit`/`eslint` sạch. **Không cần bước production
     nào** (chỉ đổi text prompt).
 
+30. **(2026-08-29, sau mục #29) 2 bug thật khác về đọc file trên hồ sơ `BY309182` — tên file có
+    hậu tố "(N)" mất tên trong dropdown; "1040 Tax returns" gộp năm viết tắt 2 chữ số mất trắng
+    field** — người dùng báo "vẫn chưa thấy tên trên Dropdown TTS và WIT ở Getfile, và chưa lấy
+    được field 1040 Tax returns". Debug trực tiếp CRM thật (viết script đăng nhập độc lập vì
+    `getSessionCookie`/`login` không export — không nên export chỉ để debug, tái dùng đúng logic
+    POST `/auth/login` thủ công trong script tạm) lộ ra 2 bug ĐỘC LẬP, cả 2 do CRM có kiểu upload
+    lần đầu gặp:
+    - **Bug #1 — hậu tố "(N)" trước phần mở rộng**: mọi file của hồ sơ này có tên dạng "...0796
+      08-26-2026 2204(1).pdf" (CRM tự thêm "(1)" khi tên trùng, có lẽ do upload lại) —
+      `FILE_NAME_TRAILING_META` (regex đuôi chung cho `extractPersonNameFromFileName`/dò tên
+      người) đòi khớp CHÍNH XÁC `\d{3,4}\.\w+$` ngay sau giờ upload, không chấp nhận "(1)" chen
+      giữa → khớp thất bại → TOÀN BỘ TTS/WIT hồ sơ này mất tên (TTS rơi về `null`, WIT chỉ còn
+      hiện "W&I"/"W&IS" trơ trọi không kèm tên người). **Cách sửa**: thêm `(?:\(\d+\))?` tuỳ chọn
+      vào cuối regex trước `\.\w+$`.
+    - **Bug #2 — "1040 Tax returns" gộp năm bằng chữ số VIẾT TẮT 2 CHỮ SỐ dạng khoảng**: khác
+      biến thể đã biết trước đó (mục lịch sử cũ, file "VIVIAN 2023.pdf" có đủ năm 4 chữ số trong
+      tên), hồ sơ này có file "TAX 24-25 LIEN HA.pdf" (gộp NỘI DUNG cả 2024+2025 trong 1 file,
+      nằm dưới tiêu đề mục "1040 Tax returns" không năm) — hoàn toàn KHÔNG có chuỗi `\b(20\d{2})\b`
+      nào (chỉ có "24-25", 2 chữ số) nên rớt khỏi CẢ 2 điều kiện dò năm cũ (tiêu đề lẫn tên file)
+      → bị bỏ qua hoàn toàn, field 2024/2025 trống trơn dù CRM có file thật.
+      **Cách sửa**: thêm `extractTwoDigitYearRangeFromFileName()` — dò khoảng "NN-NN" 2 chữ số
+      trong tên file, quy đổi "20"+NN, đưa file vào MỌI năm hợp lệ trong `TARGET_YEARS` tìm được
+      (file gộp thật sự chứa cả 2 năm nên xuất hiện ở CẢ 2, không chỉ 1) — chỉ dùng làm fallback
+      CUỐI CÙNG, sau khi đã thử năm 4 chữ số ở tiêu đề rồi tới tên file như cũ.
+    **Đã verify sống đầy đủ** với chính hồ sơ `BY309182`: SAU khi sửa, TTS/WIT cả 3 năm hiện đúng
+    tên "Ha, Lien H" (WIT thành "W&I - Ha, Lien H"/"W&IS - Ha, Lien H", trước đó chỉ "W&I"/"W&IS"
+    trơ trọi); `taxReturns["2024"]`/`["2025"]` giờ đều có đúng 1 file "TAX 24-25 LIEN HA" (trước
+    đó `[]` rỗng cả 2 năm). **Regression test 2 hồ sơ đã dùng ở mục #28/#29** (`BY309179`,
+    `BY309190`) — tên/số lượng file taxReturns giữ nguyên y hệt trước khi sửa, không bị ảnh hưởng
+    bởi 2 thay đổi này. `tsc --noEmit`/`eslint` sạch. **Không cần bước production nào** (thuần
+    logic parse text, không đổi schema/API/prompt).
+
 ## 4. Giới hạn đã biết
 
 - Không có OCR/fallback nếu CRM đổi định dạng PDF hoàn toàn khác — Gemini vẫn đọc được text lộn
