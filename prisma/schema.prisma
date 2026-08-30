@@ -272,6 +272,12 @@ model AppConfig {
   /// Thời điểm cookie trên được lưu (dùng so với SESSION_TTL_MS để biết còn hạn dùng hay
   /// phải đăng nhập lại).
   agentc3SessionCookieAt DateTime?
+  /// Record<"updateToCrm"|"testSheet"|"cpaEmail"|"sheet"|"clientEmail", boolean> — Admin bật/
+  /// tắt TOÀN CỤC từng nút trong popup "Gửi dữ liệu" (SendActionsMenuButton), thêm 2026-08-30
+  /// theo yêu cầu "admin có thể ẩn các nút trong send data". true = ẩn với TẤT CẢ mọi người
+  /// (kể cả Manager — KHÁC hẳn FeaturePermissions vốn luôn cho Manager bypass), null/thiếu key
+  /// = hiện bình thường (không ẩn). Xem SendActionsVisibilityDialog.
+  sendActionsHidden Json?
   updatedAt          DateTime @updatedAt
 
   @@map("app_config")

@@ -923,6 +923,54 @@ nên **không cần** script merge `AppConfig`, chỉ cần migration.
    ẩn phía sau — khó đo trực tiếp qua UI, có thể kiểm tra gián tiếp qua thời gian phản hồi tổng
    thể ngắn hơn rõ rệt so với lúc DB cookie đã hết hạn 15 phút).
 
+### 4.45 [CHỜ XỬ LÝ] Admin ẩn/hiện toàn cục từng nút trong popup "Gửi dữ liệu" (thêm 2026-08-30)
+
+Popup "Gửi dữ liệu" (`SendActionsMenuButton`, cạnh badge Status trên bảng Hồ sơ) gồm 5 nút:
+Update to CRM/Test Sheet/Send mail to CPA/Send to Google Sheet/Send email to client. 3 nút sau
+đã có cơ chế cấp quyền theo TỪNG ROLE qua `FeaturePermissions` (Manager luôn bypass, xem trang
+Phân quyền) — nhưng theo yêu cầu người dùng, cần thêm 1 lớp **bật/tắt TOÀN CỤC** cho MỖI nút
+(khi tắt, ẩn với TẤT CẢ mọi người, KỂ CẢ Manager) — khác hẳn ý nghĩa `FeaturePermissions`, nên
+KHÔNG dùng chung cơ chế đó mà thêm field riêng `AppConfig.sendActionsHidden` (Json?, additive —
+`Partial<Record<"updateToCrm"|"testSheet"|"cpaEmail"|"sheet"|"clientEmail", boolean>>`, xem
+`SendActionId`/`SendActionsHidden` trong `src/lib/types.ts`). Dialog quản lý
+(`SendActionsVisibilityDialog`, `src/components/send-actions-visibility-dialog.tsx`) đặt trên
+trang Phân quyền (đã gate manager-only sẵn ở đó) — 5 checkbox tick/bỏ tick, lưu ngay không cần
+bước "Lưu" riêng (`setSendActionHidden` trong `app-store.ts`, gọi `PUT /api/config` chỉ chấp
+nhận từ role manager, cùng pattern `careOfEligibleNoticeTypes`). `cases/page.tsx` áp dụng cờ ẩn
+bằng cách AND thêm `!sendActionsHidden.xxx` vào từng biến `showXxxAction` sẵn có. Đặt dialog
+quản lý ở trang Phân quyền (không đặt gear icon ngay trong popup từng dòng hồ sơ) vì nếu Admin
+tắt hết cả 5 nút, popup "Gửi dữ liệu" của 1 dòng có thể không còn hiện ra nữa (điều kiện render
+`(showSendToSheetAction || ... || showUpdateToCrmAction || canSendSmsFeature)`) — cần 1 chỗ LUÔN
+truy cập được để bật lại, không phụ thuộc trạng thái riêng của từng dòng hồ sơ.
+
+**Gotcha thật gặp khi tự test (2026-08-30)**: sau khi `npx prisma generate` (đã chạy `prisma
+migrate dev` xong), dev server ĐANG CHẠY TỪ TRƯỚC (khởi động trước khi generate) vẫn dùng
+Prisma Client CŨ trong bộ nhớ — `PUT /api/config` trả `500` khi cố ghi `sendActionsHidden` (field
+Prisma Client cũ không biết tới). Đúng gotcha "Prisma Client staleness" đã ghi nhận nhiều lần
+trước đó trong file này — **PHẢI kill hẳn process dev server cũ rồi khởi động lại** (không chỉ
+chạy `prisma generate`) sau khi đổi schema, kể cả khi migration đã áp dụng thành công vào DB.
+
+**Đã tự kiểm tra đầy đủ qua Playwright thật (2026-08-30)** — sau khi restart dev server: đăng
+nhập Admin, vào trang Phân quyền, mở dialog "Ẩn/hiện nút", bỏ tick "Update to CRM" → `PUT
+/api/config` trả `200` → quét lại bảng Hồ sơ xác nhận nút "Update to CRM" biến mất khỏi popup
+"Gửi dữ liệu" ở MỌI hồ sơ đang hiện nó trước đó (63/72 hồ sơ dev có `clientLink` trỏ CRM) →
+reload trang xác nhận vẫn ẩn (persist thật, không chỉ optimistic UI) → tick lại → xác nhận hiện
+trở lại + persist qua reload. `tsc --noEmit`/`eslint` sạch.
+
+**Sau khi deploy code này lên production PHẢI làm đủ các bước sau** (xoá mục này khỏi file khi đã làm xong):
+1. `prisma migrate deploy` nhắm production (thêm cột `sendActionsHidden` trên `app_config`, an
+   toàn/additive/nullable — null mặc định = không ẩn nút nào, không đổi hành vi hiện có).
+2. Không cần script merge `AppConfig.featurePermissions`/`columns` (field độc lập, không đụng
+   `DEFAULT_COLUMNS`/`DEFAULT_FEATURE_PERMISSIONS`).
+3. Đăng nhập production bằng tài khoản **manager** thật, vào trang Phân quyền → xác nhận thấy
+   nút "Ẩn/hiện nút" cạnh 3 nút cấu hình sẵn có (CPA Email/Google Sheet/Client Email) → mở dialog,
+   tắt thử 1 nút (vd "Send to Google Sheet") → vào bảng Hồ sơ, mở popup "Gửi dữ liệu" ở 1 hồ sơ
+   đang đủ điều kiện hiện nút đó → xác nhận nút đã biến mất.
+4. Reload trang → xác nhận vẫn ẩn (đã lưu DB, không phải chỉ optimistic). Bật lại → xác nhận hiện
+   trở lại đúng theo `FeaturePermissions`/status/email như hành vi cũ.
+5. Đăng nhập bằng tài khoản KHÔNG phải manager → xác nhận KHÔNG thấy nút "Ẩn/hiện nút" trên trang
+   Phân quyền (dialog chỉ hiện với manager, cùng gate với 3 dialog cấu hình khác trên trang đó).
+
 Mục 2–5 bên dưới là kiến trúc/quy trình đề xuất (phần lớn đã áp dụng đúng như mô tả, trừ Auth đã nêu ở trên). Mục 6 là checklist hành động cụ thể để đưa app này lên cloud thật.
 
 ## 2. Kiến trúc đề xuất

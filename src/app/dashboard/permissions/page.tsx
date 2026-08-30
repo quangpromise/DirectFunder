@@ -8,6 +8,7 @@ import { useT, useLanguage } from "@/lib/i18n";
 import { CpaEmailDefaultsDialog } from "@/components/cpa-email-defaults-dialog";
 import { GoogleSheetConfigDialog } from "@/components/google-sheet-config-dialog";
 import { ClientEmailTemplateDialog } from "@/components/client-email-template-dialog";
+import { SendActionsVisibilityDialog } from "@/components/send-actions-visibility-dialog";
 
 export default function PermissionsPage() {
   const user = useCurrentUser();
@@ -19,6 +20,8 @@ export default function PermissionsPage() {
   const setGoogleSheetConfig = useAppStore((s) => s.setGoogleSheetConfig);
   const clientEmailTemplate = useAppStore((s) => s.clientEmailTemplate);
   const setClientEmailTemplate = useAppStore((s) => s.setClientEmailTemplate);
+  const sendActionsHidden = useAppStore((s) => s.sendActionsHidden);
+  const setSendActionHidden = useAppStore((s) => s.setSendActionHidden);
   const columns = useAppStore((s) => s.columns);
   const t = useT();
   const { language } = useLanguage();
@@ -45,6 +48,7 @@ export default function PermissionsPage() {
           <CpaEmailDefaultsDialog defaults={cpaEmailDefaults} onSave={setCpaEmailDefaults} />
           <GoogleSheetConfigDialog config={googleSheetConfig} columns={columns} onSave={setGoogleSheetConfig} />
           <ClientEmailTemplateDialog value={clientEmailTemplate ?? {}} onSave={setClientEmailTemplate} />
+          <SendActionsVisibilityDialog value={sendActionsHidden} onToggle={setSendActionHidden} />
         </div>
       </div>
 

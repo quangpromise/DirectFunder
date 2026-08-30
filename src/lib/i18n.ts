@@ -207,6 +207,11 @@ const dict: Record<Language, Record<string, string>> = {
     "sendActions.buttonTitle": "Gửi dữ liệu",
     "sendActions.title": "Gửi dữ liệu",
 
+    // Dialog Admin (trang Phân quyền) ẩn/hiện toàn cục từng nút trong popup "Gửi dữ liệu"
+    "sendActionsVisibility.triggerBtn": "Ẩn/hiện nút",
+    "sendActionsVisibility.title": "Ẩn/hiện nút trong \"Gửi dữ liệu\"",
+    "sendActionsVisibility.desc": "Tắt nút nào sẽ ẩn nút đó với TẤT CẢ mọi người, kể cả Quản lý.",
+
     "sheet.sendBtn": "Gửi dòng dữ liệu lên Google Sheet",
     "sheet.sending": "Đang gửi lên Google Sheet...",
     "sheet.sentHint": "Đã gửi — bấm để gửi lại",
@@ -1087,6 +1092,11 @@ const dict: Record<Language, Record<string, string>> = {
     // Combined button for the 4 send actions (Send to Sheet/CPA/Test Sheet/Client email) next to Status
     "sendActions.buttonTitle": "Send data",
     "sendActions.title": "Send data",
+
+    // Admin dialog (Permissions page) to globally show/hide each button in the "Send data" popup
+    "sendActionsVisibility.triggerBtn": "Show/hide buttons",
+    "sendActionsVisibility.title": "Show/hide buttons in \"Send data\"",
+    "sendActionsVisibility.desc": "Turning a button off hides it for everyone, including Manager.",
 
     "sheet.sendBtn": "Send row to Google Sheet",
     "sheet.sending": "Sending to Google Sheet...",

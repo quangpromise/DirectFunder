@@ -52,6 +52,8 @@ import {
   Role,
   RuleRecord,
   SelectOption,
+  SendActionId,
+  SendActionsHidden,
   SmsConversationSummary,
   SmsMessageRecord,
   Theme,
@@ -225,6 +227,9 @@ interface AppState {
    * addCareOfEligibleNoticeType/removeCareOfEligibleNoticeType bên dưới). Mặc định
    * DEFAULT_CARE_OF_ELIGIBLE_NOTICE_TYPES (care-of-eligibility.ts) nếu Admin chưa từng đổi. */
   careOfEligibleNoticeTypes: string[];
+  /** Nút nào trong popup "Gửi dữ liệu" (SendActionsMenuButton) đang bị Admin ẨN TOÀN CỤC —
+   * xem setSendActionsHidden bên dưới. `{}` = không ẩn nút nào (mặc định). */
+  sendActionsHidden: SendActionsHidden;
 
   /** true khi đã hydrate xong dữ liệu thật từ server ít nhất 1 lần trong phiên này. */
   hydrated: boolean;
@@ -310,6 +315,10 @@ interface AppState {
    * qua NoticeSplitterCareOfManager (tab "Notice Splitter" trong popup "For Processor"). */
   addCareOfEligibleNoticeType: (noticeType: string) => void;
   removeCareOfEligibleNoticeType: (noticeType: string) => void;
+  /** Bật/tắt 1 nút trong popup "Gửi dữ liệu" — chỉ Admin (manager) dùng qua
+   * SendActionsVisibilityDialog (cases/page.tsx). `hidden: true` = ẩn nút đó với TẤT CẢ mọi
+   * người (kể cả Manager). */
+  setSendActionHidden: (actionId: SendActionId, hidden: boolean) => void;
   /** Cùng pattern add/update/removeRefundYearStatusOption ở trên nhưng cho danh sách Status
    * của tab "CPA Review" (mỗi khối năm) — không có id nào bị khoá xoá (khác "pending" ở
    * refund), tự do thêm/sửa/xoá. Thêm 2026-08-14. */
@@ -697,7 +706,8 @@ export const useAppStore = create<AppState>()(
             state.cpaReviewStatusOptions,
             state.cpaReviewHiddenColumns,
             state.processorReportTasks,
-            state.careOfEligibleNoticeTypes
+            state.careOfEligibleNoticeTypes,
+            state.sendActionsHidden
           );
         });
         syncInBackground("config", configSyncChain);
@@ -739,6 +749,7 @@ export const useAppStore = create<AppState>()(
       processorReportSummary: { entries: [], processors: [] },
       processorReportSelectedMonth: currentMonthKey(),
       careOfEligibleNoticeTypes: DEFAULT_CARE_OF_ELIGIBLE_NOTICE_TYPES,
+      sendActionsHidden: {},
 
       login: async (email, password) => {
         try {
@@ -802,6 +813,7 @@ export const useAppStore = create<AppState>()(
             config.careOfEligibleNoticeTypes && config.careOfEligibleNoticeTypes.length > 0
               ? config.careOfEligibleNoticeTypes
               : DEFAULT_CARE_OF_ELIGIBLE_NOTICE_TYPES,
+          sendActionsHidden: config.sendActionsHidden ?? {},
           rules,
           collectingRecords,
           cpaReviewRecords,
@@ -2123,6 +2135,11 @@ export const useAppStore = create<AppState>()(
         set((state) => ({
           careOfEligibleNoticeTypes: state.careOfEligibleNoticeTypes.filter((t) => t !== noticeType),
         }));
+        syncConfig();
+      },
+
+      setSendActionHidden: (actionId, hidden) => {
+        set((state) => ({ sendActionsHidden: { ...state.sendActionsHidden, [actionId]: hidden } }));
         syncConfig();
       },
 

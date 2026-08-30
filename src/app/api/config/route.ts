@@ -55,6 +55,7 @@ export async function GET() {
     cpaReviewSheetConfig: redactCpaReviewSheetConfig(config.cpaReviewSheetConfig),
     processorReportTasks: config.processorReportTasks,
     careOfEligibleNoticeTypes: config.careOfEligibleNoticeTypes,
+    sendActionsHidden: config.sendActionsHidden,
   });
 }
 
@@ -204,6 +205,11 @@ export async function PUT(request: NextRequest) {
   if (me.role === "manager" && "careOfEligibleNoticeTypes" in body) {
     data.careOfEligibleNoticeTypes = body.careOfEligibleNoticeTypes;
   }
+  // Bật/tắt toàn cục từng nút trong popup "Gửi dữ liệu" — cùng cơ chế "chỉ manager" như
+  // careOfEligibleNoticeTypes ở trên (thêm 2026-08-30).
+  if (me.role === "manager" && "sendActionsHidden" in body) {
+    data.sendActionsHidden = body.sendActionsHidden;
+  }
 
   // Không có field hợp lệ nào để ghi (vd role không phải manager, columns/featurePermissions
   // lệch bản server nên bị bỏ qua ở trên, VÀ cũng không có quyền field độc lập nào khác) — lúc
@@ -228,5 +234,6 @@ export async function PUT(request: NextRequest) {
     cpaReviewHiddenColumns: config.cpaReviewHiddenColumns,
     processorReportTasks: config.processorReportTasks,
     careOfEligibleNoticeTypes: config.careOfEligibleNoticeTypes,
+    sendActionsHidden: config.sendActionsHidden,
   });
 }

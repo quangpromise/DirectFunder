@@ -1664,11 +1664,16 @@ function RowCells({
   // đang hiện cho hồ sơ này đã ở trạng thái "đã gửi" (thêm 2026-08-16) — chỉ tính những
   // hành động THỰC SỰ hiện ra (đúng điều kiện quyền/status/email như JSX bên dưới), bỏ qua
   // hành động không áp dụng cho hồ sơ này (vd không có quyền, hoặc chưa có email).
-  const showSendToSheetAction = sendButtonsStatusIds.has(row.status) && canSendToSheetFeature;
-  const showCpaEmailAction = sendButtonsStatusIds.has(row.status) && canSendCpaEmailFeature;
-  const showTestSheetAction = sendButtonsStatusIds.has(row.status) && (canSendToSheetFeature || canSendCpaEmailFeature);
-  const showClientEmailAction = canSendClientEmailFeature && Boolean(row.email.trim());
-  const showUpdateToCrmAction = Boolean(row.clientLink?.includes("tax.agentc3.com"));
+  // Admin có thể ẩn TOÀN CỤC từng nút này với TẤT CẢ mọi người qua SendActionsVisibilityDialog
+  // (trang Phân quyền, thêm 2026-08-30) — KHÁC hẳn canSendXxxFeature (FeaturePermissions theo
+  // role, Manager luôn bypass): cờ ẩn ở đây áp dụng bất kể role, kể cả Manager.
+  const sendActionsHidden = useAppStore((s) => s.sendActionsHidden);
+  const showSendToSheetAction = sendButtonsStatusIds.has(row.status) && canSendToSheetFeature && !sendActionsHidden.sheet;
+  const showCpaEmailAction = sendButtonsStatusIds.has(row.status) && canSendCpaEmailFeature && !sendActionsHidden.cpaEmail;
+  const showTestSheetAction =
+    sendButtonsStatusIds.has(row.status) && (canSendToSheetFeature || canSendCpaEmailFeature) && !sendActionsHidden.testSheet;
+  const showClientEmailAction = canSendClientEmailFeature && Boolean(row.email.trim()) && !sendActionsHidden.clientEmail;
+  const showUpdateToCrmAction = Boolean(row.clientLink?.includes("tax.agentc3.com")) && !sendActionsHidden.updateToCrm;
   const sendActionSentFlags = [
     showSendToSheetAction ? Boolean(row.sheetSentAt) : null,
     showCpaEmailAction ? Boolean(row.cpaEmailSentAt) : null,

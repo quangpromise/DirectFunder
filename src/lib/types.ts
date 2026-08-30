@@ -215,6 +215,14 @@ export interface GoogleSheetConfig {
 
 export type FeaturePermissions = Record<FeatureKey, Role[]>;
 
+/** 5 nút trong popup "Gửi dữ liệu" (SendActionsMenuButton) — id cố định dùng chung giữa
+ * SendActionsVisibilityDialog (Admin bật/tắt) và cases/page.tsx (áp dụng lúc render). */
+export type SendActionId = "updateToCrm" | "testSheet" | "cpaEmail" | "sheet" | "clientEmail";
+
+/** true = Admin đã ẨN nút đó cho TẤT CẢ mọi người (kể cả Manager — khác hẳn FeaturePermissions
+ * vốn luôn cho Manager bypass, thêm 2026-08-30). Key thiếu/false = hiện bình thường. */
+export type SendActionsHidden = Partial<Record<SendActionId, boolean>>;
+
 /** Giá trị của cột "select" (vd. Status) — id tham chiếu tới SelectOption.id của cột đó. */
 export type CaseStatus = string;
 
