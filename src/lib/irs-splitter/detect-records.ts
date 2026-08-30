@@ -168,7 +168,13 @@ function extractName(content: string, patterns: Patterns): { name: string | null
 }
 
 function extractNoticeType(content: string): string | null {
-  let m = content.match(/IRS Notice:?\s*(CP\d+[A-Z]?)/i);
+  // "Notice Name: CP14"/"Notice Name CP14" — biến thể tiêu đề khác gặp thật (một số thư IRS ghi
+  // "Notice Name" thay vì "IRS Notice" trước mã CP), cùng cấu trúc với pattern "IRS Notice" bên
+  // dưới nên đặt cùng vị trí ưu tiên (thêm 2026-08-30, theo yêu cầu "file Notice Name CP14 thì
+  // lấy tên CP14, tương tự tên sau IRS Notice").
+  let m = content.match(/Notice\s+Name:?\s*(CP\d+[A-Z]?)/i);
+  if (m) return m[1].toUpperCase();
+  m = content.match(/IRS Notice:?\s*(CP\d+[A-Z]?)/i);
   if (m) return m[1].toUpperCase();
   m = content.match(/\b(CP\d+[A-Z]?)\s+[Nn]otice/i);
   if (m) return m[1].toUpperCase();
