@@ -1061,6 +1061,38 @@ khác biệt so với 2 biến thể đã biết) thay vì đoán mò sửa lạ
     **Không cần bước production nào** (thuần logic parse text + text prompt, không đổi schema/
     API).
 
+32. **(2026-08-29, ngay sau mục #31) Mục #31 chưa đủ — Prior Year Refund/Unemployment vẫn có
+    lúc mất, dù khối "TÍNH TOÁN SẴN" đã đúng — thêm quy tắc BẮT BUỘC duyệt đủ mọi field khác
+    không** — người dùng báo lại NGAY SAU khi fix mục #31: "Giờ thì 23 mất luôn cả Prior year
+    refund và Unemployment compensation", rồi yêu cầu tường minh "tất cả form trên W&I hoặc tiền
+    trên W&IS đều phải được nhận diện và so sánh với TTS". Debug lại: `summarizeOtherWitForms()`
+    VẪN trả đúng cả 2 field ("Prior Year Refund: $692.00", "Unemployment Compensation:
+    $1,380.00" nằm trong khối "W&IS SUMMARY"), `stripAllWitRecordsFromText()` VẪN cắt đúng, khối
+    "[TÍNH TOÁN SẴN...]" gửi Gemini VẪN có đủ dữ liệu — nguyên nhân KHÔNG phải lỗi code/dữ liệu
+    (như mục #30) mà là **tính KHÔNG ỔN ĐỊNH của chính Gemini**: dù dữ liệu đúng và đầy đủ trong
+    prompt, model không LUÔN LUÔN tự quyết định liệt kê hết mọi field trong khối tính sẵn khi câu
+    hỏi là "so sánh chung chung" — có lượt bỏ sót 1-2 field dù đã "thấy" chúng trong context (khác
+    hẳn lỗi dữ liệu/parse, hoàn toàn ở tầng suy luận của model). System prompt trước đó (mục #29
+    trở về trước, cả rule mới thêm ở mục #31 lúc đầu) chỉ dạy CÁCH DÙNG số liệu tính sẵn (dùng
+    thẳng, không tự cộng lại) chứ chưa BẮT BUỘC phải duyệt HẾT từng field trong khối đó.
+    **Cách sửa**: thêm 1 đoạn "QUY TẮC BẮT BUỘC — DUYỆT ĐỦ, KHÔNG BỎ SÓT" MỚI vào
+    `CHAT_SYSTEM_INSTRUCTION` — khi câu hỏi là so sánh CHUNG (không hỏi đúng 1 khoản cụ thể), bắt
+    buộc duyệt qua TỪNG DÒNG trong khối "[TÍNH TOÁN SẴN - Tổng từng field theo loại Form khác...]",
+    MỌI field có giá trị khác $0.00 PHẢI thành 1 dòng riêng trong bảng trả về — cấm tự chọn
+    lọc/tóm tắt/bỏ qua field nào chỉ vì "không quan trọng"/"đã đủ ví dụ". Field $0.00 vẫn bỏ qua
+    (không cần đối chiếu).
+    **Đã verify sống bằng 3 LẦN GỌI LIÊN TIẾP** (không phải 1 lần — quan trọng vì bug này vốn là
+    tính KHÔNG ỔN ĐỊNH, verify 1 lần không đủ chứng minh đã hết): CẢ 3 lần đều có đủ cả "Prior
+    Year Refund (1099-G)" VÀ "Unemployment Compensation" trong kết quả (trước khi thêm rule này,
+    người dùng đã gặp ít nhất 1 lượt thiếu cả 2 dù dữ liệu nền vẫn đúng). **Đánh đổi đã chấp
+    nhận**: bảng kết quả giờ DÀI HƠN hẳn (25 dòng thay vì 3-5 dòng như trước, vì liệt kê cả những
+    field $0.00 lẫn field không thật sự cần đối chiếu như "Allocated Tips"/"Tax Exempt OID") —
+    verbose hơn nhưng đổi lấy KHÔNG BỎ SÓT field nào có giá trị, đúng ưu tiên người dùng đã nêu rõ
+    ("tất cả... đều phải được nhận diện"). Nếu sau này người dùng phàn nàn bảng quá dài/nhiễu, cân
+    nhắc thêm điều kiện lọc field "không liên quan/luôn $0" (danh sách cố định) trước khi đưa vào
+    prompt, thay vì nới lỏng lại yêu cầu "duyệt đủ" này. `tsc --noEmit`/`eslint` sạch. **Không cần
+    bước production nào** (chỉ đổi text prompt).
+
 ## 4. Giới hạn đã biết
 
 - Không có OCR/fallback nếu CRM đổi định dạng PDF hoàn toàn khác — Gemini vẫn đọc được text lộn
