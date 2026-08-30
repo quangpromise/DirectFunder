@@ -181,7 +181,11 @@ function extractNoticeType(content: string): string | null {
   // OCR đôi khi tách rời chữ số cuối của mã, vd "Notice   CP52   1" nghĩa là "CP521"
   m = content.match(/[Nn]otice\s+CP\s*(\d{2,3})\s+(\d)\b/);
   if (m) return "CP" + m[1] + m[2];
-  m = content.match(/[Nn]otice\s+(CP\d{2,4}[A-Z]?)/i);
+  // "Notice:   CP14" — dấu hai chấm NGAY SAU "Notice" trước khoảng trắng + mã CP (lỗi thật gặp
+  // trên production, thêm 2026-08-30: 2 file CP14 báo "Unknown" vì regex cũ đòi khoảng trắng
+  // ngay sau "Notice", không chấp nhận ":" chen giữa — dòng tiêu đề thật trên trang 2 mỗi thư
+  // CP14 luôn ở dạng "Notice:   CP14   Tax year: ...").
+  m = content.match(/[Nn]otice:?\s+(CP\d{2,4}[A-Z]?)/i);
   if (m) return m[1].toUpperCase();
   m = content.match(/\bLT\s?(\d{2,4})\b/i);
   if (m) return "LT" + m[1];
