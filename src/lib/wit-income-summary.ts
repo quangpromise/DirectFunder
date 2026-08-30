@@ -376,11 +376,20 @@ export function summarizeOtherWitForms(texts: string[]): WitFormTypeSummary[] {
     }
   }
 
-  return [...byFormType.entries()].map(([formType, bucket]) => ({
-    formType,
-    recordCount: bucket.count,
-    fields: [...bucket.fields.entries()].map(([label, v]) => ({ label, total: v.total, count: v.count })),
-  }));
+  // Loại bỏ field bằng $0.00 NGAY TỪ CODE (thêm 2026-08-29, theo yêu cầu "form hay tiền nào
+  // bằng 0 thì không cần đưa vào bảng so sánh") — không giao việc lọc này cho AI (đã tự gặp
+  // pattern AI KHÔNG ổn định khi tự quyết định lọc/bỏ field, xem mục lịch sử #32 SKILL.md: cùng
+  // 1 câu hỏi, có lượt liệt kê hết cả field $0.00 dù prompt đã dặn bỏ qua) — loại quyết định này
+  // khỏi tầm với của model, đảm bảo KHÔNG BAO GIỜ có field $0.00 trong khối gửi AI.
+  return [...byFormType.entries()]
+    .map(([formType, bucket]) => ({
+      formType,
+      recordCount: bucket.count,
+      fields: [...bucket.fields.entries()]
+        .filter(([, v]) => v.total !== 0)
+        .map(([label, v]) => ({ label, total: v.total, count: v.count })),
+    }))
+    .filter((s) => s.fields.length > 0); // cả Form đó toàn field $0.00 -> bỏ hẳn dòng Form này
 }
 
 /** Định dạng `WitFormTypeSummary[]` thành khối text cho prompt — 1 dòng/loại Form, liệt kê từng

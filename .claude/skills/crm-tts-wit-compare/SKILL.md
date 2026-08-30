@@ -1093,6 +1093,37 @@ khác biệt so với 2 biến thể đã biết) thay vì đoán mò sửa lạ
     prompt, thay vì nới lỏng lại yêu cầu "duyệt đủ" này. `tsc --noEmit`/`eslint` sạch. **Không cần
     bước production nào** (chỉ đổi text prompt).
 
+33. **(2026-08-29, ngay sau mục #32) Lọc field $0.00 khỏi khối tính sẵn NGAY TỪ CODE — không
+    giao việc lọc cho AI** — người dùng ban đầu báo "vẫn còn lỗi bỏ sót" sau mục #32, nhưng khi
+    debug lại (11/11 lần gọi trực tiếp API đều ra đủ Prior Year Refund/Unemployment Compensation)
+    không tái hiện được — người dùng sau đó xác nhận "sory tôi nhầm" (khả năng do popup còn giữ
+    lịch sử chat cũ từ trước khi fix #31/#32). Thay vào đó, người dùng chuyển sang yêu cầu MỚI:
+    "sửa lại ở WIT&I hay WIT&IS những form hay tiền nào bằng 0 thì không cần đưa vào bảng so
+    sánh" — bảng kết quả trước đó DÀI 25 dòng (hệ quả trực tiếp của quy tắc "duyệt đủ" ở mục #32)
+    vì AI vẫn tự liệt kê CẢ field $0.00 dù `CHAT_SYSTEM_INSTRUCTION` đã dặn "Field có giá trị
+    $0.00 thì bỏ qua" — ĐÚNG PATTERN đã lặp lại nhiều lần trong file này: giao quyết định lọc/chọn
+    cho AI (dù đã dặn rõ trong prompt) KHÔNG đáng tin cậy bằng việc loại bỏ hẳn khả năng đó khỏi
+    input của AI.
+    **Cách sửa (đúng hướng, không phải vá prompt thêm lần nữa)**: `summarizeOtherWitForms()`
+    (`wit-income-summary.ts`) giờ tự LỌC field `total === 0` ngay trong code, TRƯỚC khi trả kết
+    quả — Form nào sau khi lọc còn 0 field thì bỏ hẳn dòng Form đó luôn. Khối "[TÍNH TOÁN SẴN...]"
+    gửi AI từ nay VĨNH VIỄN không còn field $0.00 nào — đơn giản hoá lại câu quy tắc "DUYỆT ĐỦ" ở
+    mục #32 (bỏ phần dặn AI tự lọc $0.00, vì giờ không còn khả năng field đó xuất hiện trong
+    prompt nữa).
+    **Đã verify sống đầy đủ** với chính hồ sơ `BY309182` (2023): `summarizeOtherWitForms()` giờ
+    chỉ còn ĐÚNG 10 field khác không (Federal Income Tax Withheld/Wages/Prior Year Refund/
+    Unemployment Compensation/Deferred Compensation/Social Security Tax Withheld/Medicare Tax
+    Withheld/Medicare Wages and Tips/Social Security Wages/Health Coverage — trước đó 24 field kể
+    cả field $0.00). Chạy `askCompareDocs()` 3 LẦN LIÊN TIẾP (broad question mặc định) — CẢ 3
+    lần đều ra ĐÚNG 10 dòng (không hơn không kém), có đủ "Prior Year Refund" ($692 vs TTS $258,
+    lệch $434) VÀ "Unemployment Compensation" ($1,380 vs TTS $0.00) mọi lần, các field mang tính
+    thông tin (Deferred Compensation/SS-Medicare Tax/Wages/Health Coverage) đều được AI tự giải
+    thích đúng là "không có dòng tương ứng trên TTS vì chỉ mang tính thông tin", không bị coi
+    nhầm là "TTS thiếu". Regression test 2 hồ sơ đã dùng ở các mục trước (`BY309179`, `BY309190`)
+    — số field mỗi Form giữ nguyên y hệt (không field nào bị lọc nhầm, vì cả 2 hồ sơ vốn không có
+    field $0.00 nào trong dữ liệu thật của họ). `tsc --noEmit`/`eslint` sạch. **Không cần bước
+    production nào** (thuần logic lọc mảng + text prompt, không đổi schema/API).
+
 ## 4. Giới hạn đã biết
 
 - Không có OCR/fallback nếu CRM đổi định dạng PDF hoàn toàn khác — Gemini vẫn đọc được text lộn
