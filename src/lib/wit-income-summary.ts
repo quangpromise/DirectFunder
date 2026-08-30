@@ -155,11 +155,25 @@ function findFormBoundaries(text: string): { index: number; formType: string }[]
     .sort((a, b) => b.length - a.length)
     .map((f) => f.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
     .join("|");
-  const boundaryRe = new RegExp(`Form\\s+(${escapedForms})\\b|Schedule\\s+K-1\\s+([A-Za-z0-9][A-Za-z0-9-]{0,19})\\b`, "gi");
+  // "Wage & Income Summary" (thêm 2026-08-29, lỗi thật gặp trên production hồ sơ `BY309182`) —
+  // bản "W&IS" (Wage & Income Summary, IRS tự tính sẵn theo TỪNG người, không tách theo Form)
+  // trình bày dạng LIỆT KÊ PHẲNG các field cộng dồn ("Prior Year Refund:", "Unemployment
+  // Compensation:"...) NGAY SAU 1 dòng tiêu đề duy nhất "Wage & Income Summary" — hoàn toàn
+  // KHÔNG có tiêu đề "Form {mã}" nào (khác bản "W&I" chi tiết) nên trước đây `findFormBoundaries`
+  // trả rỗng cho những file CHỈ có W&IS (không kèm W&I) → `summarizeOtherWitForms` bỏ qua
+  // TOÀN BỘ file, AI phải tự đọc nguyên văn không có "TÍNH TOÁN SẴN" hỗ trợ, đọc SÓT field
+  // "Prior Year Refund" dù vẫn bắt được "Unemployment Compensation" ngay cạnh đó (không ổn
+  // định — đúng lý do cần tính sẵn bằng code thay vì tin AI tự đọc). Coi "Wage & Income Summary"
+  // là 1 ranh giới form GIẢ ĐỊNH (formType "W&IS SUMMARY") để mọi field sau nó được trích + cộng
+  // dồn đáng tin cậy giống mọi loại Form khác.
+  const boundaryRe = new RegExp(
+    `Form\\s+(${escapedForms})\\b|Schedule\\s+K-1\\s+([A-Za-z0-9][A-Za-z0-9-]{0,19})\\b|(Wage\\s*&\\s*Income\\s*Summary)`,
+    "gi"
+  );
   const boundaries: { index: number; formType: string }[] = [];
   let m: RegExpExecArray | null;
   while ((m = boundaryRe.exec(text)) !== null) {
-    const formType = m[1] ? m[1].toUpperCase() : `K-1 ${m[2].toUpperCase()}`;
+    const formType = m[1] ? m[1].toUpperCase() : m[2] ? `K-1 ${m[2].toUpperCase()}` : "W&IS SUMMARY";
     boundaries.push({ index: m.index, formType });
   }
   return boundaries;

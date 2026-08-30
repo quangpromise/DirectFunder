@@ -1017,6 +1017,50 @@ khác biệt so với 2 biến thể đã biết) thay vì đoán mò sửa lạ
     bởi 2 thay đổi này. `tsc --noEmit`/`eslint` sạch. **Không cần bước production nào** (thuần
     logic parse text, không đổi schema/API/prompt).
 
+31. **(2026-08-29, ngay sau mục #30) Bug thật thứ 3 cùng hồ sơ `BY309182` — file WIT CHỈ có bản
+    "W&IS" (tóm tắt), không có "W&I" chi tiết, khiến TOÀN BỘ field bị bỏ ngoài cơ chế tính sẵn** —
+    người dùng báo "hồ sơ này có khoản $692 prior year refund không được nhắc đến" (năm 2023).
+    Debug trực tiếp: WIT 2023 của hồ sơ này CHỈ có 1 file "W&IS" (không có "W&I" đi kèm — khác
+    hầu hết hồ sơ khác luôn có cả 2). Nội dung "W&IS" trình bày dạng **liệt kê PHẲNG** dưới 1
+    tiêu đề DUY NHẤT "Wage & Income Summary" (vd "...Wage & Income Summary  Federal Income Tax
+    Withheld: $4,333.00 Wages: $45,463.00 ... Prior Year Refund: $692.00 ... Unemployment
+    Compensation: $1,380.00...") — HOÀN TOÀN không có tiêu đề "Form {mã}" nào cho từng khoản (khác
+    hẳn bản "W&I" chi tiết). `findFormBoundaries()` trước đó chỉ nhận diện "Form {mã}"/"Schedule
+    K-1 {mã}" nên trả `[]` cho file này → `summarizeOtherWitForms()` bỏ qua HOÀN TOÀN, không có
+    khối "TÍNH TOÁN SẴN" nào hỗ trợ AI. Vì không có boundary, `stripAllWitRecordsFromText()` cũng
+    không cắt gì (lưới an toàn hoạt động đúng) — text thô ĐẦY ĐỦ vẫn được gửi tới AI, nhưng AI tự
+    đọc thì KHÔNG ỔN ĐỊNH: bắt được "Unemployment Compensation" ($1,380 vs TTS $0.00) nhưng bỏ
+    sót hẳn "Prior Year Refund" ($692) — đúng pattern đã gặp nhiều lần trong file này (mục #28/
+    #29): để AI tự đọc danh sách field dài mà không có cơ chế tính sẵn là KHÔNG ĐÁNG TIN CẬY, kể
+    cả khi dữ liệu đã có sẵn nguyên văn trong prompt.
+    **Cách sửa**: thêm "Wage & Income Summary" làm 1 nhánh alternation MỚI trong
+    `findFormBoundaries()` (nhánh thứ 3, cạnh "Form {mã}"/"Schedule K-1 {mã}"), gán formType giả
+    định `"W&IS SUMMARY"` — mọi field phẳng sau tiêu đề này giờ được `extractDollarFields()`/
+    `summarizeOtherWitForms()` trích + cộng dồn đáng tin cậy giống hệt mọi loại Form khác, đưa
+    vào khối "[TÍNH TOÁN SẴN...]" cho AI dùng thẳng. Đồng thời thêm 1 đoạn "QUY TẮC RIÊNG cho
+    'Prior Year Refund'" vào `CHAT_SYSTEM_INSTRUCTION` — TTS gọi khoản này là "Refunds of
+    state/local taxes" (tên khác hẳn "Prior Year Refund" trên WIT, giống pattern NEC↔Schedule C/
+    W-2G↔Other income đã gặp ở mục #28/#29), tránh AI kết luận nhầm "TTS không có" chỉ vì không
+    tìm thấy chữ khớp nguyên văn.
+    **Lưu ý CHƯA xử lý (không phải bug của lần sửa này, chỉ ghi nhận giới hạn còn lại)**: nếu 1
+    hồ sơ CHỈ có "W&IS" và có phát sinh Capital Gains (1099-B/1099-DA) thật, các field liên quan
+    (`Capital Gains`/`Gross Proceeds`...) sẽ được `summarizeOtherWitForms()` cộng dồn như field
+    tiền THƯỜNG (không áp dụng công thức Gain = Proceeds + WashSale − CostBasis của
+    `summarizeCapitalGains()`, hàm đó vẫn chỉ đọc được từ boundary "Form 1099-B"/"Form 1099-DA"
+    thật) — CHƯA gặp ca thật nào (hồ sơ `BY309182` toàn bộ field Capital Gains đều $0.00 nên
+    không lộ ra vấn đề này), nhưng cần nhớ nếu sau này gặp hồ sơ CHỈ-W&IS có phát sinh lãi vốn
+    thật, số liệu Capital Gains hiển thị có thể không đúng công thức chuẩn.
+    **Đã verify sống đầy đủ** với chính hồ sơ `BY309182` (2023): `summarizeOtherWitForms()` giờ
+    trả đúng 1 bucket `"W&IS SUMMARY"` gồm mọi field (kể cả "Prior Year Refund: $692.00"). Gọi
+    `askCompareDocs()` với câu hỏi mặc định ("So sánh các tài liệu đã chọn...") ra đúng dòng
+    `"Prior Year Refund (1099-G)": wit "$692.00", tts "$258.00"`, note nêu đúng lệch $434.00 và
+    nghĩa vụ khai — TRƯỚC đó dòng này hoàn toàn không xuất hiện. Regression test 2 hồ sơ đã dùng
+    ở mục #28-#30 (`BY309179`, `BY309190`) — `summarizeOtherWitForms()`/`summarizeCapitalGains()`
+    ra kết quả GIỐNG Y HỆT trước khi sửa (không có file nào của 2 hồ sơ đó rơi vào nhánh "W&IS
+    SUMMARY" mới vì cả 2 đều có bản "W&I" chi tiết kèm theo). `tsc --noEmit`/`eslint` sạch.
+    **Không cần bước production nào** (thuần logic parse text + text prompt, không đổi schema/
+    API).
+
 ## 4. Giới hạn đã biết
 
 - Không có OCR/fallback nếu CRM đổi định dạng PDF hoàn toàn khác — Gemini vẫn đọc được text lộn
