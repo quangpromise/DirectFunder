@@ -25,6 +25,7 @@ import { api } from "@/lib/api-client";
 import { CpaReviewMonthPicker } from "@/components/cpa-review-month-picker";
 import { monthKeyLabel } from "@/lib/cpa-review-month";
 import { useConfirm } from "@/components/confirm-dialog";
+import { todayIsoDate } from "@/lib/date-format";
 import type { ProcessorReportTaskDef } from "@/lib/types";
 
 /** `NoticeSplitterPanel` kéo theo `pdf-lib` (nặng, xem comment trong split-pdf.ts) — trước
@@ -183,6 +184,7 @@ function SectionRows({
   columns,
   renderRowTotal,
   computeSectionRowTotal,
+  highlightColIndex,
 }: {
   sections: ReturnType<typeof groupTasksBySection>;
   renderCell: (taskId: string, colIndex: number) => React.ReactNode;
@@ -195,6 +197,12 @@ function SectionRows({
    * ở cuối theo đúng ý nghĩa khác). */
   renderRowTotal?: (taskId: string) => React.ReactNode;
   computeSectionRowTotal?: (taskIds: string[]) => number;
+  /** Index cột khớp NGÀY HÔM NAY (chỉ có ý nghĩa ở ProcessorSelfReportGrid, cột theo ngày trong
+   * tháng — thêm 2026-08-30 theo yêu cầu "hệ thống đang chạy ngày tháng nào sẽ highlight cột của
+   * ngày tháng đó") — tô nền nhẹ khác màu cho MỌI cell (kể cả dòng tổng theo section) thuộc cột
+   * này, giúp Processor dễ nhận ra đang nhập liệu đúng ngày. `undefined`/không khớp cột nào
+   * (đang xem tháng khác tháng hiện tại) = không tô gì. */
+  highlightColIndex?: number;
 }) {
   const t = useT();
   return (
@@ -215,7 +223,9 @@ function SectionRows({
           {columns.map((col, colIndex) => (
             <div
               key={col.key}
-              className="flex items-center justify-center border-b border-r border-border bg-surface text-xs font-semibold text-red-400 light:text-red-600"
+              className={`flex items-center justify-center border-b border-r border-border text-xs font-semibold text-red-400 light:text-red-600 ${
+                colIndex === highlightColIndex ? "bg-accent-soft" : "bg-surface"
+              }`}
             >
               {computeSectionTotal(
                 section.tasks.map((tk) => tk.id),
@@ -238,7 +248,10 @@ function SectionRows({
                 </div>
               )}
               {columns.map((col, colIndex) => (
-                <div key={col.key} className="border-b border-r border-border">
+                <div
+                  key={col.key}
+                  className={`border-b border-r border-border ${colIndex === highlightColIndex ? "bg-accent-soft/40" : ""}`}
+                >
                   {renderCell(task.id, colIndex)}
                 </div>
               ))}
@@ -426,6 +439,14 @@ function ProcessorSelfReportGrid({ userId }: { userId: string }) {
     }
     return cols;
   }, [days, weekIndexes]);
+  // Highlight cột NGÀY HÔM NAY (giờ Phoenix, khớp quy ước "hôm nay" dùng chung toàn app — xem
+  // todayIsoDate) — chỉ khớp khi đang xem ĐÚNG tháng hiện tại, tháng khác không cột nào khớp
+  // (findIndex trả -1, coi như không highlight gì, đúng ý nghĩa "hôm nay" không tồn tại ở đó).
+  const today = useMemo(() => todayIsoDate(), []);
+  const todayColIndex = useMemo(() => {
+    const idx = columns.findIndex((c) => c.kind === "day" && c.date === today);
+    return idx >= 0 ? idx : undefined;
+  }, [columns, today]);
 
   const valueByKey = useMemo(() => {
     const map = new Map<string, number>();
@@ -467,11 +488,15 @@ function ProcessorSelfReportGrid({ userId }: { userId: string }) {
           <div className="sticky top-0 z-20 flex items-center justify-center border-b border-r border-border-strong bg-accent-soft px-1 py-2 text-[10px] font-semibold text-table-head-text">
             {t("processorReport.totalHeader")}
           </div>
-          {columns.map((col) => (
+          {columns.map((col, colIndex) => (
             <div
               key={col.key}
               className={`sticky top-0 z-20 flex items-center justify-center border-b border-r border-border-strong px-1 py-2 text-[10px] font-semibold text-table-head-text ${
-                col.kind === "week" ? "bg-accent-soft" : "bg-table-head-bg"
+                colIndex === todayColIndex
+                  ? "bg-accent text-white"
+                  : col.kind === "week"
+                    ? "bg-accent-soft"
+                    : "bg-table-head-bg"
               }`}
             >
               {col.kind === "day" ? col.date!.slice(8, 10) : `W${col.weekIndex}`}
@@ -481,6 +506,7 @@ function ProcessorSelfReportGrid({ userId }: { userId: string }) {
           <SectionRows
             sections={sections}
             columns={columns}
+            highlightColIndex={todayColIndex}
             computeSectionRowTotal={(taskIds) => taskIds.reduce((sum, id) => sum + monthTotal(id), 0)}
             renderRowTotal={(taskId) => monthTotal(taskId) || ""}
             computeSectionTotal={(taskIds, colIndex) => {
