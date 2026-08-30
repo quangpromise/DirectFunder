@@ -958,11 +958,12 @@ reload trang xác nhận vẫn ẩn (persist thật, không chỉ optimistic UI)
 trở lại + persist qua reload. `tsc --noEmit`/`eslint` sạch.
 
 **Sau khi deploy code này lên production PHẢI làm đủ các bước sau** (xoá mục này khỏi file khi đã làm xong):
-1. `prisma migrate deploy` nhắm production (thêm cột `sendActionsHidden` trên `app_config`, an
-   toàn/additive/nullable — null mặc định = không ẩn nút nào, không đổi hành vi hiện có).
+1. ✅ **Đã xong 2026-08-30** — `prisma migrate deploy` nhắm production đã chạy (migration
+   `20260830063829_add_send_actions_hidden` — 1 cột mới trên `app_config`, an toàn/additive/
+   nullable, null mặc định = không ẩn nút nào, không đổi hành vi hiện có).
 2. Không cần script merge `AppConfig.featurePermissions`/`columns` (field độc lập, không đụng
    `DEFAULT_COLUMNS`/`DEFAULT_FEATURE_PERMISSIONS`).
-3. Đăng nhập production bằng tài khoản **manager** thật, vào trang Phân quyền → xác nhận thấy
+3. [CHỜ XÁC NHẬN QUA UI] Đăng nhập production bằng tài khoản **manager** thật, vào trang Phân quyền → xác nhận thấy
    nút "Ẩn/hiện nút" cạnh 3 nút cấu hình sẵn có (CPA Email/Google Sheet/Client Email) → mở dialog,
    tắt thử 1 nút (vd "Send to Google Sheet") → vào bảng Hồ sơ, mở popup "Gửi dữ liệu" ở 1 hồ sơ
    đang đủ điều kiện hiện nút đó → xác nhận nút đã biến mất.
