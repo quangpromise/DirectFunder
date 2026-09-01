@@ -1067,14 +1067,22 @@ function YearCells({
         />
       </Cell>
       <Cell className={tint}>
-        <EditableCell value={amount || null} type="currency" editable dense tinyDense onCommit={(v) => onChangeAmount((v as number) || 0)} />
+        <EditableCell
+          value={amount || null}
+          type="currency"
+          editable
+          dense
+          tinyDense
+          accent
+          onCommit={(v) => onChangeAmount((v as number) || 0)}
+        />
       </Cell>
       <Cell className={tint}>
         <EditableCell value={adjustment || null} type="currency" editable dense tinyDense onCommit={(v) => onChangeAdjustment((v as number) || 0)} />
       </Cell>
       <Cell className={tint}>
         {total > 0 ? (
-          <div className="px-1.5 py-2 text-[10px] font-semibold text-text">${total.toLocaleString("en-US")}</div>
+          <div className="px-1.5 py-2 text-[10px] font-semibold text-accent">${total.toLocaleString("en-US")}</div>
         ) : (
           <div className="px-1.5 py-2 text-[10px] font-semibold text-text-faint">—</div>
         )}

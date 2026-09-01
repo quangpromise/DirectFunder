@@ -238,22 +238,29 @@ function SectionRows({
           ))}
 
           {section.tasks.map((task) => (
-            <div key={task.id} className="contents">
+            // "group" + display:contents — cùng pattern đã dùng cho hover từng dòng ở bảng
+            // Hồ sơ chính (cases/page.tsx RowCells) — cho phép tô sáng MỌI cell của dòng này
+            // khi 1 ô input BẤT KỲ trong dòng đang focus (group-focus-within), không cần biết
+            // trước ô nào đang được sửa (thêm 2026-08-31, theo yêu cầu "chọn ô input nào thì
+            // highlight cả row để biết đang ở task nào").
+            <div key={task.id} className="group contents">
               <div
-                className="sticky z-10 flex items-center border-b border-r border-border bg-bg px-2 py-1 pl-5 text-[11px] italic text-text-dim"
+                className="sticky z-10 flex items-center border-b border-r border-border bg-bg px-2 py-1 pl-5 text-[11px] italic text-text-dim group-focus-within:bg-accent-soft"
                 style={{ left: 0 }}
               >
                 <span className="truncate">{task.label}</span>
               </div>
               {renderRowTotal && (
-                <div className="flex h-full items-center justify-center border-b border-r border-border bg-accent-soft text-[11px] font-medium text-text">
+                <div className="flex h-full items-center justify-center border-b border-r border-border bg-accent-soft text-[11px] font-medium text-text group-focus-within:ring-1 group-focus-within:ring-inset group-focus-within:ring-accent">
                   {renderRowTotal(task.id)}
                 </div>
               )}
               {columns.map((col, colIndex) => (
                 <div
                   key={col.key}
-                  className={`border-b border-r border-border ${colIndex === highlightColIndex ? "bg-accent-soft/40" : ""}`}
+                  className={`border-b border-r border-border group-focus-within:bg-accent-soft ${
+                    colIndex === highlightColIndex ? "bg-accent-soft/40" : ""
+                  }`}
                 >
                   {renderCell(task.id, colIndex)}
                 </div>
