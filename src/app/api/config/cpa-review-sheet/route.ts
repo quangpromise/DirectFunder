@@ -46,23 +46,47 @@ function onCpaReviewEdit(e) {
   var sheet = e.range.getSheet();
   var row = e.range.getRow();
   if (row < 4) return; // bỏ qua hàng tiêu đề/tổng (1-3)
-  var ssn = sheet.getRange(row, 4).getValue(); // cột D
-  if (!ssn) return;
-  var col = e.range.getColumn();
+
+  // LUÔN quét lại TOÀN BỘ dòng (A..AH) và gửi đầy đủ, KHÔNG chỉ đúng ô vừa sửa, KHÔNG đòi
+  // phải có SSN mới gửi (đã bỏ yêu cầu này 2026-08-31, theo yêu cầu "không cần phải có SSN ở
+  // GGS mới đồng bộ lên phần mềm, mà cột nào có thông tin cũng phải đồng bộ") — trước đây chỉ
+  // gửi đúng 1 ô vừa sửa VÀ bắt buộc dòng phải có SSN, khiến gõ Name/Phone/... trước khi có
+  // SSN bị bỏ qua âm thầm, mất dữ liệu (lỗi thật báo trên production). Server tự định danh
+  // dòng qua số dòng thật (row) nếu chưa có SSN, hoặc qua SSN nếu có — không còn phụ thuộc
+  // riêng SSN nữa.
+  var width = Math.min(sheet.getLastColumn(), 34); // A..AH
+  var rowValues = sheet.getRange(row, 1, 1, width).getValues()[0];
+  var cells = [];
+  for (var c = 0; c < width; c++) {
+    var v = rowValues[c];
+    if (v === "" || v === null || v === undefined) continue;
+    cells.push({ columnIndex: c, rawValue: String(v) });
+  }
+  if (cells.length === 0) {
+    // Dòng vừa bị xoá trắng HOÀN TOÀN (mọi ô A..AH đều rỗng) — báo app tự xoá record tương
+    // ứng (thêm 2026-08-31, theo yêu cầu "row đó không còn bất cứ thông tin gì thì phần mềm
+    // tự động delete 1 dòng đó"). KHÁC hẳn onCpaReviewChange/rowsRemoved (dòng bị XOÁ HẲN
+    // khỏi Sheet, lệch số dòng những dòng sau) — đây là dòng VẪN CÒN đó nhưng nội dung rỗng.
+    UrlFetchApp.fetch("${webhookUrl}", {
+      method: "post",
+      contentType: "application/json",
+      payload: JSON.stringify({ secret: "${secret}", row: row, rowCleared: true })
+    });
+    return;
+  }
+
+  var ssn = String(sheet.getRange(row, 4).getValue() || "").split("\\n")[0].trim(); // cột D, có thể rỗng
   var payload = {
     secret: "${secret}",
-    ssn: String(ssn).split("\\n")[0].trim(),
-    columnIndex: col - 1,
-    rawValue: e.value != null ? String(e.value) : "",
-    // Số dòng thật (thêm 2026-08-15) — cần để app phân biệt đúng dòng khi nhiều dòng cùng
-    // SSN (vd gửi "Test Sheet" nhiều lần cho cùng khách với năm khác nhau, không gộp).
-    row: row
+    ssn: ssn,
+    row: row,
+    fullRowSync: true,
+    cells: cells
   };
-  // Cột B (Name) có thể gắn link tới hồ sơ gốc (vd tax.agentc3.com) — gửi kèm link hiện tại
-  // mỗi khi cột này được sửa, để app không làm mất link lúc đồng bộ ngược lại Sheet.
-  if (col === 2) {
-    payload.nameLink = e.range.getRichTextValue().getLinkUrl() || "";
-  }
+  // Cột B (Name) có thể gắn link tới hồ sơ gốc (vd tax.agentc3.com) — luôn gửi kèm link hiện
+  // tại (nếu có) mỗi lần đồng bộ dòng, để app không làm mất link lúc đẩy ngược lại Sheet.
+  var nameLink = sheet.getRange(row, 2).getRichTextValue().getLinkUrl();
+  if (nameLink) payload.nameLink = nameLink;
   UrlFetchApp.fetch("${webhookUrl}", {
     method: "post",
     contentType: "application/json",

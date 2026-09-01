@@ -37,7 +37,11 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/cpa-re
       const existing = await prisma.cpaReviewRecord.findUnique({ where: { id }, select: { custom: true } });
       const existingCustom = (existing?.custom as Record<string, unknown>) ?? {};
       const incomingCustom = value as Record<string, unknown>;
-      const merged = { ...existingCustom, ...incomingCustom };
+      // "__syncedFrom" — đánh dấu lần ghi này tới từ APP (thêm 2026-08-31), để webhook
+      // Sheet→App phân biệt được "app vừa ghi thật" (cần chặn theo nguyên tắc App luôn thắng)
+      // với "chính webhook Sheet vừa ghi trước đó vài giây" (KHÔNG chặn — xem isSourcedFromApp
+      // trong webhook route.ts).
+      const merged: Record<string, unknown> = { ...existingCustom, ...incomingCustom, __syncedFrom: "app" };
       data.custom = merged as Prisma.InputJsonValue;
       changedYearStatuses = extractChangedYearStatuses(incomingCustom);
       mergedSsn = typeof merged.ssn === "string" ? merged.ssn : "";

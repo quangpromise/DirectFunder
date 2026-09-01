@@ -25,6 +25,17 @@ function isRecentlyUpdatedByApp(updatedAt: Date): boolean {
   return Date.now() - updatedAt.getTime() < APP_WINS_GRACE_MS;
 }
 
+/** Field nội bộ đánh dấu LẦN GHI GẦN NHẤT tới từ đâu — "app" (PATCH /api/cpa-review/[id]) hay
+ * "sheet" (chính webhook này) — thêm 2026-08-31, sửa bug thật gặp lúc tự test: `onCpaReviewEdit`
+ * giờ gửi lại TOÀN BỘ dòng ở MỌI lần sửa (không chỉ 1 ô), nên gõ liên tiếp nhiều ô trong Sheet
+ * (vd Name rồi Phone rồi SSN trong vài giây, cách nhập tay bình thường) khiến lượt gửi SAU tự
+ * bị `isRecentlyUpdatedByApp` chặn nhầm — hàm đó chỉ nhìn THỜI GIAN, không phân biệt được
+ * "app vừa ghi" với "chính webhook này vừa ghi trước đó vài giây". Không leak ra Sheet (chỉ
+ * `CPA_REVIEW_SHEET_COLUMN_MAP` mới được ghi lên Sheet) hay UI (chỉ đọc field có tên cụ thể). */
+function isSourcedFromApp(custom: unknown): boolean {
+  return Boolean(custom && typeof custom === "object" && (custom as Record<string, unknown>).__syncedFrom === "app");
+}
+
 /**
  * Webhook nhận thay đổi TỪ Google Sheet (Apps Script `onEdit`/`syncCpaReviewNotes`) — public
  * route (Apps Script không có session cookie), xác thực bằng `secret` sinh ngẫu nhiên lúc
@@ -132,6 +143,115 @@ export async function POST(request: NextRequest) {
       await broadcastCpaReviewChanged(r.id, null);
     }
     return NextResponse.json({ ok: true, deleted: missing.length });
+  }
+
+  // Dòng VẪN CÒN trên Sheet (không bị xoá hẳn — khác `rowsRemoved` ở trên) nhưng nội dung đã
+  // bị xoá TRẮNG HOÀN TOÀN (mọi ô A..AH rỗng) — Apps Script `onCpaReviewEdit` báo qua tín hiệu
+  // này (thêm 2026-08-31, theo yêu cầu "row đó không còn bất cứ thông tin gì thì phần mềm tự
+  // động delete 1 dòng đó"). Chỉ khớp qua SỐ DÒNG (rowIndex cache) — không có SSN nào để dò
+  // (mọi ô đã rỗng), record chưa từng khớp dòng nào (chưa cache) thì không có gì để xoá.
+  if (body?.rowCleared === true) {
+    const clearedRow = typeof body.row === "number" ? body.row : Number(body.row);
+    if (!Number.isFinite(clearedRow)) {
+      return NextResponse.json({ error: "Payload không hợp lệ" }, { status: 400 });
+    }
+    const cachedKey = findRowIndexKeyByRow(sheetConfig.rowIndex, clearedRow);
+    if (!cachedKey) return NextResponse.json({ ok: true, skipped: "row_not_tracked" });
+    const existing = await prisma.cpaReviewRecord.findUnique({ where: { id: cachedKey } });
+    if (!existing) return NextResponse.json({ ok: true, skipped: "record_not_found" });
+    // "App luôn thắng" — chỉ chặn nếu lần ghi gần nhất THẬT SỰ tới từ app (cùng cơ chế
+    // isSourcedFromApp ở nhánh fullRowSync bên dưới).
+    if (isSourcedFromApp(existing.custom) && isRecentlyUpdatedByApp(existing.updatedAt)) {
+      return NextResponse.json({ ok: true, skipped: "app_wins_recent_update" });
+    }
+    await prisma.cpaReviewRecord.delete({ where: { id: cachedKey } });
+    const nextRowIndex = { ...sheetConfig.rowIndex };
+    delete nextRowIndex[cachedKey];
+    await saveCpaReviewSheetConfigMap({ ...configMap, [month]: { ...sheetConfig, rowIndex: nextRowIndex } });
+    await broadcastCpaReviewChanged(cachedKey, null);
+    return NextResponse.json({ ok: true, deleted: cachedKey });
+  }
+
+  // Bù đầy đủ dữ liệu 1 dòng mỗi lần Apps Script `onCpaReviewEdit` chạy — GỬI TOÀN BỘ dòng
+  // (không chỉ đúng 1 ô vừa sửa), KHÔNG bắt buộc phải có SSN (bỏ yêu cầu này 2026-08-31, theo
+  // yêu cầu "không cần phải có SSN ở GGS mới đồng bộ lên phần mềm, mà cột nào có thông tin
+  // cũng phải đồng bộ") — trước đây chỉ gửi đúng ô vừa sửa VÀ bắt buộc dòng phải có SSN,
+  // khiến gõ Name/Phone/... trước khi có SSN bị bỏ qua âm thầm, mất dữ liệu (lỗi thật báo
+  // trên production). Định danh dòng ưu tiên qua SỐ DÒNG THẬT (row, luôn có mặt vì Apps
+  // Script luôn gửi kèm) — chỉ fallback qua SSN nếu có VÀ chưa từng cache theo dòng (record cũ
+  // từ trước khi có cơ chế cache dòng, hoặc dòng bị chèn/xoá làm lệch số).
+  if (body?.fullRowSync === true && Array.isArray(body?.cells)) {
+    const fullRowSsn = typeof body.ssn === "string" ? body.ssn.trim() : "";
+    const fullRowSheetRow = typeof body.row === "number" ? body.row : Number(body.row);
+    const hasFullRowSheetRow = Number.isFinite(fullRowSheetRow);
+    if (!fullRowSsn && !hasFullRowSheetRow) {
+      // Không có gì để định danh dòng (cả SSN lẫn số dòng đều thiếu) — payload hỏng/quá cũ.
+      return NextResponse.json({ error: "Payload không hợp lệ" }, { status: 400 });
+    }
+    const crmSourceOptions = await getCrmSourceOptions();
+    const merged: Record<string, unknown> = {};
+    for (const raw of body.cells as unknown[]) {
+      const cell = raw as { columnIndex?: unknown; rawValue?: unknown };
+      const cellColumnIndex = typeof cell.columnIndex === "number" ? cell.columnIndex : Number(cell.columnIndex);
+      const cellRawValue = typeof cell.rawValue === "string" ? cell.rawValue : "";
+      if (!Number.isFinite(cellColumnIndex)) continue;
+      const patch = sheetChangeToPatch({ columnIndex: cellColumnIndex, rawValue: cellRawValue }, sheetConfig.nameToUserId, crmSourceOptions);
+      if (patch) merged[patch.key] = patch.value;
+    }
+    merged.__syncedFrom = "sheet";
+
+    const rows = await prisma.cpaReviewRecord.findMany({ where: { month } });
+    const cachedKey = hasFullRowSheetRow ? findRowIndexKeyByRow(sheetConfig.rowIndex, fullRowSheetRow) : undefined;
+    const existing =
+      (cachedKey ? rows.find((r) => r.id === cachedKey) : undefined) ??
+      (fullRowSsn
+        ? rows.find((r) => {
+            const custom = r.custom as Record<string, unknown>;
+            return typeof custom.ssn === "string" && custom.ssn.trim() === fullRowSsn;
+          })
+        : undefined);
+
+    if (!existing) {
+      const created = await prisma.cpaReviewRecord.create({
+        data: { custom: merged as Prisma.InputJsonValue, sortOrder: -Date.now(), month },
+      });
+      if (hasFullRowSheetRow) {
+        await saveCpaReviewSheetConfigMap({
+          ...configMap,
+          [month]: { ...sheetConfig, rowIndex: { ...sheetConfig.rowIndex, [created.id]: fullRowSheetRow } },
+        });
+      }
+      const changedYearStatuses = extractChangedYearStatuses(merged);
+      if (changedYearStatuses.length > 0 && fullRowSsn) after(() => syncCpaReviewStatusToCase(fullRowSsn, changedYearStatuses));
+      await broadcastCpaReviewChanged(created.id, null);
+      return NextResponse.json({ ok: true, created: created.id });
+    }
+
+    // Chỉ chặn nếu lần ghi GẦN NHẤT thật sự tới từ APP (không phải chính webhook này ghi lúc
+    // trước — xem isSourcedFromApp) — tránh tự chặn nhầm khi người dùng gõ liên tiếp nhiều ô
+    // trong Sheet (mỗi lần đều gửi lại toàn dòng, có thể cách nhau chưa tới 5 giây).
+    if (isSourcedFromApp(existing.custom) && isRecentlyUpdatedByApp(existing.updatedAt)) {
+      return NextResponse.json({ ok: true, skipped: "app_wins_recent_update" });
+    }
+    const updated = await prisma.cpaReviewRecord.update({
+      where: { id: existing.id },
+      data: { custom: { ...((existing.custom as Record<string, unknown>) ?? {}), ...merged } as Prisma.InputJsonValue },
+    });
+    if (hasFullRowSheetRow && sheetConfig.rowIndex[existing.id] !== fullRowSheetRow) {
+      await saveCpaReviewSheetConfigMap({
+        ...configMap,
+        [month]: { ...sheetConfig, rowIndex: { ...sheetConfig.rowIndex, [existing.id]: fullRowSheetRow } },
+      });
+    }
+    const changedYearStatuses = extractChangedYearStatuses(merged);
+    // Dùng SSN đã lưu SAU KHI merge (có thể đã có sẵn từ trước dù payload lần này rỗng SSN)
+    // thay vì chỉ tin `fullRowSsn` của riêng payload này — record có thể đã có SSN từ 1 lần
+    // sửa trước đó.
+    const updatedCustom = updated.custom as Record<string, unknown>;
+    const ssnForCaseSync = typeof updatedCustom.ssn === "string" ? updatedCustom.ssn.trim() : fullRowSsn;
+    if (changedYearStatuses.length > 0 && ssnForCaseSync) after(() => syncCpaReviewStatusToCase(ssnForCaseSync, changedYearStatuses));
+    await broadcastCpaReviewChanged(updated.id, null);
+    return NextResponse.json({ ok: true, updatedAt: updated.updatedAt.toISOString() });
   }
 
   const ssn = typeof body?.ssn === "string" ? body.ssn.trim() : "";

@@ -999,6 +999,68 @@ tự dựng qua `formatToParts()`. Chữ ký hàm giữ nguyên (`buildMonthYear
 nếu server chạy giờ UTC), mốc sau ra đúng "Sep26". `tsc --noEmit`/`eslint` sạch. **Không cần
 bước production nào** (thuần logic tính thời gian, không đổi schema/API) — chỉ cần deploy code.
 
+### 4.47 [CHỜ XỬ LÝ] Đồng bộ Sheet→App tab "CPA Review" viết lại — không cần SSN, gộp mọi ô 1 dòng, tự xoá khi xoá trắng (thêm 2026-08-31)
+
+Người dùng báo "khi nhập ở Google Sheet vẫn chưa nhận trên Phần mềm, Production" — debug trực
+tiếp qua webhook thật (gọi thẳng `POST /api/cpa-review-sheet/webhook` với đúng secret production,
+tạo record thành công) xác nhận ROUTE hoạt động đúng, vấn đề nằm ở logic CŨ của
+`onCpaReviewEdit` (Apps Script): `if (row < 4) return;` rồi `var ssn = ...; if (!ssn) return;` —
+**bắt buộc dòng phải có SSN (cột D) mới gửi bất cứ gì**, và MỖI LẦN CHỈ GỬI ĐÚNG 1 Ô vừa sửa
+(không phải cả dòng). Hệ quả: gõ Name/Phone/... TRƯỚC KHI gõ SSN bị bỏ qua âm thầm, mất hẳn
+(không lỗi, không có gì để biết) — đúng nguyên nhân người dùng báo. Đã viết lại toàn bộ theo 3
+yêu cầu liên tiếp cùng ngày:
+
+1. **Bỏ hẳn yêu cầu bắt buộc SSN** ("không cần phải có SSN ở GGS mới đồng bộ lên phần mềm, mà
+   cột nào có thông tin cũng phải đồng bộ") — `onCpaReviewEdit` giờ LUÔN quét lại TOÀN BỘ dòng
+   (A..AH) và gửi payload MỚI `{secret, ssn, row, fullRowSync: true, cells: [{columnIndex,
+   rawValue}, ...]}` ở MỌI lần sửa 1 ô bất kỳ trong dòng (row >= 4), không riêng cột SSN. Webhook
+   (nhánh `fullRowSync` mới trong `cpa-review-sheet/webhook/route.ts`) định danh dòng ưu tiên
+   qua SỐ DÒNG THẬT (`row`, luôn có mặt) — chỉ fallback qua SSN nếu có. Record mới có thể tạo
+   ra HOÀN TOÀN không có `custom.ssn` (chỉ có Name/Phone/...) — hợp lệ, `custom` là JSON tự do.
+2. **Bug tự phát hiện khi verify bước 1**: gõ liên tiếp nhiều ô trong vài giây (cách nhập tay
+   bình thường — Name rồi Phone rồi SSN) khiến lượt gửi SAU bị chính cơ chế "App luôn thắng"
+   (`isRecentlyUpdatedByApp`, mục 4.22) TỰ CHẶN NHẦM — hàm đó chỉ nhìn THỜI GIAN ghi gần nhất,
+   không phân biệt được "app vừa ghi thật" (PATCH /api/cpa-review/[id]) với "chính webhook Sheet
+   này vừa ghi trước đó vài giây" (do giờ MỌI edit đều gửi lại cả dòng, tần suất webhook ghi cao
+   hơn hẳn trước). Sửa bằng field nội bộ `custom.__syncedFrom` ("app" hoặc "sheet", không leak ra
+   Sheet/UI vì cả 2 chỉ đọc field có tên cụ thể) — gắn "app" ở `PATCH /api/cpa-review/[id]` và
+   `POST /api/cases/[id]/test-cpa-review-sheet` (Test Sheet), gắn "sheet" ở nhánh `fullRowSync`
+   — "App luôn thắng" giờ CHỈ chặn nếu lần ghi gần nhất thật sự đến từ "app".
+3. **Tự xoá record khi Sheet xoá trắng 1 dòng** ("row đó không còn bất cứ thông tin gì thì phần
+   mềm tự động delete 1 dòng đó") — KHÁC `rowsRemoved`/`onCpaReviewChange` đã có (dòng bị XOÁ
+   HẲN khỏi Sheet, lệch số dòng các dòng sau): đây là dòng VẪN CÒN vị trí trên Sheet nhưng nội
+   dung A..AH đều rỗng (bôi đen xoá hết nội dung, không xoá dòng). `onCpaReviewEdit` phát hiện
+   `cells.length === 0` → gửi tín hiệu riêng `{secret, row, rowCleared: true}` — webhook (nhánh
+   `rowCleared` mới) khớp record qua `rowIndex` cache theo số dòng rồi xoá thật.
+
+**Đã tự kiểm tra đầy đủ qua webhook thật (dev server + DB thật, tháng test riêng `2099-01` để
+không đụng dữ liệu thật)**: (a) gõ Name không SSN → tạo đúng record chỉ có Name; (b) gọi 3 lần
+LIÊN TIẾP (Name → +Phone → +SSN, cách nhau không tới 1 giây) → đúng 1 record duy nhất, cập nhật
+đủ cả 3 lần (không bị "app_wins" chặn nhầm lần 2/3); (c) gửi `rowCleared: true` → record bị xoá
+đúng, còn 0 record. `tsc --noEmit`/`eslint` sạch.
+
+**QUAN TRỌNG — mọi Sheet ĐÃ kết nối trước bản sửa này phải dán lại script mới** (giống gotcha
+đã ghi ở mục 4.22 "onEdit là simple trigger" trước đó) — script cũ vẫn gửi payload dạng CŨ (1 ô,
+bắt buộc SSN), không có 2 tính năng mới. Cách lấy lại: tab CPA Review → chọn đúng tháng → nút
+"Hướng dẫn" → "Copy script" → dán ĐÈ vào Apps Script của đúng Sheet đó → Save → chọn lại
+`installCpaReviewTriggers` → Run → Allow lại (script/trigger đã đổi tên hàm nội bộ đủ nhiều lần
+qua các đợt sửa trước, nên luôn cần cài lại sau mỗi lần đổi logic `onCpaReviewEdit`).
+
+**Sau khi deploy code này lên production PHẢI làm đủ các bước sau** (xoá mục này khỏi file khi đã làm xong):
+1. Không cần `prisma migrate deploy`/script merge `AppConfig` (thuần logic webhook + Apps
+   Script, không đổi schema/feature-permission).
+2. Với Sheet tháng đang dùng thật (production), dán lại script mới theo hướng dẫn ở trên.
+3. Gõ thử Name vào 1 dòng mới KHÔNG kèm SSN → xác nhận app nhận được (tab CPA Review hiện dòng
+   mới có Name, các cột khác trống).
+4. Gõ tiếp Phone rồi SSN cho ĐÚNG dòng đó, cách nhau vài giây → xác nhận cả 2 lần đều lên app
+   (không bị mất Phone như thiết kế cũ), vẫn đúng 1 dòng (không tạo trùng).
+5. Xoá trắng toàn bộ nội dung dòng đó (bôi đen, Delete — KHÔNG xoá hẳn dòng) → xác nhận dòng
+   tương ứng biến mất khỏi tab CPA Review trong app.
+6. Sửa 1 hồ sơ ĐANG CÓ SẴN qua app (PATCH, vd đổi Status) → xác nhận Sheet vẫn cập nhật đúng
+   (App→Sheet không bị ảnh hưởng bởi thay đổi này) và KHÔNG bị ghi đè lại bởi chính echo Sheet
+   gửi về ngay sau đó (kiểm tra qua reload — giá trị giữ nguyên đúng theo app, không nhảy về gì
+   khác).
+
 Mục 2–5 bên dưới là kiến trúc/quy trình đề xuất (phần lớn đã áp dụng đúng như mô tả, trừ Auth đã nêu ở trên). Mục 6 là checklist hành động cụ thể để đưa app này lên cloud thật.
 
 ## 2. Kiến trúc đề xuất
