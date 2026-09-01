@@ -47,6 +47,31 @@ function onCpaReviewEdit(e) {
   var row = e.range.getRow();
   if (row < 4) return; // bỏ qua hàng tiêu đề/tổng (1-3)
 
+  // LOCK — gõ nhanh nhiều ô liên tiếp (vd Tab qua từng cột, hoặc paste nhiều ô cùng lúc) có
+  // thể khiến 2 lượt onEdit CHẠY CHỒNG LẤN NHAU thật sự (UrlFetchApp.fetch tốn 200-500ms+,
+  // đủ để lượt sau bắt đầu trước khi lượt trước kịp lưu xong rowIndex) — lượt sau đọc
+  // rowIndex CŨ (chưa thấy record vừa tạo ở lượt trước), tưởng dòng này chưa từng đồng bộ nên
+  // TẠO THÊM 1 record trùng cho ĐÚNG 1 dòng Sheet (bug thật báo production 2026-08-31: "input
+  // 1 row dưới Google Sheet thì phần mềm nhảy 2 row"). Khoá tuần tự hoá MỌI lượt onCpaReviewEdit
+  // của CÙNG script (không chỉ cùng dòng — đơn giản/an toàn hơn khoá theo từng dòng), đảm bảo
+  // lượt sau LUÔN thấy đúng kết quả đã lưu của lượt trước trước khi tự quyết định tạo/cập nhật.
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+  } catch (lockErr) {
+    // Không giành được khoá trong 10s (cực hiếm) — bỏ qua lượt này thay vì crash/treo Apps
+    // Script; lượt edit tiếp theo (nếu có) hoặc lần "Đồng bộ lại" thủ công sẽ tự bù lại.
+    return;
+  }
+
+  try {
+    onCpaReviewEditLocked(sheet, row);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function onCpaReviewEditLocked(sheet, row) {
   // LUÔN quét lại TOÀN BỘ dòng (A..AH) và gửi đầy đủ, KHÔNG chỉ đúng ô vừa sửa, KHÔNG đòi
   // phải có SSN mới gửi (đã bỏ yêu cầu này 2026-08-31, theo yêu cầu "không cần phải có SSN ở
   // GGS mới đồng bộ lên phần mềm, mà cột nào có thông tin cũng phải đồng bộ") — trước đây chỉ

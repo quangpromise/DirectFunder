@@ -497,14 +497,18 @@ export async function syncRecordToCpaReviewSheet(record: CpaReviewRecord): Promi
  * (lệch 1 dòng) ở lần đồng bộ tiếp theo. */
 export async function deleteRecordRowFromCpaReviewSheet(record: CpaReviewRecord): Promise<void> {
   if (!isServiceAccountConfigured()) return;
+  // SSN giờ KHÔNG còn bắt buộc (thêm 2026-08-31, xem mục 4.47 deployment-database-sync.md) —
+  // record hợp lệ có thể chỉ có Name/Phone/... không có SSN. Trước đây hàm này `return` sớm
+  // nếu thiếu SSN (bug thật gặp production: "xoá trên phần mềm vẫn chưa xoá trên Sheet"), dù
+  // `rowIndex[record.id]` (định danh CHÍNH theo số dòng, không phụ thuộc SSN) vẫn đủ để xoá
+  // đúng dòng. SSN giờ chỉ còn dùng làm fallback tra cứu khi CHƯA từng cache theo id.
   const ssn = recordSsn(record);
-  if (!ssn) return;
 
   try {
     const map = await getCpaReviewSheetConfigMap();
     const sheetConfig = map[record.month];
     if (!sheetConfig?.sheetId) return;
-    const targetRow = sheetConfig.rowIndex[record.id] ?? sheetConfig.rowIndex[ssn];
+    const targetRow = sheetConfig.rowIndex[record.id] ?? (ssn ? sheetConfig.rowIndex[ssn] : undefined);
     if (!targetRow) return;
     const sheets = getServiceAccountSheetsClient();
 

@@ -198,6 +198,15 @@ export async function POST(request: NextRequest) {
       const patch = sheetChangeToPatch({ columnIndex: cellColumnIndex, rawValue: cellRawValue }, sheetConfig.nameToUserId, crmSourceOptions);
       if (patch) merged[patch.key] = patch.value;
     }
+    // Link đính kèm ô Name (cột B) — bug thật gặp production (thêm 2026-08-31, sửa cùng lúc
+    // với việc bỏ SSN bắt buộc): nhánh fullRowSync mới THIẾU HẲN xử lý field này (chỉ nhánh
+    // single-cell CŨ, không còn Apps Script nào gửi nữa, mới có) — insert link trên Sheet
+    // không bao giờ lên app. `nameLink` chỉ có mặt trong payload khi có link (Apps Script chỉ
+    // gửi field này nếu link không rỗng — xem buildAppsScript), không có nghĩa là "gỡ link"
+    // (khác nhánh cũ) vì giờ MỌI lần sửa đều gửi lại toàn dòng chứ không riêng cột B — không
+    // gửi field = không đổi gì về link, không phải tín hiệu xoá.
+    const fullRowNameLink = typeof body?.nameLink === "string" ? body.nameLink : undefined;
+    if (fullRowNameLink) merged.nameLink = fullRowNameLink;
     merged.__syncedFrom = "sheet";
 
     const rows = await prisma.cpaReviewRecord.findMany({ where: { month } });
@@ -213,7 +222,16 @@ export async function POST(request: NextRequest) {
 
     if (!existing) {
       const created = await prisma.cpaReviewRecord.create({
-        data: { custom: merged as Prisma.InputJsonValue, sortOrder: -Date.now(), month },
+        // sortOrder = ĐÚNG số dòng Sheet (thêm 2026-08-31, theo yêu cầu "đảm bảo dữ liệu từ
+        // row 4 trở đi của sheet đều đồng bộ dữ liệu từ row 4 trở đi của Phần mềm") — trước
+        // đây dùng -Date.now() (quy ước "mới nhất lên đầu" của bảng Hồ sơ chính), khiến dòng
+        // vừa gõ trên Sheet luôn nhảy lên ĐẦU bảng app bất kể vị trí thật trên Sheet, không
+        // khớp thứ tự hiển thị. `GET /api/cpa-review` sort tăng dần theo sortOrder — dùng
+        // thẳng số dòng (4, 5, 6...) làm sortOrder khiến thứ tự app tự khớp đúng thứ tự Sheet.
+        // Record tạo qua đường khác (nút "Thêm"/"Test Sheet", chưa từng gắn dòng Sheet) vẫn
+        // giữ -Date.now() (số RẤT ÂM) nên luôn đứng TRƯỚC mọi dòng đã có số Sheet — chấp nhận
+        // được, không phải phạm vi yêu cầu này.
+        data: { custom: merged as Prisma.InputJsonValue, sortOrder: hasFullRowSheetRow ? fullRowSheetRow : -Date.now(), month },
       });
       if (hasFullRowSheetRow) {
         await saveCpaReviewSheetConfigMap({
@@ -235,7 +253,13 @@ export async function POST(request: NextRequest) {
     }
     const updated = await prisma.cpaReviewRecord.update({
       where: { id: existing.id },
-      data: { custom: { ...((existing.custom as Record<string, unknown>) ?? {}), ...merged } as Prisma.InputJsonValue },
+      data: {
+        custom: { ...((existing.custom as Record<string, unknown>) ?? {}), ...merged } as Prisma.InputJsonValue,
+        // Tự "chữa lành" sortOrder về đúng số dòng Sheet nếu record này được tạo từ đường khác
+        // (nút "Thêm"/"Test Sheet") rồi mới được gán dòng Sheet qua lần sửa này — cùng lý do
+        // sortOrder ở nhánh tạo mới bên trên.
+        ...(hasFullRowSheetRow && existing.sortOrder !== fullRowSheetRow ? { sortOrder: fullRowSheetRow } : {}),
+      },
     });
     if (hasFullRowSheetRow && sheetConfig.rowIndex[existing.id] !== fullRowSheetRow) {
       await saveCpaReviewSheetConfigMap({

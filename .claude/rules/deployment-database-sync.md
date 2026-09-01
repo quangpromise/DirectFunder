@@ -1046,20 +1046,70 @@ bắt buộc SSN), không có 2 tính năng mới. Cách lấy lại: tab CPA Re
 `installCpaReviewTriggers` → Run → Allow lại (script/trigger đã đổi tên hàm nội bộ đủ nhiều lần
 qua các đợt sửa trước, nên luôn cần cài lại sau mỗi lần đổi logic `onCpaReviewEdit`).
 
+**Bổ sung cùng ngày (2026-08-31, sau khi báo cáo bản đầu ở trên đã lên production) — 4 bug thật
+tiếp theo, sửa trong cùng 1 đợt**: người dùng báo liên tiếp "xóa trên phần mềm vẫn chưa xóa trên
+google sheet", "khi insert link dưới Google thì phần mềm vẫn chưa lấy link insert lên", "khi tôi
+input 1 row dưới google sheet thì phần mềm nhảy 2 row tương tự", và "đảm bảo dữ liệu từ row 4 trở
+đi của sheet đều đồng bộ dữ liệu từ row 4 trở đi của Phần mềm". Cả 4 đều là hệ quả trực tiếp của
+bản viết lại ở trên:
+
+1. **App→Sheet xoá không hoạt động**: `deleteRecordRowFromCpaReviewSheet()`
+   (`cpa-review-sheet-sync.ts`) có `if (!ssn) return;` NGAY ĐẦU — record giờ hợp lệ dù KHÔNG có
+   SSN (đúng thiết kế mới) nhưng hàm xoá vẫn đòi SSN mới chạy tiếp, bỏ qua âm thầm mọi record
+   không SSN. Sửa: bỏ hẳn early-return theo SSN, chỉ cần `rowIndex[record.id]` (định danh CHÍNH
+   theo số dòng) tồn tại là đủ để xoá, SSN chỉ còn là fallback tra cứu phụ.
+2. **nameLink (link chèn ở ô Name trên Sheet) không lên app**: nhánh `fullRowSync` MỚI trong
+   webhook hoàn toàn THIẾU xử lý field `nameLink` — chỉ nhánh single-cell CŨ (không còn Apps
+   Script nào gửi nữa) có xử lý này. Sửa: thêm đọc `body.nameLink` và merge vào `custom.nameLink`
+   trong nhánh `fullRowSync`.
+3. **Tạo trùng 2 record cho 1 dòng Sheet khi gõ nhanh liên tiếp nhiều ô**: race condition —
+   `UrlFetchApp.fetch()` tốn 200-500ms+, gõ nhanh (Tab qua nhiều cột, hoặc paste) khiến 2 lượt
+   `onCpaReviewEdit` chạy CHỒNG LẤN THẬT SỰ, lượt sau đọc `rowIndex` CŨ (chưa thấy record lượt
+   trước vừa lưu) nên tạo thêm 1 record trùng. Sửa: bọc toàn bộ `onCpaReviewEdit` bằng
+   `LockService.getScriptLock()` (chờ tối đa 10s) — tuần tự hoá MỌI lượt sửa của CÙNG script,
+   đảm bảo lượt sau luôn thấy đúng kết quả lượt trước.
+4. **Thứ tự dòng trong app không khớp thứ tự dòng thật trên Sheet**: record mới tạo qua
+   `fullRowSync` dùng `sortOrder: -Date.now()` (quy ước "mới nhất lên đầu" mượn từ bảng Hồ sơ
+   chính) — khiến dòng vừa gõ LUÔN nhảy lên ĐẦU app bất kể vị trí thật trên Sheet. Sửa: dùng
+   THẲNG số dòng Sheet (`fullRowSheetRow`, vd 4/5/6...) làm `sortOrder` — `GET /api/cpa-review`
+   sort tăng dần nên thứ tự app tự khớp đúng thứ tự Sheet. Áp dụng cho CẢ tạo mới lẫn cập nhật
+   (tự "chữa lành" sortOrder nếu record được tạo từ đường khác — nút "Thêm"/"Test Sheet" — rồi
+   mới được gán 1 dòng Sheet cụ thể).
+
+**Đã verify sống cả 2 (nameLink + thứ tự sortOrder)** qua webhook thật (tháng test riêng
+`2099-02`): tạo dòng ở row 10 kèm nameLink TRƯỚC, rồi tạo dòng ở row 4 SAU — record row 4 vẫn
+hiện TRƯỚC record row 10 khi sort theo sortOrder (đúng thứ tự Sheet, không phải thứ tự tạo),
+nameLink lưu đúng nguyên văn. Riêng cơ chế LockService (chỉ chạy được trong Apps Script thật,
+không mô phỏng được từ máy local) — chưa tự verify sống, chỉ dựa vào đây là pattern chính thức
+Google khuyến nghị cho đúng tình huống này. **Nếu sau khi deploy vẫn còn gặp lại 2 record trùng
+cho 1 dòng Sheet, đây là chỗ đầu tiên cần xem lại** (kiểm tra Executions log của Apps Script xem
+có request nào bị `lockErr` timeout không).
+
 **Sau khi deploy code này lên production PHẢI làm đủ các bước sau** (xoá mục này khỏi file khi đã làm xong):
 1. Không cần `prisma migrate deploy`/script merge `AppConfig` (thuần logic webhook + Apps
    Script, không đổi schema/feature-permission).
-2. Với Sheet tháng đang dùng thật (production), dán lại script mới theo hướng dẫn ở trên.
+2. Với Sheet tháng đang dùng thật (production), dán lại script mới theo hướng dẫn ở trên (script
+   đã đổi thêm lần nữa để thêm LockService — BẮT BUỘC dán lại dù đã dán 1 lần trước đó trong
+   cùng ngày).
 3. Gõ thử Name vào 1 dòng mới KHÔNG kèm SSN → xác nhận app nhận được (tab CPA Review hiện dòng
    mới có Name, các cột khác trống).
 4. Gõ tiếp Phone rồi SSN cho ĐÚNG dòng đó, cách nhau vài giây → xác nhận cả 2 lần đều lên app
    (không bị mất Phone như thiết kế cũ), vẫn đúng 1 dòng (không tạo trùng).
-5. Xoá trắng toàn bộ nội dung dòng đó (bôi đen, Delete — KHÔNG xoá hẳn dòng) → xác nhận dòng
+5. Gõ THẬT NHANH liên tiếp nhiều ô khác nhau của CÙNG 1 dòng mới (paste nhiều ô cùng lúc, hoặc
+   Tab nhanh qua từng cột) → xác nhận vẫn CHỈ đúng 1 dòng trong app (không tạo trùng 2 dòng).
+6. Xoá trắng toàn bộ nội dung dòng đó (bôi đen, Delete — KHÔNG xoá hẳn dòng) → xác nhận dòng
    tương ứng biến mất khỏi tab CPA Review trong app.
-6. Sửa 1 hồ sơ ĐANG CÓ SẴN qua app (PATCH, vd đổi Status) → xác nhận Sheet vẫn cập nhật đúng
-   (App→Sheet không bị ảnh hưởng bởi thay đổi này) và KHÔNG bị ghi đè lại bởi chính echo Sheet
-   gửi về ngay sau đó (kiểm tra qua reload — giá trị giữ nguyên đúng theo app, không nhảy về gì
-   khác).
+7. Chèn link (Insert link) vào ô Name của 1 dòng đã có SSN → xác nhận link hiện đúng lên app
+   (icon mở link cạnh tên).
+8. Xoá 1 dòng qua app (nút thùng rác) → xác nhận dòng đó cũng biến mất khỏi Sheet thật (không
+   chỉ biến mất trên app).
+9. Gõ 1 dòng mới vào Sheet ở vị trí SỚM HƠN (vd row 4) SAU KHI đã có dữ liệu ở row muộn hơn (vd
+   row 10) — xác nhận dòng row 4 hiện TRƯỚC dòng row 10 trong app (khớp đúng thứ tự Sheet, không
+   phải thứ tự gõ trước/sau).
+10. Sửa 1 hồ sơ ĐANG CÓ SẴN qua app (PATCH, vd đổi Status) → xác nhận Sheet vẫn cập nhật đúng
+    (App→Sheet không bị ảnh hưởng bởi thay đổi này) và KHÔNG bị ghi đè lại bởi chính echo Sheet
+    gửi về ngay sau đó (kiểm tra qua reload — giá trị giữ nguyên đúng theo app, không nhảy về gì
+    khác).
 
 Mục 2–5 bên dưới là kiến trúc/quy trình đề xuất (phần lớn đã áp dụng đúng như mô tả, trừ Auth đã nêu ở trên). Mục 6 là checklist hành động cụ thể để đưa app này lên cloud thật.
 
