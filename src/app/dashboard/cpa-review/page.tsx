@@ -736,7 +736,14 @@ export default function CpaReviewPage() {
                     )}
                   </div>
                 </td>
-                {CPA_REVIEW_COLUMNS.slice(0, 6).map((col) => {
+                {/* Dòng CUỐI CÙNG đang hiện — dùng để tự động thêm 1 dòng trống mới ngay khi
+                    đủ cả 6 cột A-F (thêm 2026-08-31, theo yêu cầu "khi có 1 row ở cột A đến F
+                    đang có thông tin thì nếu input trên phần mềm phải tự động xuống dòng tiếp
+                    theo") — chỉ xét dòng cuối, tránh tạo thêm dòng mới mỗi lần sửa lại 1 dòng
+                    CŨ đã đủ dữ liệu từ trước. */}
+                {(() => {
+                  const isLastRow = i === filteredRows.length - 1;
+                  return CPA_REVIEW_COLUMNS.slice(0, 6).map((col) => {
                   const isName = col.key === "name";
                   const hasLink = isName && typeof row.custom.nameLink === "string" && row.custom.nameLink;
                   return (
@@ -770,7 +777,22 @@ export default function CpaReviewPage() {
                           // tác dụng gì với các type khác (intakeDate/phone/zipcode), EditableCell
                           // tự bỏ qua nếu type !== "text". Thêm 2026-08-14.
                           multilineEdit
-                          onCommit={(v) => updateCpaReviewCell(row.id, col.key, v)}
+                          onCommit={(v) => {
+                            updateCpaReviewCell(row.id, col.key, v);
+                            // Chỉ cần 1 TRONG 6 cột A-F có dữ liệu là đủ để tự thêm dòng trống
+                            // mới bên dưới (sửa lại 2026-08-31 — bản đầu đòi ĐỦ CẢ 6 cột, theo
+                            // yêu cầu "chỉ cần 1 trong 6 cột đó có dữ liệu"). Idempotent tự
+                            // nhiên: sau khi thêm, dòng này không còn là dòng CUỐI nữa
+                            // (isLastRow tính lại từ filteredRows mới) nên không lặp lại thêm
+                            // dòng nữa dù gõ tiếp các cột còn lại của CHÍNH dòng đó.
+                            if (!isLastRow || !canAdd) return;
+                            const nextCustom = { ...row.custom, [col.key]: v } as Record<string, unknown>;
+                            const hasAny = STICKY_COLUMN_KEYS.some((k) => {
+                              const val = nextCustom[k];
+                              return val !== null && val !== undefined && String(val).trim() !== "";
+                            });
+                            if (hasAny) addCpaReviewRow();
+                          }}
                         />
                         {/* Tên khách hàng trên Sheet thật có link tới hồ sơ gốc
                             (tax.agentc3.com) — đọc được qua đồng bộ, hiện icon mở link cạnh
@@ -791,7 +813,8 @@ export default function CpaReviewPage() {
                       </div>
                     </td>
                   );
-                })}
+                  });
+                })()}
 
                 {CPA_REVIEW_VISIBLE_YEARS.map((year) => {
                   const amount = row.custom[yearAmountKey(year)];
