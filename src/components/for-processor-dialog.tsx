@@ -63,10 +63,13 @@ function groupTasksBySection(tasks: ProcessorReportTaskDef[]) {
   return Array.from(sections.values());
 }
 
-const TASK_COL_WIDTH = 220;
-const DAY_COL_WIDTH = 52;
-const WEEK_COL_WIDTH = 60;
-const ROW_TOTAL_COL_WIDTH = 64;
+// Thu nhỏ 1 chút so với bản đầu (220/52/60/64) — kết hợp với popup rộng hơn (max-w-6xl ->
+// max-w-[96vw]) để nhìn được nhiều ngày hơn trong 1 tháng mà không phải cuộn ngang liên tục
+// (thêm 2026-08-31, theo yêu cầu "điều chỉnh kích cỡ text... nhỏ lại 1 chút và mở rộng pop-up").
+const TASK_COL_WIDTH = 190;
+const DAY_COL_WIDTH = 40;
+const WEEK_COL_WIDTH = 48;
+const ROW_TOTAL_COL_WIDTH = 52;
 
 export function ForProcessorButton() {
   const user = useCurrentUser();
@@ -116,7 +119,7 @@ function ForProcessorDialog({ onClose }: { onClose: () => void }) {
 
   return createPortal(
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 px-4 py-6">
-      <div className="popover flex h-full w-full max-w-6xl flex-col rounded-2xl shadow-2xl">
+      <div className="popover flex h-full w-full max-w-[96vw] flex-col rounded-2xl shadow-2xl">
         <div className="flex items-center justify-between border-b border-border px-5 py-3">
           <div className="flex items-center gap-4">
             <h3 className="flex items-center gap-1.5 text-sm font-semibold">
@@ -210,20 +213,20 @@ function SectionRows({
       {sections.map((section, sIdx) => (
         <div key={section.sectionId} className="contents">
           <div
-            className="sticky z-10 flex items-center gap-1 border-b border-r border-border-strong bg-surface px-2 py-1.5 text-xs font-semibold text-text"
+            className="sticky z-10 flex items-center gap-1 border-b border-r border-border-strong bg-surface px-2 py-1 text-[11px] font-semibold text-text"
             style={{ left: 0 }}
           >
             {sIdx + 1} {section.sectionLabel}
           </div>
           {renderRowTotal && computeSectionRowTotal && (
-            <div className="flex items-center justify-center border-b border-r border-border-strong bg-accent-soft text-xs font-semibold text-red-400 light:text-red-600">
+            <div className="flex items-center justify-center border-b border-r border-border-strong bg-accent-soft text-[11px] font-semibold text-red-400 light:text-red-600">
               {computeSectionRowTotal(section.tasks.map((tk) => tk.id)) || ""}
             </div>
           )}
           {columns.map((col, colIndex) => (
             <div
               key={col.key}
-              className={`flex items-center justify-center border-b border-r border-border text-xs font-semibold text-red-400 light:text-red-600 ${
+              className={`flex items-center justify-center border-b border-r border-border text-[11px] font-semibold text-red-400 light:text-red-600 ${
                 colIndex === highlightColIndex ? "bg-accent-soft" : "bg-surface"
               }`}
             >
@@ -237,13 +240,13 @@ function SectionRows({
           {section.tasks.map((task) => (
             <div key={task.id} className="contents">
               <div
-                className="sticky z-10 flex items-center border-b border-r border-border bg-bg px-2 py-1.5 pl-5 text-xs italic text-text-dim"
+                className="sticky z-10 flex items-center border-b border-r border-border bg-bg px-2 py-1 pl-5 text-[11px] italic text-text-dim"
                 style={{ left: 0 }}
               >
                 <span className="truncate">{task.label}</span>
               </div>
               {renderRowTotal && (
-                <div className="flex h-full items-center justify-center border-b border-r border-border bg-accent-soft text-xs font-medium text-text">
+                <div className="flex h-full items-center justify-center border-b border-r border-border bg-accent-soft text-[11px] font-medium text-text">
                   {renderRowTotal(task.id)}
                 </div>
               )}
@@ -482,16 +485,16 @@ function ProcessorSelfReportGrid({ userId }: { userId: string }) {
       </div>
       <div className="flex-1 overflow-auto">
         <div className="grid text-sm" style={{ gridTemplateColumns }}>
-          <div className="sticky left-0 top-0 z-30 table-head-cell px-2 py-2 text-[10px] font-semibold uppercase text-table-head-text">
+          <div className="sticky left-0 top-0 z-30 table-head-cell px-2 py-1.5 text-[10px] font-semibold uppercase text-table-head-text">
             {t("processorReport.tasksHeader")}
           </div>
-          <div className="sticky top-0 z-20 flex items-center justify-center border-b border-r border-border-strong bg-accent-soft px-1 py-2 text-[10px] font-semibold text-table-head-text">
+          <div className="sticky top-0 z-20 flex items-center justify-center border-b border-r border-border-strong bg-accent-soft px-1 py-1.5 text-[10px] font-semibold text-table-head-text">
             {t("processorReport.totalHeader")}
           </div>
           {columns.map((col, colIndex) => (
             <div
               key={col.key}
-              className={`sticky top-0 z-20 flex items-center justify-center border-b border-r border-border-strong px-1 py-2 text-[10px] font-semibold text-table-head-text ${
+              className={`sticky top-0 z-20 flex items-center justify-center border-b border-r border-border-strong px-1 py-1.5 text-[10px] font-semibold text-table-head-text ${
                 colIndex === todayColIndex
                   ? "bg-accent text-white"
                   : col.kind === "week"
@@ -518,7 +521,7 @@ function ProcessorSelfReportGrid({ userId }: { userId: string }) {
               const col = columns[colIndex];
               if (col.kind === "week") {
                 return (
-                  <div className="flex h-full items-center justify-center bg-surface text-xs font-medium text-text-dim">
+                  <div className="flex h-full items-center justify-center bg-surface text-[11px] font-medium text-text-dim">
                     {weekValue(taskId, col.weekIndex!) || ""}
                   </div>
                 );
@@ -534,7 +537,7 @@ function ProcessorSelfReportGrid({ userId }: { userId: string }) {
                     const next = Number(e.target.value) || 0;
                     if (next !== value) upsertEntry(taskId, col.date!, next);
                   }}
-                  className="h-full w-full bg-transparent px-1 text-center text-xs outline-none focus:bg-accent-soft"
+                  className="no-spinner h-full w-full bg-transparent px-1 text-center text-[11px] outline-none focus:bg-accent-soft"
                 />
               );
             }}
@@ -941,18 +944,18 @@ function ProcessorLeaderReportGrid() {
       </div>
       <div className="flex-1 overflow-auto">
         <div className="grid text-sm" style={{ gridTemplateColumns }}>
-          <div className="sticky left-0 top-0 z-30 table-head-cell px-2 py-2 text-[10px] font-semibold uppercase text-table-head-text">
+          <div className="sticky left-0 top-0 z-30 table-head-cell px-2 py-1.5 text-[10px] font-semibold uppercase text-table-head-text">
             {t("processorReport.tasksHeader")}
           </div>
           {processors.map((p) => (
             <div
               key={p.id}
-              className="sticky top-0 z-20 flex items-center justify-center table-head-cell px-1 py-2 text-[10px] font-semibold text-table-head-text"
+              className="sticky top-0 z-20 flex items-center justify-center table-head-cell px-1 py-1.5 text-[10px] font-semibold text-table-head-text"
             >
               {p.name}
             </div>
           ))}
-          <div className="sticky top-0 z-20 flex items-center justify-center border-b border-r border-border-strong bg-accent-soft px-1 py-2 text-[10px] font-semibold text-table-head-text">
+          <div className="sticky top-0 z-20 flex items-center justify-center border-b border-r border-border-strong bg-accent-soft px-1 py-1.5 text-[10px] font-semibold text-table-head-text">
             {t("processorReport.totalHeader")}
           </div>
 
@@ -969,7 +972,7 @@ function ProcessorLeaderReportGrid() {
               const value = col.key === "__total__" ? totalValue(taskId) : cellValue(taskId, col.key);
               return (
                 <div
-                  className={`flex h-full items-center justify-center text-xs ${
+                  className={`flex h-full items-center justify-center text-[11px] ${
                     col.key === "__total__" ? "bg-accent-soft font-medium text-text" : "text-text-dim"
                   }`}
                 >

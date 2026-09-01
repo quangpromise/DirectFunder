@@ -247,6 +247,18 @@ body {
   animation: popover-in 160ms ease-out;
 }
 
+/* Ẩn nút tăng/giảm mặc định của trình duyệt trên <input type="number"> — dùng cho bảng Report
+   trong popup "For Processor" (thêm 2026-08-31, theo yêu cầu "bỏ nút tăng giảm trong mỗi ô
+   input"), mỗi ô rất nhỏ nên spinner mặc định chiếm chỗ/gây rối mắt không cần thiết. */
+.no-spinner::-webkit-outer-spin-button,
+.no-spinner::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.no-spinner {
+  -moz-appearance: textfield;
+}
+
 /* Thanh trượt cho progress bar KHÔNG xác định % thật (chỉ báo "đang chạy", dùng cho các hành
    động gửi/upload chỉ có 1 lần request-response, không đo được tiến độ thật) — dùng cho
    SendingProgressToast (thêm 2026-08-24). */

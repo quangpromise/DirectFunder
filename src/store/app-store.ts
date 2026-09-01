@@ -769,9 +769,21 @@ export const useAppStore = create<AppState>()(
       // .claude/rules/deployment-database-sync.md) — bản trong localStorage chỉ còn là
       // cache hiển thị tạm trước khi hydrate xong, luôn bị ghi đè bởi dữ liệu server.
       hydrateFromServer: async () => {
-        // Chỉ nạp ĐÚNG tháng đang chọn (persist từ phiên trước hoặc mặc định tháng hiện tại)
-        // thay vì toàn bộ lịch sử mọi tháng — xem cpaReviewLoadedMonths.
-        const initialCpaReviewMonth = get().cpaReviewSelectedMonth || currentMonthKey();
+        // Tự nhảy sang tháng hiện tại (giờ Phoenix, xem currentMonthKey) nếu tháng đã persist
+        // từ phiên trước (localStorage) đã LỖI THỜI (nhỏ hơn tháng thật hiện tại) — thêm
+        // 2026-08-31, theo yêu cầu "tự nhảy sang tháng mới theo giờ hệ thống". Trước đây tháng
+        // đang chọn chỉ được set 1 LẦN lúc tạo store (initial state) rồi persist mãi mãi —
+        // sang tháng mới mà KHÔNG đóng hẳn tab/xoá localStorage thì Report/CPA Review vẫn kẹt
+        // ở tháng cũ dù hydrate lại nhiều lần. CHỈ nhảy TỚI nếu tháng cũ đứng TRƯỚC tháng thật
+        // (so sánh chuỗi "YYYY-MM" theo thứ tự chữ cái = đúng thứ tự thời gian) — giữ nguyên
+        // nếu người dùng đang CHỦ Ý xem tháng tương lai (không tự nhảy lùi).
+        const nowMonth = currentMonthKey();
+        const initialCpaReviewMonth =
+          get().cpaReviewSelectedMonth && get().cpaReviewSelectedMonth >= nowMonth ? get().cpaReviewSelectedMonth : nowMonth;
+        const nextProcessorReportMonth =
+          get().processorReportSelectedMonth && get().processorReportSelectedMonth >= nowMonth
+            ? get().processorReportSelectedMonth
+            : nowMonth;
         const [users, cases, config, rules, collectingRecords, cpaReviewRecords, notifications, editHistory, deletionHistory] =
           await Promise.all([
           api.listUsers(),
@@ -817,6 +829,8 @@ export const useAppStore = create<AppState>()(
           rules,
           collectingRecords,
           cpaReviewRecords,
+          cpaReviewSelectedMonth: initialCpaReviewMonth,
+          processorReportSelectedMonth: nextProcessorReportMonth,
           cpaReviewLoadedMonths: [initialCpaReviewMonth],
           notifications,
           editHistory,
