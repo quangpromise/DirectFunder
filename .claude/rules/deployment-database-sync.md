@@ -972,6 +972,33 @@ trở lại + persist qua reload. `tsc --noEmit`/`eslint` sạch.
 5. Đăng nhập bằng tài khoản KHÔNG phải manager → xác nhận KHÔNG thấy nút "Ẩn/hiện nút" trên trang
    Phân quyền (dialog chỉ hiện với manager, cùng gate với 3 dialog cấu hình khác trên trang đó).
 
+### 4.46 Fix "Send to Google Sheet"/mail CPA + "Test Sheet" trỏ nhầm tháng gần nửa đêm giờ Phoenix (thêm 2026-08-30)
+
+Người dùng báo "hiện tại hệ thống đang tháng 8 nhưng mai đã là Sep, send row to google sheet
+hệ thống vẫn tháng 8 nhưng đã sent đến row tháng 9". Nguyên nhân: `buildMonthYear()`
+(`src/lib/month-year.ts`, dùng cho tên tab Google Sheet + token `{monthYear}` trong mail CPA)
+và `currentMonthKey()` (`src/lib/cpa-review-month.ts`, dùng cho route `test-cpa-review-sheet`
+xác định THÁNG NÀO của tab "CPA Review" sẽ nhận dòng mới) đều gọi trực tiếp
+`now.getFullYear()`/`now.toLocaleString()`/`toMonthKey(new Date())` — các hàm này đọc theo múi
+giờ MÔI TRƯỜNG CHẠY, mà cả 2 hàm đều được gọi Ở SERVER (route `send-to-sheet`, `cpa-email-
+template.ts`, `test-cpa-review-sheet`, chạy trên Vercel = giờ UTC), không phải múi giờ nghiệp
+vụ Phoenix (UTC-7, không DST) của công ty. Khoảng 17h-24h giờ Phoenix MỖI NGÀY, UTC đã sang
+ngày/tháng mới trước đó ~7 tiếng — đúng khung giờ này, "Test Sheet" tạo dòng CPA Review vào
+SAI tháng (tháng sau), và "Send to Google Sheet"/mail CPA trỏ nhầm sang tab tháng sau, dù
+"hôm nay" thực tế của công ty vẫn thuộc tháng cũ.
+
+**Cách sửa**: cả 2 hàm đổi sang tính theo giờ Phoenix tường minh qua `Intl.DateTimeFormat`
+(`timeZone: "America/Phoenix"`) — `currentMonthKey()` tái dùng `toPhoenixDateStr()`
+(`report-period.ts`, cùng cơ chế `todayIsoDate()` đã dùng cho cột "Ngày gửi"), `buildMonthYear()`
+tự dựng qua `formatToParts()`. Chữ ký hàm giữ nguyên (`buildMonthYear(now: Date)`,
+`currentMonthKey(): string`) — chỉ đổi cách đọc bên trong, không cần sửa nơi gọi.
+
+**Đã verify sống**: truyền thẳng 2 mốc UTC quanh ranh giới nửa đêm Phoenix
+(`2026-09-01T06:59:00Z` = 31/08 23:59 Phoenix, `2026-09-01T07:01:00Z` = 01/09 00:01 Phoenix) vào
+`buildMonthYear()` — mốc đầu ra đúng "Aug26" (KHÔNG còn nhảy sang "Sep26" như code cũ sẽ làm
+nếu server chạy giờ UTC), mốc sau ra đúng "Sep26". `tsc --noEmit`/`eslint` sạch. **Không cần
+bước production nào** (thuần logic tính thời gian, không đổi schema/API) — chỉ cần deploy code.
+
 Mục 2–5 bên dưới là kiến trúc/quy trình đề xuất (phần lớn đã áp dụng đúng như mô tả, trừ Auth đã nêu ở trên). Mục 6 là checklist hành động cụ thể để đưa app này lên cloud thật.
 
 ## 2. Kiến trúc đề xuất

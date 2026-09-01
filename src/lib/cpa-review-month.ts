@@ -2,10 +2,20 @@
  * `AppConfig.cpaReviewSheetConfig[monthKey]` — mỗi tháng 1 bảng dữ liệu/kết nối Sheet riêng
  * (thêm 2026-08-14, yêu cầu "chọn tháng nào sẽ ra bảng của tháng đó"). */
 
+import { toPhoenixDateStr } from "@/lib/report-period";
+
 const MONTH_KEY_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
 
+/** LUÔN tính theo giờ Phoenix (múi giờ nghiệp vụ công ty), KHÔNG dùng giờ hệ điều hành —
+ * lỗi thật gặp trên production (thêm 2026-08-30): hàm này gọi cả ở SERVER (route
+ * `test-cpa-review-sheet`, chạy trên Vercel = giờ UTC) lẫn client. Gần nửa đêm giờ Phoenix
+ * (UTC-7, không có DST) — vd 17h-24h giờ Phoenix mỗi ngày — UTC đã sang NGÀY/THÁNG MỚI
+ * trước đó ~7 tiếng, khiến "Test Sheet" tạo dòng CPA Review vào SAI tháng (tháng sau) dù
+ * "hôm nay" thực tế của công ty vẫn còn thuộc tháng cũ — đúng triệu chứng người dùng báo
+ * ("hệ thống vẫn tháng 8 nhưng đã sent đến row tháng 9"). Cùng cách khắc phục đã dùng cho
+ * `todayIsoDate()` (date-format.ts). */
 export function currentMonthKey(): string {
-  return toMonthKey(new Date());
+  return toPhoenixDateStr(new Date()).slice(0, 7);
 }
 
 export function toMonthKey(date: Date): string {
