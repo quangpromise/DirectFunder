@@ -1,7 +1,7 @@
 import { google } from "googleapis";
 import { prisma } from "./prisma";
 import { getServiceAccountSheetsClient, isServiceAccountConfigured } from "./google-service-account";
-import { ensureRowExists, writeCells, writeCellNotes, centerAlignRow, mapSheetsError, type CellWrite } from "./google-sheets";
+import { ensureRowExists, writeCells, writeCellNotes, centerAlignRow, leftAlignColumn, mapSheetsError, type CellWrite } from "./google-sheets";
 import {
   buildCpaReviewSheetCells,
   buildCpaReviewSheetNotes,
@@ -430,6 +430,10 @@ async function pushRecordToSheet(
   if (appendedRow !== undefined) {
     await centerAlignRow(sheets, config.sheetId, Number(config.gid), targetRow, FULL_ROW_LAST_COL);
   }
+  // Cột Name luôn căn TRÁI (yêu cầu 2026-08-31) — ghi đè lại NGAY SAU `centerAlignRow` (chỉ
+  // chạy cho dòng mới) VÀ cho cả dòng có sẵn (dòng cũ có thể đã bị căn giữa từ trước khi có
+  // yêu cầu này), nên gọi ở đây, ngoài nhánh `if (appendedRow !== undefined)`.
+  await leftAlignColumn(sheets, config.sheetId, Number(config.gid), targetRow, NAME_COLUMN_INDEX);
   // Chỉ tốn thêm 1 lệnh batchUpdate ghi Note khi thật sự có liên quan tới ghi chú (record có
   // Note hoặc lần lưu này đụng tới field ghi chú) — tránh gọi API thừa mỗi lần sửa 1 ô KHÔNG
   // liên quan gì tới Note (vd chỉ đổi Status).

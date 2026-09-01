@@ -1111,6 +1111,44 @@ có request nào bị `lockErr` timeout không).
     gửi về ngay sau đó (kiểm tra qua reload — giá trị giữ nguyên đúng theo app, không nhảy về gì
     khác).
 
+**Bổ sung cùng ngày (2026-08-31, sau khi báo cáo 4 bug ở trên đã lên production) — 2 thay đổi
+nữa, không liên quan schema/webhook**:
+
+1. **Đã THỬ RỒI GỠ BỎ tính năng "tự thêm dòng mới khi gõ vào dòng cuối bảng CPA Review trên
+   app"** — từng thêm (Admin/user gõ vào 1 trong 6 cột A-F của dòng cuối cùng tự động tạo thêm
+   1 dòng trống kế tiếp, giống hành vi Excel) nhưng người dùng báo bug "nhập dòng 4 trên app
+   thì Sheet lại nhảy ở dòng 5 và app tự tạo thêm 1 dòng 5 trống" ngay sau khi tính năng lên
+   production. Điều tra kỹ (kiểm tra `pushRecordToSheet`/`syncRecordToCpaReviewSheet`/DB thật)
+   không chứng minh được cơ chế chính xác gây ra bug (record trống không SSN vốn không bao giờ
+   được đẩy lên Sheet theo code hiện tại — `syncRecordToCpaReviewSheet` vẫn còn early-return
+   theo SSN, KHÁC `deleteRecordRowFromCpaReviewSheet` đã bỏ gate này ở mục sửa trước đó — nên
+   giả thuyết ban đầu "dòng trống tranh dòng Sheet" không thực sự khớp), nhưng theo yêu cầu rõ
+   ràng của người dùng ("không tự thêm dòng, chỉ tự xuống dòng khi có dữ liệu mới từ send to
+   CPA Review") đã REVERT HẲN tính năng này khỏi `src/app/dashboard/cpa-review/page.tsx` — ô
+   nhập A-F giờ chỉ gọi `updateCpaReviewCell()`, không còn gọi `addCpaReviewRow()` kèm theo bất
+   kể gõ gì. Cơ chế tạo dòng mới cho tab CPA Review giờ CHỈ còn 2 đường: nút "Thêm" tay, và
+   "Test Sheet"/"Send to CPA Review" ở bảng Hồ sơ chính (route riêng, độc lập hoàn toàn, không
+   dùng chung logic này) — không đụng gì tới `syncRecordToCpaReviewSheet` (vẫn giữ nguyên gate
+   SSN, không phải phần thay đổi trong đợt này).
+2. **Cột Name khi đẩy App→Sheet đổi từ căn giữa sang căn TRÁI** ("cột Name khi đẩy xuống google
+   sheet nên Left column chứ ko center column") — `centerAlignRow()` (chỉ chạy cho dòng MỚI)
+   vẫn giữ nguyên căn giữa CẢ dòng như cũ, nhưng thêm hàm mới `leftAlignColumn()`
+   (`src/lib/google-sheets.ts`) gọi NGAY SAU đó trong `pushRecordToSheet()`
+   (`cpa-review-sheet-sync.ts`) để ghi đè lại riêng cột Name (cột B, `NAME_COLUMN_INDEX`) thành
+   căn trái — áp dụng cho **MỌI lần ghi** (không chỉ dòng mới), vì dòng có sẵn cũng có thể đã bị
+   căn giữa từ trước khi có yêu cầu này (mục 4.16 phần centerAlignRow, thêm 2026-08-16).
+
+**Chưa verify sống qua Playwright/webhook thật** cho cả 2 thay đổi này (chỉ `tsc --noEmit`/
+`eslint` sạch) — cần xác nhận qua UI thật trước khi coi là xong hẳn.
+
+**Sau khi deploy code này lên production**: không cần `prisma migrate deploy`/script merge
+`AppConfig` (thuần logic UI + format Sheet, không đổi schema/feature-permission). Kiểm tra: (a)
+gõ vào dòng CUỐI CÙNG của bảng CPA Review trên app → xác nhận KHÔNG tự thêm dòng mới nào (chỉ
+lưu đúng ô vừa gõ); (b) "Test Sheet"/"Send to CPA Review" ở bảng Hồ sơ chính vẫn tạo dòng mới
+bình thường (không bị ảnh hưởng bởi revert); (c) sửa 1 ô Name bất kỳ trên app (hoặc thêm 1 dòng
+mới) → xác nhận ô Name tương ứng trên Sheet thật căn TRÁI, các cột khác trong cùng dòng vẫn căn
+giữa như cũ (không bị đổi theo).
+
 Mục 2–5 bên dưới là kiến trúc/quy trình đề xuất (phần lớn đã áp dụng đúng như mô tả, trừ Auth đã nêu ở trên). Mục 6 là checklist hành động cụ thể để đưa app này lên cloud thật.
 
 ## 2. Kiến trúc đề xuất

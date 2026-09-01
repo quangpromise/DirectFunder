@@ -281,6 +281,39 @@ export async function centerAlignRow(
   });
 }
 
+/** Căn TRÁI (ngang, giữ nguyên căn dọc MIDDLE) đúng 1 CỘT tại 1 dòng — dùng để ghi đè lại
+ * cột Name sau khi `centerAlignRow` đã căn giữa cả dòng (yêu cầu 2026-08-31: cột Name luôn
+ * căn trái, khác mọi cột số/ngày khác vẫn căn giữa như cũ). Áp dụng cho MỌI lần ghi (kể cả
+ * dòng có sẵn) vì dòng cũ có thể đã bị `centerAlignRow` căn giữa từ trước khi có yêu cầu này. */
+export async function leftAlignColumn(
+  sheets: ReturnType<typeof google.sheets>,
+  spreadsheetId: string,
+  gid: number,
+  row: number,
+  columnIndex: number
+): Promise<void> {
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [
+        {
+          repeatCell: {
+            range: {
+              sheetId: gid,
+              startRowIndex: row - 1,
+              endRowIndex: row,
+              startColumnIndex: columnIndex,
+              endColumnIndex: columnIndex + 1,
+            },
+            cell: { userEnteredFormat: { horizontalAlignment: "LEFT", verticalAlignment: "MIDDLE" } },
+            fields: "userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment",
+          },
+        },
+      ],
+    },
+  });
+}
+
 /** Ghi 1 nhóm ô (cùng 1 valueInputOption) vào `targetRow` — mỗi ô 1 range riêng theo đúng
  * chữ cái cột Admin đã gán, không gộp/không suy đoán vị trí liền kề. */
 async function writeCellGroup(
