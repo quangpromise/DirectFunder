@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ShieldAlert, Plus, Trash2, ExternalLink, StickyNote, FileSpreadsheet, X, Filter, EyeOff, Table2, BarChart3, Search } from "lucide-react";
+import { ShieldAlert, Trash2, ExternalLink, StickyNote, FileSpreadsheet, X, Filter, EyeOff, Table2, BarChart3, Search } from "lucide-react";
 import { CpaReviewReportView } from "@/components/cpa-review-report";
 import { digitsOnly } from "@/lib/ssn";
 import { useAppStore, useCurrentUser } from "@/store/app-store";
@@ -145,7 +145,6 @@ export default function CpaReviewPage() {
   const users = useAppStore((s) => s.users);
   const featurePermissions = useAppStore((s) => s.featurePermissions);
   const updateCpaReviewCell = useAppStore((s) => s.updateCpaReviewCell);
-  const addCpaReviewRow = useAppStore((s) => s.addCpaReviewRow);
   const deleteCpaReviewRow = useAppStore((s) => s.deleteCpaReviewRow);
   const statusOptions = useAppStore((s) => s.cpaReviewStatusOptions);
   const hiddenColumns = useAppStore((s) => s.cpaReviewHiddenColumns);
@@ -268,7 +267,12 @@ export default function CpaReviewPage() {
     );
   }
 
-  const canAdd = hasFeature(featurePermissions, "addCpaReviewRow", user.role);
+  // Nút "Thêm" (tạo dòng trống tay) đã bỏ hẳn khỏi tab này (2026-09-02, theo yêu cầu người
+  // dùng) — dòng mới CHỈ còn tạo được qua "Test Sheet"/"Send to CPA Review" ở bảng Hồ sơ
+  // chính, hoặc gõ trực tiếp trên Google Sheet đã kết nối. Feature key `addCpaReviewRow` VẪN
+  // giữ nguyên (còn gate route POST /api/cpa-review, không tự xoá để tránh phá endpoint) —
+  // chỉ không còn UI nào gọi tới `hasFeature(..., "addCpaReviewRow", ...)`/`addCpaReviewRow()`
+  // (store action) ở trang này nữa.
   const canDelete = hasFeature(featurePermissions, "deleteCpaReviewRow", user.role);
   const canManageStatus = hasFeature(featurePermissions, "manageCpaReviewSheet", user.role);
   const agentUsers = users.filter((u) => u.role === "agent" || u.role === "agent_leader");
@@ -395,15 +399,6 @@ export default function CpaReviewPage() {
               <Filter size={14} />
               {t("cpaReview.filterBtn")}
               {hasActiveFilters && <span className="h-1.5 w-1.5 rounded-full bg-accent" />}
-            </button>
-          )}
-          {view === "table" && canAdd && (
-            <button
-              onClick={addCpaReviewRow}
-              className="flex h-9 items-center gap-1.5 rounded-lg border border-dashed border-border-strong px-3 text-sm text-text-dim transition hover:bg-surface-hover hover:text-text"
-            >
-              <Plus size={14} />
-              {t("common.add")}
             </button>
           )}
         </div>
