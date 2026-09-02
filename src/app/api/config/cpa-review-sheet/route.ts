@@ -65,13 +65,13 @@ function onCpaReviewEdit(e) {
   }
 
   try {
-    onCpaReviewEditLocked(sheet, row);
+    onCpaReviewEditLocked(sheet, row, e.range.getColumn() - 1, e.range.getNumColumns());
   } finally {
     lock.releaseLock();
   }
 }
 
-function onCpaReviewEditLocked(sheet, row) {
+function onCpaReviewEditLocked(sheet, row, editedStartIdx, editedNumCols) {
   // LUÔN quét lại TOÀN BỘ dòng (A..AH) và gửi đầy đủ, KHÔNG chỉ đúng ô vừa sửa, KHÔNG đòi
   // phải có SSN mới gửi (đã bỏ yêu cầu này 2026-08-31, theo yêu cầu "không cần phải có SSN ở
   // GGS mới đồng bộ lên phần mềm, mà cột nào có thông tin cũng phải đồng bộ") — trước đây chỉ
@@ -81,13 +81,25 @@ function onCpaReviewEditLocked(sheet, row) {
   // riêng SSN nữa.
   var width = Math.min(sheet.getLastColumn(), 34); // A..AH
   var rowValues = sheet.getRange(row, 1, 1, width).getValues()[0];
+  var editedEndIdx = editedStartIdx + editedNumCols - 1;
   var cells = [];
+  var hasNonEmpty = false;
   for (var c = 0; c < width; c++) {
     var v = rowValues[c];
-    if (v === "" || v === null || v === undefined) continue;
-    cells.push({ columnIndex: c, rawValue: String(v) });
+    var isEmpty = v === "" || v === null || v === undefined;
+    if (!isEmpty) hasNonEmpty = true;
+    // Ô rỗng CHƯA TỪNG điền (nằm ngoài phạm vi ô vừa sửa lần này) vẫn bỏ qua như cũ — không
+    // có cách nào phân biệt "chưa từng điền" với "app đã có giá trị nhưng chưa kịp đẩy xuống
+    // Sheet" nếu gửi rỗng cho MỌI ô, sẽ xoá nhầm dữ liệu app đang giữ. Nhưng ô rỗng NẰM TRONG
+    // phạm vi vừa sửa (c từ editedStartIdx đến editedEndIdx, tính từ e.range — bao luôn
+    // paste/xoá nhiều ô cùng lúc) là tín hiệu người dùng CHỦ ĐỘNG xoá — PHẢI gửi (rawValue
+    // rỗng) để app xoá field tương ứng theo (bug thật báo production 2026-09-02: "Google sheet
+    // xoá date nhưng trên app không xoá" — bản trước bỏ qua MỌI ô rỗng vô điều kiện).
+    var wasJustEdited = c >= editedStartIdx && c <= editedEndIdx;
+    if (isEmpty && !wasJustEdited) continue;
+    cells.push({ columnIndex: c, rawValue: isEmpty ? "" : String(v) });
   }
-  if (cells.length === 0) {
+  if (!hasNonEmpty) {
     // Dòng vừa bị xoá trắng HOÀN TOÀN (mọi ô A..AH đều rỗng) — báo app tự xoá record tương
     // ứng (thêm 2026-08-31, theo yêu cầu "row đó không còn bất cứ thông tin gì thì phần mềm
     // tự động delete 1 dòng đó"). KHÁC hẳn onCpaReviewChange/rowsRemoved (dòng bị XOÁ HẲN

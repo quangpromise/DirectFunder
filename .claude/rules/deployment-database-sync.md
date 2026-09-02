@@ -1149,6 +1149,51 @@ bình thường (không bị ảnh hưởng bởi revert); (c) sửa 1 ô Name b
 mới) → xác nhận ô Name tương ứng trên Sheet thật căn TRÁI, các cột khác trong cùng dòng vẫn căn
 giữa như cũ (không bị đổi theo).
 
+**Bổ sung 2026-09-02 — 2 bug thật tiếp theo phát hiện khi debug live trên production (dữ liệu
+chạy thật, chỉ đọc DB để chẩn đoán, không ghi/xoá gì)**:
+
+1. **Ngày lệch 1 hôm giữa Sheet và app** (báo cáo thật: "cột date 2025 google sheet là 09/01/26
+   nhưng app là 08/31/26") — `parseSheetDate()` (`cpa-review-sheet-columns.ts`) ở nhánh fallback
+   cuối (chuỗi dạng `Date.toString()`, Apps Script trả về khi ô có định dạng số không phải
+   "Date" thuần) dùng `new Date(trimmed).getFullYear()/getMonth()/getDate()` với Ý ĐỊNH "lấy giờ
+   LOCAL để tránh lệch múi giờ" (comment cũ) — nhưng trên Vercel, "local" của Node runtime
+   CHÍNH LÀ UTC (không phải giờ Việt Nam mà Apps Script project đang chạy) → `new Date(...)` quy
+   đổi chuỗi (đã có offset GMT+07:00 nhúng sẵn) thành 1 thời điểm UTC tuyệt đối RỒI lấy lại
+   ngày/tháng/năm theo UTC đó — 00:00 giờ Việt Nam = 17:00 UTC hôm TRƯỚC, nên kết quả luôn lùi
+   lại đúng 1 ngày. Sửa triệt để: đọc thẳng ngày/tháng/năm IN RA TRONG chuỗi bằng regex
+   (`/^\w{3}\s+(\w{3})\s+(\d{1,2})\s+(\d{4})/`), không quy đổi qua bất kỳ múi giờ nào — verify
+   bằng script độc lập ép `TZ=UTC` (giống môi trường Vercel thật): bản cũ cho `2026-08-31`, bản
+   mới cho đúng `2026-09-01`.
+2. **Xoá 1 ô riêng lẻ trên Sheet không xoá theo trên app** (báo cáo thật: "google sheet xóa date
+   nhưng trên app không xóa, sau khi xóa bỏ lại cũng không thay đổi") — `onCpaReviewEditLocked`
+   (Apps Script, sinh trong `buildAppsScript()`) quét cả dòng rồi **loại bỏ MỌI ô rỗng khỏi
+   payload gửi lên**, kể cả ô VỪA bị người dùng chủ động xoá trong chính lần sửa này — thiết kế
+   này vốn để tránh gửi rỗng cho các ô "chưa từng điền" (sẽ xoá nhầm field app đang giữ nhưng
+   chưa kịp đẩy xuống Sheet), nhưng tác dụng phụ là ô vừa xoá cũng bị coi như "chưa từng điền",
+   webhook không bao giờ nhận được tín hiệu để xoá field tương ứng trong `custom`. Sửa: dùng
+   `e.range.getColumn()`/`getNumColumns()` (từ chính sự kiện `onEdit`) để biết CHÍNH XÁC cột nào
+   vừa được sửa trong lần này (bao cả paste/xoá nhiều ô cùng lúc) — ô rỗng NẰM TRONG phạm vi vừa
+   sửa vẫn được gửi (rawValue rỗng, webhook đã có sẵn logic xoá field khi nhận rawValue rỗng),
+   ô rỗng NGOÀI phạm vi đó (chưa từng điền) vẫn bị bỏ qua như cũ. Đồng thời sửa điều kiện phát
+   hiện "dòng bị xoá trắng hoàn toàn" từ `cells.length === 0` sang cờ `hasNonEmpty` riêng — vì
+   giờ `cells` có thể chứa đúng 1 phần tử rỗng (ô vừa xoá) dù cả dòng đã trống, `cells.length`
+   không còn đáng tin để phát hiện "xoá trắng cả dòng" nữa.
+
+**QUAN TRỌNG — như mọi lần đổi logic `onCpaReviewEdit`/`onCpaReviewEditLocked` trước đây, PHẢI
+dán lại script mới cho MỌI Sheet đang kết nối** (tab "Hướng dẫn" → "Copy script" → dán đè vào
+Apps Script → Save → chọn `installCpaReviewTriggers` → Run → Allow lại).
+
+**Chỉ verify được bug #1 qua script độc lập** (ép `TZ=UTC`, không cần Sheet thật) — bug #2 cần
+Apps Script thật chạy trong Google Sheet (không mô phỏng được `e.range`/`onEdit` từ máy local),
+**chưa tự verify sống**. `tsc --noEmit`/`eslint` sạch trên cả 2 file sửa.
+
+**Sau khi deploy code này lên production**: không cần `prisma migrate deploy`/script merge
+`AppConfig` (thuần logic parse ngày + Apps Script, không đổi schema/feature-permission). Kiểm
+tra: (a) gõ 1 ngày bất kỳ vào cột Date của 1 năm trên Sheet → xác nhận app hiện ĐÚNG NGÀY đó
+(không lệch 1 hôm); (b) trên 1 dòng đã có dữ liệu ở nhiều cột, xoá riêng lẻ 1 ô Date (không xoá
+cả dòng) → xác nhận field ngày tương ứng trong app cũng bị xoá theo (trống, không giữ giá trị
+cũ); (c) gõ lại giá trị mới vào đúng ô đó → xác nhận app cập nhật đúng giá trị mới đó.
+
 Mục 2–5 bên dưới là kiến trúc/quy trình đề xuất (phần lớn đã áp dụng đúng như mô tả, trừ Auth đã nêu ở trên). Mục 6 là checklist hành động cụ thể để đưa app này lên cloud thật.
 
 ## 2. Kiến trúc đề xuất

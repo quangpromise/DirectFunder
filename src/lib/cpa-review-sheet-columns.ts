@@ -176,14 +176,26 @@ function parseSheetDate(raw: string): string | null {
     return null;
   }
   // Fallback cuối: chuỗi dạng Date.toString() ("Sat Aug 15 2026 00:00:00 GMT+0700 (...)"),
-  // Apps Script trả đúng dạng này khi ô có định dạng số không phải "Date" thuần. Lấy
-  // ngày/tháng/năm theo giờ LOCAL (không dùng UTC) để tránh lệch 1 ngày qua múi giờ.
-  const d = new Date(trimmed);
-  if (!Number.isNaN(d.getTime())) {
-    const y = d.getFullYear();
-    const mo = String(d.getMonth() + 1).padStart(2, "0");
-    const da = String(d.getDate()).padStart(2, "0");
-    return `${y}-${mo}-${da}`;
+  // Apps Script trả đúng dạng này khi ô có định dạng số không phải "Date" thuần — Apps
+  // Script chạy theo múi giờ RIÊNG của project (Script's time zone, ở đây là múi giờ Việt
+  // Nam, khác server Vercel luôn chạy UTC). Bug thật gặp production 2026-09-02: bản trước
+  // dùng `new Date(trimmed).getFullYear()/getMonth()/getDate()` với ý định "lấy giờ LOCAL
+  // để tránh lệch múi giờ" — nhưng trên Vercel, "local" của Node CHÍNH LÀ UTC (không phải
+  // giờ Việt Nam), nên `new Date(...)` trước tiên quy đổi chuỗi (đã có sẵn offset GMT+07:00
+  // nhúng trong chuỗi) thành 1 thời điểm UTC tuyệt đối, RỒI lấy lại ngày/tháng/năm theo UTC
+  // đó — với ngày đầu ngày Việt Nam (00:00 GMT+7 = 17:00 UTC hôm TRƯỚC), kết quả bị lùi lại
+  // đúng 1 ngày (Sheet "09/01/26" ra app "08/31/26"). Sửa triệt để: đọc thẳng ngày/tháng/năm
+  // in ra TRONG chuỗi (`"<Thứ> <Tháng> <Ngày> <Năm> ..."`) bằng regex, không quy đổi qua bất
+  // kỳ múi giờ nào — chuỗi ngày Date.toString() luôn in đúng lịch mà Apps Script "thấy" được,
+  // bất kể server chạy múi giờ gì.
+  const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const toStringMatch = /^\w{3}\s+(\w{3})\s+(\d{1,2})\s+(\d{4})/.exec(trimmed);
+  if (toStringMatch) {
+    const monthIndex = MONTH_ABBR.indexOf(toStringMatch[1]);
+    if (monthIndex >= 0) {
+      const day = toStringMatch[2].padStart(2, "0");
+      return `${toStringMatch[3]}-${String(monthIndex + 1).padStart(2, "0")}-${day}`;
+    }
   }
   return null;
 }
