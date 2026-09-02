@@ -710,7 +710,11 @@ export interface RuleRecord {
   deletedBy: string | null;
 }
 
-export type NotificationType = "assigned" | "status_change" | "mention";
+/** "rejected" thêm 2026-09-02 — riêng cho thông báo "CPA Review: ... Status năm ... đã chuyển
+ * sang Rejected" (xem notifyProcessorOnRejectedCpaReviewStatus trong cpa-review-case-sync.ts),
+ * tách khỏi "status_change" chung chung để hiện icon cảnh báo riêng (xem NOTIF_TYPE_STYLE
+ * trong notification-bell.tsx), theo yêu cầu "đổi logo thông báo Reject thành icon cảnh báo". */
+export type NotificationType = "assigned" | "status_change" | "mention" | "rejected";
 
 export interface AppNotification {
   id: string;

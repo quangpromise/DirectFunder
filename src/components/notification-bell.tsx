@@ -2,19 +2,23 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, Volume2, VolumeX, UserPlus, RefreshCw, AtSign, X } from "lucide-react";
+import { Bell, Volume2, VolumeX, UserPlus, RefreshCw, AtSign, AlertTriangle, X } from "lucide-react";
 import { useAppStore } from "@/store/app-store";
 import { useLanguage, useT } from "@/lib/i18n";
 import { Avatar } from "@/components/avatar";
 import type { NotificationType } from "@/lib/types";
 
 /** Icon + màu badge nhỏ đè góc dưới-phải avatar (kiểu Facebook: mỗi loại thông báo có
- * 1 icon tròn màu riêng) — chỉ 3 loại NotificationType hiện có nên map trực tiếp,
- * không cần bảng cấu hình rời. */
+ * 1 icon tròn màu riêng) — map trực tiếp theo NotificationType, không cần bảng cấu hình rời.
+ * "rejected" (thêm 2026-09-02, riêng cho thông báo CPA Review chuyển Status sang Rejected —
+ * xem notifyProcessorOnRejectedCpaReviewStatus) dùng icon cảnh báo + đỏ, tách khỏi
+ * "status_change" (icon đồng bộ trung tính) theo đúng yêu cầu "đổi logo thông báo Reject
+ * thành icon cảnh báo". */
 const NOTIF_TYPE_STYLE: Record<NotificationType, { icon: typeof UserPlus; className: string }> = {
   assigned: { icon: UserPlus, className: "bg-blue-500" },
   status_change: { icon: RefreshCw, className: "bg-amber-500" },
   mention: { icon: AtSign, className: "bg-emerald-500" },
+  rejected: { icon: AlertTriangle, className: "bg-red-500" },
 };
 
 function timeAgo(iso: string, language: "vi" | "en"): string {

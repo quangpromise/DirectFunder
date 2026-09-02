@@ -150,7 +150,9 @@ export async function notifyProcessorOnRejectedCpaReviewStatus(
   for (const year of rejectedYears) {
     const notif = await prisma.notification.create({
       data: {
-        type: "status_change",
+        // "rejected" (khác "status_change" chung) — hiện icon cảnh báo riêng trong chuông
+        // thông báo (xem NOTIF_TYPE_STYLE trong notification-bell.tsx), thêm 2026-09-02.
+        type: "rejected",
         toUserId: processorUserId,
         fromUserId,
         caseId,
