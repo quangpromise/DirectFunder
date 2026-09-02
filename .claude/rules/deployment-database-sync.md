@@ -1393,6 +1393,62 @@ code. Sau khi deploy: đăng nhập 1 tài khoản bất kỳ có quyền sửa 
 Processor, đổi Status 1 năm bất kỳ sang "Rejected" → đăng nhập bằng đúng tài khoản Processor đã
 gán → xác nhận nhận được thông báo (chuông + toast nếu đang mở app) đúng nội dung năm/tên/SSN.
 
+### 4.51 [CHỜ XỬ LÝ] Bug NGHIÊM TRỌNG: sửa tab THÁNG KHÁC trong CÙNG FILE Sheet bị đồng bộ nhầm thành tháng đang kết nối (thêm 2026-09-02)
+
+Người dùng báo "thấy nhiều row lạ tự thêm ở tab CPA Review" — điều tra qua production (chỉ đọc)
+lộ ra **18 record thật** (tên/SSN khách hàng thật, không phải test) bị tạo nhầm vào tháng
+2026-09, `sortOrder` 314-333 (khớp đúng vị trí dòng THẬT trên 1 tab khác nhiều dữ liệu, không
+phải dòng 5+ liền sau row 4). Người dùng xác nhận: **các dòng này thực ra thuộc tab "Aug26"**
+(tháng 8), không phải "Sep26" (tháng 9 đang kết nối) — cùng nằm trong 1 FILE Google Sheet.
+
+**Nguyên nhân gốc**: Apps Script BOUND vào cả FILE Spreadsheet, không phải riêng 1 tab —
+`onCpaReviewEdit`/`onCpaReviewChange` (sinh ra trong `buildAppsScript()`,
+`src/app/api/config/cpa-review-sheet/route.ts`) trước đây **KHÔNG kiểm tra tên tab vừa sửa**,
+nên sửa/xoá dữ liệu ở BẤT KỲ tab nào khác trong cùng file (vd "Aug26", hay bất kỳ tab nào khác
+người dùng có thể có trong cùng file) vẫn kích hoạt trigger, gửi dữ liệu lên webhook kèm
+**secret của tháng ĐANG kết nối** (Sep26) — khiến dữ liệu tháng cũ bị ghi nhầm thành record
+tháng mới. Đây là lỗ hổng có từ RẤT LÂU (từ lúc thiết kế `onCpaReviewEdit`/`onCpaReviewChange`
+ban đầu, không phải lỗi mới phát sinh gần đây) — chỉ vừa bị phát hiện vì lần này người dùng có
+1 file Sheet chứa nhiều tab tháng khác nhau cùng lúc.
+
+**Cách vá**: thêm 1 dòng chặn NGAY ĐẦU cả 2 hàm — `onCpaReviewEdit` dùng
+`e.range.getSheet().getName() !== "${tabName}"` (có sẵn `e.range` từ sự kiện onEdit);
+`onCpaReviewChange` dùng `SpreadsheetApp.getActiveSpreadsheet().getActiveSheet().getName() !==
+"${tabName}"` (sự kiện onChange KHÔNG có `e.range`, `getActiveSheet()` là cách chuẩn Google gợi
+ý để biết tab nào vừa được thao tác lúc trigger chạy). Sửa/xoá ở tab khác giờ bị bỏ qua NGAY
+LẬP TỨC, không còn gửi gì lên webhook.
+
+**Dữ liệu bị ảnh hưởng đã dọn**: 18 record đã bị tạo nhầm (id liệt kê trong lịch sử debug, không
+lặp lại ở đây) đã **XOÁ VĨNH VIỄN** khỏi production theo yêu cầu người dùng (xác nhận rõ ràng
+trước khi xoá), chỉ giữ lại đúng 1 record thật của tháng 9 (row 4, "Tam V Dang") — `rowIndex`
+cache trong `AppConfig.cpaReviewSheetConfig["2026-09"]` cũng đã dọn theo, chỉ còn đúng 1 entry.
+**Không có script tự động nào lưu lại — đây là thao tác admin 1 lần, đã hoàn tất qua script tạm
+gọi thẳng Prisma nhắm `PROD_DATABASE_URL`, đã xoá script tạm sau khi chạy xong.**
+
+**QUAN TRỌNG — như mọi lần đổi logic `onCpaReviewEdit`/`onCpaReviewChange`, PHẢI dán lại script
+mới cho MỌI Sheet đang kết nối** (Hướng dẫn → Copy script → dán đè → Save → chạy lại
+`installCpaReviewTriggers`) — nếu không dán lại, bug này VẪN CÒN NGUYÊN (script cũ trên Sheet
+thật không tự cập nhật theo code deploy). Đặc biệt quan trọng cho người dùng này vì họ xác nhận
+có nhiều tab tháng trong cùng 1 file.
+
+**Chưa verify được qua Apps Script thật** (không có Sheet nhiều-tab thật để mô phỏng đúng kịch
+bản "sửa tab khác trong cùng file" từ môi trường này) — logic dựa trên tài liệu chính thức của
+Google về `onEdit`/`onChange` event object, rủi ro thấp nhưng NÊN người dùng tự xác nhận lại sau
+khi dán script mới: sửa thử 1 ô ở tab KHÁC "Sep26" trong cùng file → xác nhận KHÔNG có record
+mới nào xuất hiện ở tab CPA Review tháng 9. `tsc --noEmit`/`eslint` sạch.
+
+**Sau khi deploy code này lên production PHẢI làm đủ các bước sau** (xoá mục này khỏi file khi đã làm xong):
+1. Không cần `prisma migrate deploy`/script merge `AppConfig` (thuần logic Apps Script, không
+   đổi schema/feature-permission).
+2. Dán lại Apps Script mới vào MỌI Sheet CPA Review đang kết nối (ít nhất tháng 2026-09 —
+   `Sep26`), chạy lại `installCpaReviewTriggers`.
+3. Sửa thử 1 ô ở tab "Aug26" (hoặc bất kỳ tab nào khác không phải "Sep26") trong CÙNG file Sheet
+   → xác nhận KHÔNG có record mới nào xuất hiện ở tab CPA Review app cho tháng 2026-09.
+4. Sửa thử 1 ô ở đúng tab "Sep26" → xác nhận VẪN đồng bộ đúng như bình thường (không bị chặn
+   nhầm).
+5. Xoá thử 1 dòng ở tab "Aug26" → xác nhận KHÔNG có record nào ở tháng 2026-09 bị xoá theo
+   (kiểm tra `onCpaReviewChange` cũng đã chặn đúng).
+
 Mục 2–5 bên dưới là kiến trúc/quy trình đề xuất (phần lớn đã áp dụng đúng như mô tả, trừ Auth đã nêu ở trên). Mục 6 là checklist hành động cụ thể để đưa app này lên cloud thật.
 
 ## 2. Kiến trúc đề xuất

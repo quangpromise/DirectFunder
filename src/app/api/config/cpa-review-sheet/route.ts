@@ -44,6 +44,13 @@ function buildAppsScript(webhookUrl: string, secret: string, tabName: string): s
 // installCpaReviewTriggers bên dưới) thì mới chạy full authorization, gọi UrlFetchApp được.
 function onCpaReviewEdit(e) {
   var sheet = e.range.getSheet();
+  // CHỈ xử lý đúng tab đã kết nối ("${tabName}") — Apps Script BOUND vào cả FILE Google Sheet
+  // (không phải riêng 1 tab), nên onEdit bắn cho MỌI tab trong cùng file, kể cả các tab tháng
+  // KHÁC (vd "Aug26") nằm chung file với tab đang kết nối (vd "Sep26"). Thiếu dòng chặn này,
+  // sửa/gõ ở tab tháng khác vẫn bị gửi lên webhook kèm secret của tháng ĐANG kết nối, khiến dữ
+  // liệu tháng cũ bị đồng bộ NHẦM thành dữ liệu tháng mới (bug thật gặp production 2026-09-02:
+  // 18 dòng dữ liệu thật từ tab "Aug26" bị tạo nhầm thành record tháng 2026-09).
+  if (sheet.getName() !== "${tabName}") return;
   // Bôi đen NHIỀU DÒNG rồi sửa/xoá/paste 1 lần (vd chọn A5:F20 rồi nhấn Delete, hoặc paste 1
   // khối nhiều dòng từ nơi khác) chỉ bắn ĐÚNG 1 sự kiện onEdit cho CẢ VÙNG — bản trước chỉ đọc
   // e.range.getRow() (dòng ĐẦU TIÊN của vùng), mọi dòng còn lại trong vùng bị bỏ sót hoàn
@@ -158,6 +165,11 @@ function onCpaReviewEditLocked(sheet, row, editedStartIdx, editedNumCols) {
 // biết chính xác bản ghi nào không còn khớp dòng nào nữa (xem webhook route).
 function onCpaReviewChange(e) {
   if (e.changeType !== "REMOVE_ROW" && e.changeType !== "REMOVE_GRID") return;
+  // Cùng lý do chặn theo tab ở onCpaReviewEdit — onChange bắn cho CẢ FILE, không riêng tab đã
+  // kết nối. Event onChange không có e.range như onEdit, dùng getActiveSheet() (phản ánh đúng
+  // tab người dùng vừa thao tác lúc trigger này chạy, cách chuẩn Google gợi ý cho onChange).
+  var activeSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  if (activeSheet.getName() !== "${tabName}") return;
   UrlFetchApp.fetch("${webhookUrl}", {
     method: "post",
     contentType: "application/json",
