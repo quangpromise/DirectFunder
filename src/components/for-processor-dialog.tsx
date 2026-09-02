@@ -26,6 +26,7 @@ import { CpaReviewMonthPicker } from "@/components/cpa-review-month-picker";
 import { monthKeyLabel } from "@/lib/cpa-review-month";
 import { useConfirm } from "@/components/confirm-dialog";
 import { todayIsoDate } from "@/lib/date-format";
+import { buildMonthDays } from "@/lib/processor-report-layout";
 import type { ProcessorReportTaskDef } from "@/lib/types";
 
 /** `NoticeSplitterPanel` kéo theo `pdf-lib` (nặng, xem comment trong split-pdf.ts) — trước
@@ -38,19 +39,6 @@ const NoticeSplitterPanel = dynamic(
   { ssr: false }
 );
 
-/** Danh sách ngày "YYYY-MM-DD" của 1 tháng, kèm chỉ số tuần (W1, W2...) tính theo tuần lịch
- * Chủ nhật-Thứ 7 (khớp cách bố cục W1/W2 trong bảng Excel gốc user cung cấp). */
-function buildMonthDays(month: string): { date: string; day: number; weekIndex: number }[] {
-  const [y, m] = month.split("-").map(Number);
-  const daysInMonth = new Date(y, m, 0).getDate();
-  const firstWeekday = new Date(y, m - 1, 1).getDay(); // 0 = Chủ nhật
-  const days: { date: string; day: number; weekIndex: number }[] = [];
-  for (let day = 1; day <= daysInMonth; day++) {
-    const weekIndex = Math.floor((day - 1 + firstWeekday) / 7) + 1;
-    days.push({ date: `${month}-${String(day).padStart(2, "0")}`, day, weekIndex });
-  }
-  return days;
-}
 
 function groupTasksBySection(tasks: ProcessorReportTaskDef[]) {
   const sorted = [...tasks].sort((a, b) => a.sectionOrder - b.sectionOrder || a.order - b.order);

@@ -4,12 +4,16 @@ import { getOAuthSheetsClient, throwIfGoogleAuthExpired, GoogleAuthExpiredError,
 import { letterFor } from "./cpa-review-sheet-columns";
 import { resolveTabNameFromGid, ensureSheetGridSize, SheetNotAccessibleError } from "./cpa-review-sheet-sync";
 import { getProcessorReportTasks, recomputeAndPushProcessorReportSummary } from "./processor-report-sheet-sync";
-import type { OwnProcessorReportSheetConfig, OwnProcessorReportSheetConfigMap, ProcessorReportTaskDef } from "./types";
+import { daysInMonth, buildReportColumns, buildReportRows, DAY_COL_OFFSET } from "./processor-report-layout";
+import type { OwnProcessorReportSheetConfig, OwnProcessorReportSheetConfigMap } from "./types";
 
-/** Sheet RIÊNG của 1 Processor cho bảng cá nhân (task x từng ngày), layout CỐ ĐỊNH (không cần
- * rowIndex/taskRowMap dò như CPA Review/bảng Leader): dòng = 2 + thứ tự task, cột = ngày
- * trong tháng (cột B = ngày 1). Header (dòng 1) = "Tasks" + số ngày. Xem
- * User.ownProcessorReportSheetConfig.
+/** Sheet RIÊNG của 1 Processor cho bảng cá nhân (task x từng ngày) — layout khớp ĐÚNG template
+ * thật Processor tự tạo (xem deployment-database-sync.md mục 4.48, ảnh chụp thật 2026-09-02):
+ * cột A-H (nhãn section/task, cột "Total" riêng...) và HEADER (dòng 1, dòng section) đều KHÔNG
+ * do app quản lý — app CHỈ đọc/ghi giá trị số ở đúng ô (task, ngày) từ cột I trở đi, dùng
+ * `buildReportRows`/`buildReportColumns` (`processor-report-layout.ts`) để tính đúng dòng/cột
+ * vật lý (có xen dòng "section header" và cột "tổng tuần" giữa các ngày). Xem
+ * `User.ownProcessorReportSheetConfig`.
  *
  * Auth: OAuth2 THEO TỪNG USER (User.googleRefreshToken, dùng CHUNG token với tính năng "Send
  * to Google Sheet" có sẵn — KHÔNG phải Service Account như CPA Review/bảng Leader. Lý do đổi
@@ -20,19 +24,7 @@ import type { OwnProcessorReportSheetConfig, OwnProcessorReportSheetConfigMap, P
  * không cần bước share nào cả. Chiều Sheet→App (Apps Script) HOÀN TOÀN không đổi — Apps Script
  * luôn chạy dưới quyền chính chủ Sheet, không liên quan gì tới cách App ghi ngược lại. */
 
-const HEADER_ROW = 1;
 const FIRST_DATA_ROW = 2;
-const TASK_LABEL_COL = 0; // cột A
-/** Cột B..H (0-based index 1-7) KHÔNG do app quản lý — theo yêu cầu người dùng
- * (2026-09-02), Sheet cá nhân của Processor có sẵn các cột khác ở khu vực đó (template
- * riêng của họ, ngoài phạm vi app) — app CHỈ đọc/ghi cột ngày bắt đầu từ cột I (0-based
- * index 8) trở đi. Cột ngày d (1-based) -> spreadsheet column index = DAY_COL_OFFSET + d. */
-export const DAY_COL_OFFSET = 7;
-
-export function daysInMonth(month: string): number {
-  const [y, m] = month.split("-").map(Number);
-  return new Date(y, m, 0).getDate();
-}
 
 export async function getOwnReportSheetConfigMap(userId: string): Promise<OwnProcessorReportSheetConfigMap> {
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { ownProcessorReportSheetConfig: true } });
@@ -64,48 +56,39 @@ export async function findOwnReportConfigBySecret(
   return null;
 }
 
-/** Ghi TOÀN BỘ layout (header ngày + nhãn task + giá trị hiện có) — dùng lúc connect/resync. */
-async function writeOwnReportLayout(
+/** Chỉ ghi GIÁ TRỊ SỐ hiện có vào đúng ô (task, ngày) — KHÔNG viết header/nhãn/công thức TOTAL
+ * nào (những thứ đó thuộc template có sẵn của Processor, ngoài phạm vi app quản lý). Ô có giá
+ * trị 0 bỏ qua (giữ nguyên bất kỳ nội dung nào Processor đã có sẵn ở ô đó thay vì ép về 0). */
+async function writeOwnReportValues(
   sheets: ReturnType<typeof google.sheets>,
   sheetId: string,
   tabName: string,
   month: string,
-  tasks: ProcessorReportTaskDef[],
+  rows: ReturnType<typeof buildReportRows>,
+  columns: ReturnType<typeof buildReportColumns>,
   entryByKey: Map<string, number>
 ): Promise<void> {
-  const days = daysInMonth(month);
-  const orderedTasks = [...tasks].sort((a, b) => a.sectionOrder - b.sectionOrder || a.order - b.order);
-  const firstDayCol = DAY_COL_OFFSET + 1;
-  const lastDayCol = DAY_COL_OFFSET + days;
-  const totalCol = lastDayCol + 1;
+  const dayColByDate = new Map(columns.filter((c) => c.kind === "day").map((c) => [c.date, c.col]));
 
-  const headerCells: CellWrite[] = [{ column: letterFor(TASK_LABEL_COL), value: "Tasks" }];
-  for (let d = 1; d <= days; d++) headerCells.push({ column: letterFor(DAY_COL_OFFSET + d), value: d });
-  headerCells.push({ column: letterFor(totalCol), value: "TOTAL" });
-  await writeCells(sheets, sheetId, tabName, HEADER_ROW, headerCells);
-
-  for (let i = 0; i < orderedTasks.length; i++) {
-    const task = orderedTasks[i];
+  for (let i = 0; i < rows.length; i++) {
+    const rowEntry = rows[i];
+    if (rowEntry.kind !== "task") continue;
     const row = FIRST_DATA_ROW + i;
-    const cells: CellWrite[] = [{ column: letterFor(TASK_LABEL_COL), value: task.label }];
-    for (let d = 1; d <= days; d++) {
-      const date = `${month}-${String(d).padStart(2, "0")}`;
-      const value = entryByKey.get(`${task.id}:${date}`) ?? 0;
-      if (value !== 0) cells.push({ column: letterFor(DAY_COL_OFFSET + d), value });
+    const cells: CellWrite[] = [];
+    for (const [date, col] of dayColByDate) {
+      const value = entryByKey.get(`${rowEntry.taskId}:${date}`) ?? 0;
+      if (value !== 0) cells.push({ column: letterFor(col), value });
     }
-    cells.push({
-      column: letterFor(totalCol),
-      value: `=SUM(${letterFor(firstDayCol)}${row}:${letterFor(lastDayCol)}${row})`,
-      isFormula: true,
-    });
-    await writeCells(sheets, sheetId, tabName, row, cells);
+    if (cells.length > 0) await writeCells(sheets, sheetId, tabName, row, cells);
   }
 }
 
-/** Kích thước tối thiểu tab cần có — nhỏ hơn nhiều so với CPA Review (chỉ ~25-30 task x
- * 31 ngày), nhưng vẫn có thể vượt mặc định 26 cột (Z) nếu tháng đủ 31 ngày (cần tới cột AF). */
-function minGridFor(taskCount: number, days: number): { rows: number; cols: number } {
-  return { rows: FIRST_DATA_ROW + taskCount, cols: DAY_COL_OFFSET + days + 2 };
+/** Kích thước tối thiểu tab cần có — nhỏ hơn nhiều so với CPA Review (~30 dòng gồm cả section
+ * header x ~31 ngày + cột tổng tuần), nhưng vẫn có thể vượt mặc định 26 cột (Z) nếu tháng đủ 31
+ * ngày (cần thêm ~5 cột tuần nữa). */
+function minGridFor(rowCount: number, columns: ReturnType<typeof buildReportColumns>): { rows: number; cols: number } {
+  const lastCol = columns.length > 0 ? columns[columns.length - 1].col : DAY_COL_OFFSET;
+  return { rows: FIRST_DATA_ROW + rowCount, cols: lastCol + 1 };
 }
 
 /** `refreshToken` LUÔN do nơi gọi (route) tự kiểm tra/truyền vào — route trả 428
@@ -127,10 +110,12 @@ export async function connectOwnReportSheet(
       getProcessorReportTasks(),
       prisma.processorReportEntry.findMany({ where: { userId, date: { startsWith: month } } }),
     ]);
-    const grid = minGridFor(tasks.length, daysInMonth(month));
+    const rows = buildReportRows(tasks);
+    const columns = buildReportColumns(month);
+    const grid = minGridFor(rows.length, columns);
     await ensureSheetGridSize(sheets, sheetId, gid, grid.rows, grid.cols);
     const entryByKey = new Map(entries.map((e) => [`${e.taskId}:${e.date}`, e.value]));
-    await writeOwnReportLayout(sheets, sheetId, tabName, month, tasks, entryByKey);
+    await writeOwnReportValues(sheets, sheetId, tabName, month, rows, columns, entryByKey);
 
     return { sheetId, gid, tabName, webhookSecret, connectedAt: new Date().toISOString() };
   } catch (err) {
@@ -150,10 +135,12 @@ export async function resyncOwnReportSheet(userId: string, month: string, refres
       getProcessorReportTasks(),
       prisma.processorReportEntry.findMany({ where: { userId, date: { startsWith: month } } }),
     ]);
-    const grid = minGridFor(tasks.length, daysInMonth(month));
+    const rows = buildReportRows(tasks);
+    const columns = buildReportColumns(month);
+    const grid = minGridFor(rows.length, columns);
     await ensureSheetGridSize(sheets, config.sheetId, config.gid, grid.rows, grid.cols);
     const entryByKey = new Map(entries.map((e) => [`${e.taskId}:${e.date}`, e.value]));
-    await writeOwnReportLayout(sheets, config.sheetId, config.tabName, month, tasks, entryByKey);
+    await writeOwnReportValues(sheets, config.sheetId, config.tabName, month, rows, columns, entryByKey);
   } catch (err) {
     throwIfGoogleAuthExpired(err);
     throw err;
@@ -162,10 +149,11 @@ export async function resyncOwnReportSheet(userId: string, month: string, refres
 
 /** Đẩy đúng 1 ô (task, ngày) lên Sheet riêng của user — dùng mỗi khi 1 ProcessorReportEntry
  * được lưu (xem after() trong POST/PATCH /api/processor-report/entries). Bỏ qua im lặng nếu
- * chưa kết nối Google/tháng chưa kết nối Sheet/task không còn tồn tại — không throw, không
- * chặn response chính (cùng nguyên tắc best-effort với pushProcessorReportCell của bảng
- * Leader). Token hết hạn/bị thu hồi -> tự xoá googleRefreshToken (giống send-to-sheet route)
- * để lần kết nối/gửi tiếp theo phát hiện đúng "chưa kết nối" thay vì thử lại token đã chết. */
+ * chưa kết nối Google/tháng chưa kết nối Sheet/task hoặc ngày không xác định được vị trí trên
+ * Sheet — không throw, không chặn response chính (cùng nguyên tắc best-effort với
+ * pushProcessorReportCell của bảng Leader). Token hết hạn/bị thu hồi -> tự xoá
+ * googleRefreshToken (giống send-to-sheet route) để lần kết nối/gửi tiếp theo phát hiện đúng
+ * "chưa kết nối" thay vì thử lại token đã chết. */
 export async function pushOwnReportCell(userId: string, month: string, taskId: string, date: string, value: number): Promise<void> {
   try {
     const map = await getOwnReportSheetConfigMap(userId);
@@ -173,17 +161,19 @@ export async function pushOwnReportCell(userId: string, month: string, taskId: s
     if (!config?.sheetId) return;
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { googleRefreshToken: true } });
     if (!user?.googleRefreshToken) return;
+
     const tasks = await getProcessorReportTasks();
-    const orderedTasks = [...tasks].sort((a, b) => a.sectionOrder - b.sectionOrder || a.order - b.order);
-    const taskIndex = orderedTasks.findIndex((t) => t.id === taskId);
-    if (taskIndex < 0) return;
-    const day = Number(date.slice(8, 10));
-    if (!Number.isFinite(day) || day < 1) return;
-    const row = FIRST_DATA_ROW + taskIndex;
+    const rows = buildReportRows(tasks);
+    const rowIndex = rows.findIndex((r) => r.kind === "task" && r.taskId === taskId);
+    if (rowIndex < 0) return;
+    const columns = buildReportColumns(month);
+    const colEntry = columns.find((c) => c.kind === "day" && c.date === date);
+    if (!colEntry) return;
+    const row = FIRST_DATA_ROW + rowIndex;
 
     const sheets = getOAuthSheetsClient(user.googleRefreshToken);
     await ensureRowExists(sheets, config.sheetId, config.tabName, row);
-    await writeCells(sheets, config.sheetId, config.tabName, row, [{ column: letterFor(DAY_COL_OFFSET + day), value }]);
+    await writeCells(sheets, config.sheetId, config.tabName, row, [{ column: letterFor(colEntry.col), value }]);
   } catch (err) {
     if (err instanceof GoogleAuthExpiredError) {
       await prisma.user.update({ where: { id: userId }, data: { googleRefreshToken: null } }).catch(() => {});
@@ -192,12 +182,13 @@ export async function pushOwnReportCell(userId: string, month: string, taskId: s
   }
 }
 
-/** Xử lý 1 lô ô đã sửa từ Sheet (webhook) — mỗi phần tử { row, col, rawValue }, row/col LUÔN
- * xác định được (task, ngày) TRỰC TIẾP qua vị trí (không cần dò business key như CPA Review)
- * vì layout cố định. "App luôn thắng": bỏ qua nếu entry vừa được app ghi trong vòng grace
- * window (tránh vòng lặp App ghi -> đẩy Sheet -> Sheet echo -> webhook ghi lại -> đẩy Sheet...
- * — cùng nguyên tắc CPA Review, xem deployment-database-sync.md mục 4.22). Trả về số ô đã áp
- * dụng thành công. */
+/** Xử lý 1 lô ô đã sửa từ Sheet (webhook) — mỗi phần tử { row, col, rawValue }. Dòng khớp
+ * `buildReportRows` (bỏ qua dòng section-header/dòng ngoài phạm vi), cột khớp
+ * `buildReportColumns` (bỏ qua cột tổng tuần/cột ngoài phạm vi tháng) — layout cố định nên xác
+ * định (task, ngày) TRỰC TIẾP qua vị trí, không cần dò business key như CPA Review. "App luôn
+ * thắng": bỏ qua nếu entry vừa được app ghi trong vòng grace window (tránh vòng lặp App ghi ->
+ * đẩy Sheet -> Sheet echo -> webhook ghi lại -> đẩy Sheet... — cùng nguyên tắc CPA Review, xem
+ * deployment-database-sync.md mục 4.22). Trả về số ô đã áp dụng thành công. */
 const APP_WINS_GRACE_MS = 5000;
 
 export async function applyOwnReportSheetCells(
@@ -206,34 +197,37 @@ export async function applyOwnReportSheetCells(
   cells: Array<{ row: number; col: number; rawValue: string }>
 ): Promise<number> {
   const tasks = await getProcessorReportTasks();
-  const orderedTasks = [...tasks].sort((a, b) => a.sectionOrder - b.sectionOrder || a.order - b.order);
-  const days = daysInMonth(month);
+  const rows = buildReportRows(tasks);
+  const columns = buildReportColumns(month);
+  const dateByCol = new Map(columns.filter((c) => c.kind === "day").map((c) => [c.col, c.date]));
   let applied = 0;
 
   for (const cell of cells) {
-    const day = cell.col - DAY_COL_OFFSET;
-    if (cell.row < FIRST_DATA_ROW || day < 1 || day > days) continue;
-    const task = orderedTasks[cell.row - FIRST_DATA_ROW];
-    if (!task) continue;
-    const date = `${month}-${String(day).padStart(2, "0")}`;
+    if (cell.row < FIRST_DATA_ROW) continue;
+    const rowEntry = rows[cell.row - FIRST_DATA_ROW];
+    if (!rowEntry || rowEntry.kind !== "task") continue; // dòng section-header hoặc ngoài phạm vi -> bỏ qua
+    const date = dateByCol.get(cell.col);
+    if (!date) continue; // cột tổng tuần hoặc ngoài phạm vi tháng -> bỏ qua
+
     const raw = cell.rawValue.trim();
     const value = raw === "" ? 0 : Number(raw.replace(/,/g, ""));
     if (!Number.isFinite(value)) continue;
 
+    const taskId = rowEntry.taskId;
     const existing = await prisma.processorReportEntry.findUnique({
-      where: { userId_taskId_date: { userId, taskId: task.id, date } },
+      where: { userId_taskId_date: { userId, taskId, date } },
     });
     if (existing && Date.now() - existing.updatedAt.getTime() < APP_WINS_GRACE_MS) continue;
 
     await prisma.processorReportEntry.upsert({
-      where: { userId_taskId_date: { userId, taskId: task.id, date } },
-      create: { userId, taskId: task.id, date, value },
+      where: { userId_taskId_date: { userId, taskId, date } },
+      create: { userId, taskId, date, value },
       update: { value },
     });
-    await recomputeAndPushProcessorReportSummary(userId, task.id, month);
+    await recomputeAndPushProcessorReportSummary(userId, taskId, month);
     applied += 1;
   }
   return applied;
 }
 
-export { SheetNotAccessibleError, mapSheetsError };
+export { daysInMonth, DAY_COL_OFFSET, SheetNotAccessibleError, mapSheetsError };

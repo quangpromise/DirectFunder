@@ -1286,10 +1286,53 @@ resync để ghi lại đúng vị trí (cột I trở đi); dán lại script m
 cột (nếu không, sửa ô ở cột I sẽ bị Apps Script CŨ bỏ qua vì điều kiện skip cũ là `col < 1`,
 không phải lỗi nhưng webhook sẽ nhận offset sai, dữ liệu áp vào sai ngày).
 
-**Chưa verify được qua Google Sheet thật** (không có OAuth client id khớp môi trường dev để tự
-đọc/ghi Sheet thật của user từ đây) — chỉ verify qua `tsc --noEmit`/`eslint` sạch + đọc lại kỹ
-từng chỗ dùng `letterFor`/cột. Cần người dùng tự bấm "Đồng bộ lại toàn bộ" trong dialog "Sheet
-của tôi" rồi kiểm tra lại cột ngày trên Sheet thật đúng bắt đầu ở cột I.
+**Bổ sung cùng ngày (2026-09-02, lần 2) — viết lại hoàn toàn cách tính dòng/cột sau khi người
+dùng gửi ảnh chụp template thật**: hoá ra template thật của Processor KHÔNG PHẢI layout phẳng
+đơn giản (task liên tục từ dòng 2) — mỗi SECTION có 1 DÒNG HEADER riêng (vd dòng 2 = "1 Process
+1040X", rồi dòng 3-5 mới là 3 task của section đó, dòng 6 = header section kế tiếp...), và cột
+ngày KHÔNG liên tục — xen kẽ 1 cột "tổng tuần" (W1, W2...) sau mỗi tuần, giống hệt cách
+`ProcessorSelfReportGrid` hiển thị trong app. Bug thật đã gặp: nhập "Check Initials" (task ở
+DÒNG THẬT 7) ở app lại bị đẩy lên Sheet tại dòng 5 (dòng "Reverse") — vì code cũ tính dòng =
+`FIRST_DATA_ROW + task_index` PHẲNG, không cộng thêm 2 dòng header (section 1 + section 2) đã
+chen vào trước đó.
+
+**Kiến trúc mới** — `src/lib/processor-report-layout.ts` (file mới, thuần logic, KHÔNG phụ
+thuộc Prisma/React, dùng chung được cả client lẫn server):
+- `buildReportRows(tasks)` — trả về mảng phẳng xen kẽ `{kind:"header", sectionId}` rồi các
+  `{kind:"task", taskId}` của section đó, lặp lại theo `sectionOrder` — dòng vật lý = `2 +
+  index` trong mảng này. `processor-own-report-sheet-sync.ts` dùng mảng này để tính dòng CẢ 2
+  chiều (ghi lúc connect/resync/pushOwnReportCell, đọc lúc nhận webhook) — đảm bảo LUÔN đồng
+  bộ 2 phía dùng chung 1 nguồn tính dòng duy nhất, không thể lệch nhau nữa.
+- `buildReportColumns(month)` — trả về mảng xen kẽ `{kind:"day", date, col}` rồi 1
+  `{kind:"week", weekIndex, col}` sau mỗi tuần, cột bắt đầu từ `DAY_COL_OFFSET+1` (I). **Đổi
+  quy ước tuần từ "Chủ nhật-Thứ 7" (comment cũ, theo mục 4.28 gốc) sang "Thứ Hai-Chủ nhật" kiểu
+  ISO** — đối chiếu ảnh chụp thật: tháng 9/2026 có ngày 1 rơi vào Thứ Ba, tuần 1 trên Sheet thật
+  gồm ĐỦ 6 ngày (01-06/09, kết thúc Chủ nhật) trước cột "W1", KHÔNG phải 5 ngày như quy ước cũ
+  sẽ cho ra (Chủ nhật-Thứ 7 sẽ kết thúc tuần 1 ở ngày 05/09 vì đó là Thứ Bảy). Áp dụng đổi luôn
+  cho `ProcessorSelfReportGrid` (component IN-APP, không chỉ Sheet-sync) — component này trước
+  đó có 1 bản `buildMonthDays` LOCAL riêng (copy y hệt), giờ import thẳng từ file mới để 2 nơi
+  không bao giờ lệch quy ước tuần với nhau nữa.
+- **BỎ HẲN việc ghi header (dòng "Tasks"/số ngày) và công thức TOTAL** — theo đúng yêu cầu
+  "chỉ đồng bộ DỮ LIỆU từ cột I trở đi": header dòng 1, nhãn task ở cột C, số thứ tự section ở
+  cột B, và cột "Total" riêng (ở cột G trên template thật, KHÔNG phải cột cuối như code cũ giả
+  định) đều là nội dung có sẵn của Processor, app không bao giờ ghi đè lên bất kỳ ô nào trong
+  đó — chỉ ghi giá trị số vào đúng ô (dòng task, cột ngày) xác định qua 2 hàm trên. Ô có giá
+  trị 0 bị bỏ qua khi ghi (giữ nguyên nội dung sẵn có, không ép về 0).
+- Webhook (`applyOwnReportSheetCells`) tự bỏ qua ĐÚNG: dòng section-header (không map tới
+  `taskId` nào), cột tổng tuần (không map tới `date` nào), cột/dòng ngoài phạm vi tháng — nhờ
+  tra cứu 2 chiều qua `buildReportRows`/`buildReportColumns` thay vì phép tính số học trực
+  tiếp như code cũ.
+
+**Đã tự kiểm tra (2026-09-02, lần 2)**: script độc lập gọi `buildReportRows`/`buildReportColumns`
+với đúng `DEFAULT_PROCESSOR_REPORT_TASKS` + tháng `2026-09` — khớp CHÍNH XÁC toàn bộ 32 dòng
+(6 header + 25 task, đúng thứ tự/đúng số dòng) và 12 cột đầu (I-N = 6 ngày, O = "W1", P.. = 7
+ngày tuần 2) với ảnh chụp Sheet thật người dùng gửi. `tsc --noEmit`/`eslint` sạch trên toàn bộ
+file mới/sửa. **Chưa verify được qua Google Sheet thật** (không có OAuth client id khớp môi
+trường dev để tự đọc/ghi Sheet thật của user từ đây) — chỉ verify qua khớp logic với ảnh chụp +
+type-check/lint. Cần người dùng tự bấm "Đồng bộ lại toàn bộ" trong dialog "Sheet của tôi" rồi
+kiểm tra lại: (a) giá trị đã nhập trước đó hiện đúng dòng/cột thật trên Sheet, (b) nhập thử 1 ô
+mới ở app → xác nhận Sheet nhận đúng dòng/cột, (c) sửa thử 1 ô trên Sheet (không phải dòng
+header/cột tổng tuần) → xác nhận app nhận đúng.
 
 **Đã tự kiểm tra (2026-09-02)**:
 - Script độc lập gọi thẳng `applyOwnReportSheetCells()` trên DB dev thật (tháng test riêng
