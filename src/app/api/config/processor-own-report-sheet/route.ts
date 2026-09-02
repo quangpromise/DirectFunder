@@ -24,14 +24,22 @@ function buildWebhookUrl(request: NextRequest): string {
  * record trùng như CPA Review dò theo business key). Vẫn lặp qua CẢ vùng e.range (nhiều
  * dòng/cột cùng lúc — paste/xoá hàng loạt) thay vì chỉ ô đầu tiên, đúng quy tắc đã rút ra ở
  * deployment-database-sync.md mục 4.47/workflow-conventions.md (bôi đen nhiều dòng phải đồng
- * bộ đủ, không chỉ dòng/ô đầu). */
-function buildAppsScript(webhookUrl: string, secret: string): string {
+ * bộ đủ, không chỉ dòng/ô đầu).
+ *
+ * `tabName` guard — Apps Script BOUND VÀO CẢ FILE Spreadsheet, không phải riêng 1 tab, nên
+ * sửa/dán dữ liệu ở BẤT KỲ tab nào khác trong cùng file (vd tháng khác, tab nháp riêng của
+ * Processor) vẫn kích hoạt trigger này nếu thiếu guard — ĐÚNG bug nghiêm trọng đã gặp với CPA
+ * Review (xem deployment-database-sync.md mục 4.51, dữ liệu tab khác bị đồng bộ nhầm thành
+ * tháng đang kết nối), phát hiện lại đúng lỗi này ở bảng cá nhân For Processor (2026-09-02) —
+ * vá bằng cách chặn ngay đầu nếu tab vừa sửa không khớp `tabName` đã kết nối. */
+function buildAppsScript(webhookUrl: string, secret: string, tabName: string): string {
   return `function onOwnReportEdit(e) {
+  var sheet = e.range.getSheet();
+  if (sheet.getName() !== "${tabName}") return; // chỉ đồng bộ đúng tab đã kết nối, bỏ qua tab khác trong cùng file
   var startRow = e.range.getRow();
   var numRows = e.range.getNumRows();
   var startCol = e.range.getColumn() - 1; // 0-based, cột A = 0
   var numCols = e.range.getNumColumns();
-  var sheet = e.range.getSheet();
   var cells = [];
   for (var r = 0; r < numRows; r++) {
     var row = startRow + r;
@@ -89,7 +97,7 @@ export async function GET(request: NextRequest) {
     const map = await getOwnReportSheetConfigMap(me.id);
     const existing = map[month];
     if (existing?.sheetId) {
-      appsScript = buildAppsScript(buildWebhookUrl(request), existing.webhookSecret);
+      appsScript = buildAppsScript(buildWebhookUrl(request), existing.webhookSecret, existing.tabName);
       config = { sheetId: existing.sheetId, gid: existing.gid, tabName: existing.tabName, connectedAt: existing.connectedAt };
     }
   }
@@ -137,7 +145,7 @@ export async function POST(request: NextRequest) {
         gid,
         tabName: newConfig.tabName,
         webhookUrl: buildWebhookUrl(request),
-        appsScript: buildAppsScript(buildWebhookUrl(request), webhookSecret),
+        appsScript: buildAppsScript(buildWebhookUrl(request), webhookSecret, newConfig.tabName),
       });
     }
 

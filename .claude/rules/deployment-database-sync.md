@@ -1633,6 +1633,39 @@ kết nối (dòng có dữ liệu, không phải dòng trống) → xác nhận
 trên app, (b) các record CÒN LẠI phía sau dòng vừa xoá tự dịch chuyển thứ tự hiển thị đúng
 theo vị trí MỚI trên Sheet (không cần F5 nhiều lần/gọi thủ công gì thêm để "chữa" thứ tự).
 
+**Đã tự kiểm tra thêm (cùng ngày)** qua webhook thật (gọi trực tiếp `POST
+/api/cpa-review-sheet/webhook` với secret production, dữ liệu 1 hồ sơ thật): đổi lần lượt
+Processing Date, CRM Source (chọn/select), Số tiền theo năm (currency) — cả 3 loại cột đều
+lưu đúng ngay lập tức (verify bằng đọc lại DB), rồi trả lại giá trị gốc. **Kết luận: logic
+server hoàn toàn đúng** cho các báo cáo "sửa trên Sheet không lên app" tiếp theo trong ngày —
+nguyên nhân thực tế là Apps Script đang dán trên Sheet PRODUCTION của người dùng đã CŨ (chưa
+dán lại bản mới sau các lần đổi logic `onCpaReviewEdit` trong ngày) — đã nhắc lại quy trình
+dán script mới (Hướng dẫn → Copy script → dán đè → Save → chạy lại `installCpaReviewTriggers`).
+
+### 4.54 Fix: Sheet cá nhân "For Processor" cũng bị bug cross-tab pollution giống CPA Review mục 4.51 (thêm 2026-09-02)
+
+Người dùng báo "Report for New processor đang nhận sai dữ liệu khi nhận luôn cả Tab khác mà
+không phải tab của 1 user đang report" — đúng CHÍNH XÁC lớp bug đã gặp và vá cho CPA Review ở
+mục 4.51 (Apps Script BOUND VÀO CẢ FILE Spreadsheet, không phải riêng 1 tab), nhưng lúc vá mục
+4.51 chỉ sửa `onCpaReviewEdit`/`onCpaReviewChange` — **quên áp dụng cùng fix cho
+`onOwnReportEdit`** (Apps Script của Sheet cá nhân Processor, mục 4.48, sinh ra SAU mục 4.51 —
+code mới thêm không tự kế thừa fix của bug đã vá trước đó ở 1 file khác). `buildAppsScript()`
+(`src/app/api/config/processor-own-report-sheet/route.ts`) đổi chữ ký thêm tham số `tabName`,
+chèn dòng chặn `if (sheet.getName() !== "${tabName}") return;` NGAY ĐẦU `onOwnReportEdit` —
+sửa/dán dữ liệu ở tab KHÁC trong cùng file (vd tab tháng khác, tab nháp riêng của Processor)
+giờ bị bỏ qua ngay, không còn gửi lên webhook tháng đang kết nối nữa.
+
+**QUAN TRỌNG — như mọi lần đổi logic Apps Script, PHẢI dán lại script mới cho Sheet cá nhân
+ĐANG kết nối**: mở dialog "Sheet của tôi" (For Processor → Report) → copy lại script mới →
+dán đè vào Extensions → Apps Script của Sheet đó → Save → chạy lại `installOwnReportTriggers`.
+
+**Không cần bước production nào khác** (không đổi schema/feature-permission) — chỉ cần deploy
+code + dán lại script như trên. **Chưa tự verify được qua Apps Script thật** (không có Sheet
+nhiều-tab thật để mô phỏng từ môi trường này) — chỉ `tsc --noEmit`/`eslint` sạch. Người dùng
+nên tự xác nhận: sửa 1 ô ở tab KHÁC (không phải tab đã kết nối) trong cùng file Sheet cá nhân
+→ xác nhận KHÔNG có dữ liệu nào bị đồng bộ nhầm vào bảng "For Processor" của tháng đang kết
+nối.
+
 Mục 2–5 bên dưới là kiến trúc/quy trình đề xuất (phần lớn đã áp dụng đúng như mô tả, trừ Auth đã nêu ở trên). Mục 6 là checklist hành động cụ thể để đưa app này lên cloud thật.
 
 ## 2. Kiến trúc đề xuất
