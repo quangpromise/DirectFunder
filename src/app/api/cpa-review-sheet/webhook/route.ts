@@ -149,6 +149,20 @@ export async function POST(request: NextRequest) {
     }
     await saveCpaReviewSheetConfigMap({ ...configMap, [month]: { ...sheetConfig, rowIndex: nextRowIndex } });
 
+    // "Chữa lành" sortOrder khớp lại đúng dòng Sheet mới sau khi rebuild — bug thật gặp
+    // production (2026-09-02): rowIndex (map ID<->dòng thật) được cập nhật ở đây, nhưng
+    // sortOrder (quyết định THỨ TỰ HIỂN THỊ trên app, dùng ở GET /api/cpa-review) trước đây
+    // KHÔNG được đồng bộ theo — nếu 1 dòng bị xoá làm các dòng sau dịch chuyển vị trí, record
+    // tương ứng có thể bị hiển thị SAI THỨ TỰ (sortOrder cũ không còn khớp rowIndex mới) dù
+    // rowIndex đã đúng, dữ liệu App->Sheet vẫn đúng dòng — chỉ riêng thứ tự HIỂN THỊ bị lệch.
+    for (const r of rows) {
+      if (missing.some((m) => m.id === r.id)) continue;
+      const row = nextRowIndex[r.id];
+      if (typeof row === "number" && r.sortOrder !== row) {
+        await prisma.cpaReviewRecord.update({ where: { id: r.id }, data: { sortOrder: row } });
+      }
+    }
+
     for (const r of missing) {
       await broadcastCpaReviewChanged(r.id, null);
     }

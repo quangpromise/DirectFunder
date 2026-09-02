@@ -1592,6 +1592,47 @@ staleness" đã ghi nhận nhiều lần trong dự án) — dev server đang ch
    chấm chuyển vàng, reload popup vẫn giữ đúng ghi chú.
 4. Xác nhận các task KHÁC (không phải Others 1/2) KHÔNG có chấm góc/nút ghi chú nào.
 
+### 4.53 Fix: `sortOrder` không đồng bộ theo `rowIndex` khi Sheet CPA Review báo "xoá dòng" — gây trùng/lệch thứ tự hiển thị (thêm 2026-09-02)
+
+Người dùng báo trên production: 1 hồ sơ ("DUNG LE & MINHTUYET TRUONG", tab CPA Review tháng
+9/2026) đang hiển thị ở dòng 7 thì "bị đổi sang dòng 4". Điều tra qua production (chỉ đọc)
+lộ ra **2 nguyên nhân cộng dồn**:
+
+1. **Có 2 `CpaReviewRecord` trùng cho cùng 1 khách** — bản gốc đầy đủ (2 SSN, đã gán Agent/
+   Processor, `sortOrder=5` nhưng `rowIndex` cache lại nói dòng thật là **7**) và 1 bản THIẾU
+   dữ liệu (chỉ 1 SSN, chưa gán ai, `sortOrder=-Date.now()` — rất âm nên luôn hiện ĐẦU bảng).
+   Bản thiếu này nhiều khả năng được tạo ra giữa lúc người dùng đang gõ dở SSN 2 dòng trên
+   Sheet (Apps Script gửi lại TOÀN BỘ dòng ở MỌI lần sửa — 1 lần gửi giữa chừng chỉ có SSN
+   dòng 1, không khớp CHÍNH XÁC chuỗi SSN 2 dòng của bản ghi đã có → tạo nhầm bản mới).
+2. **Gốc rễ khiến thứ tự hiển thị SAI ngay cả khi không có bản trùng**: nhánh xử lý tín hiệu
+   `rowsRemoved` (Apps Script báo "vừa có dòng bị xoá trên Sheet") gọi
+   `rebuildCpaReviewRowIndex()` để tính lại `rowIndex` (map ID↔dòng Sheet thật) — nhưng **chỉ
+   cập nhật `rowIndex`, KHÔNG đồng bộ lại `sortOrder`** (trường thực sự quyết định THỨ TỰ
+   HIỂN THỊ, dùng ở `GET /api/cpa-review` — xem mục 4.47). Khi 1 dòng bị xoá làm các dòng sau
+   dịch chuyển vị trí thật trên Sheet, `rowIndex` phản ánh đúng dòng mới nhưng `sortOrder` cũ
+   (gán từ lần đồng bộ trước) không còn khớp — record hiển thị SAI thứ tự dù dữ liệu/đồng bộ
+   App↔Sheet vẫn đúng dòng.
+
+**Đã dọn dữ liệu production** (dry-run rồi mới xác nhận với người dùng qua AskUserQuestion
+trước khi xoá): xoá bản ghi trùng thiếu dữ liệu (`cmtk0zq0m...`), sửa `sortOrder` bản gốc
+(`cmtk0hqs5...`) từ 5 thành 7 khớp đúng `rowIndex` — xác nhận lại thứ tự hiển thị đúng theo
+dòng Sheet thật sau khi sửa.
+
+**Đã vá tận gốc mục 2** — nhánh `rowsRemoved` (`src/app/api/cpa-review-sheet/webhook/route.ts`)
+giờ, SAU KHI xoá các record không còn khớp dòng nào, LẶP QUA mọi record còn lại và tự sửa
+`sortOrder = rowIndex[record.id]` nếu 2 giá trị lệch nhau — "chữa lành" thứ tự hiển thị mỗi
+lần có dòng bị xoá trên Sheet, không cần người dùng tự phát hiện/báo lại. **Không vá được
+nguyên nhân #1** (tạo trùng khi gõ dở SSN nhiều dòng) trong đợt này — đây là rủi ro nhỏ, hiếm
+gặp (chỉ xảy ra khi SSN 2 dòng bị chia làm 2 lần gửi cách nhau, và record cũ với SSN đầy đủ
+đã tồn tại từ trước qua đường khác) — nếu gặp lại, xử lý thủ công tương tự (dry-run rồi xoá
+bản trùng, không cần sửa code).
+
+**Không cần bước production nào** (thuần sửa logic webhook, không đổi schema/feature-permission)
+— chỉ cần deploy code. Kiểm tra sau khi deploy: xoá thử 1 dòng trên Google Sheet CPA Review đã
+kết nối (dòng có dữ liệu, không phải dòng trống) → xác nhận: (a) record tương ứng bị xoá đúng
+trên app, (b) các record CÒN LẠI phía sau dòng vừa xoá tự dịch chuyển thứ tự hiển thị đúng
+theo vị trí MỚI trên Sheet (không cần F5 nhiều lần/gọi thủ công gì thêm để "chữa" thứ tự).
+
 Mục 2–5 bên dưới là kiến trúc/quy trình đề xuất (phần lớn đã áp dụng đúng như mô tả, trừ Auth đã nêu ở trên). Mục 6 là checklist hành động cụ thể để đưa app này lên cloud thật.
 
 ## 2. Kiến trúc đề xuất
