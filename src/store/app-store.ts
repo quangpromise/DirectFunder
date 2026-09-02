@@ -520,6 +520,25 @@ interface AppState {
     month: string
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
   disconnectCpaReviewSheet: (month: string) => Promise<void>;
+  /** Sheet RIÊNG của chính user hiện tại (role processor) cho bảng cá nhân "For Processor" —
+   * KHÔNG lưu vào global state (khác cpaReviewSheetConfig ở trên, vốn cần hiện cho cả người
+   * khác) vì chỉ chính chủ xem/kết nối được — component tự fetch trạng thái qua
+   * getOwnReportSyncInfo khi mở dialog. */
+  connectOwnReportSheet: (
+    link: string,
+    month: string
+  ) => Promise<
+    | { ok: true; month: string; sheetId: string; gid: string; tabName: string; webhookUrl: string; appsScript: string }
+    | { ok: false; error: string; needsGoogleAuth?: boolean }
+  >;
+  resyncOwnReportSheet: (month: string) => Promise<{ ok: true } | { ok: false; error: string; needsGoogleAuth?: boolean }>;
+  disconnectOwnReportSheet: (month: string) => Promise<void>;
+  getOwnReportSyncInfo: (
+    month: string
+  ) => Promise<
+    | { ok: true; googleConnected: boolean; appsScript: string | null; config: { sheetId: string; gid: string; tabName: string; connectedAt: string } | null }
+    | { ok: false; error: string }
+  >;
   /** Foreground action, cùng lý do với sendCpaEmail — gửi có thể fail rõ ràng (chưa cấu
    * hình Sheet, token Google hết hạn, không có quyền Editor...). needsGoogleAuth:true khi
    * user chưa/không còn kết nối Google — UI (SendToSheetButton) sẽ tự mở popup
@@ -2448,6 +2467,39 @@ export const useAppStore = create<AppState>()(
           return { cpaReviewSheetConfig: next };
         });
         await api.disconnectCpaReviewSheet(month).catch((err) => console.error("disconnectCpaReviewSheet", err));
+      },
+
+      // needsGoogleAuth:true khi server trả "GOOGLE_NOT_CONNECTED" (chưa kết nối Google cá
+      // nhân hoặc refresh_token đã bị server tự xoá do hết hạn/thu hồi) — UI tự mở popup
+      // connectGoogleAccount() rồi gọi lại, cùng UX với sendCaseRowToSheet.
+      connectOwnReportSheet: async (link, month) => {
+        try {
+          return await api.connectOwnReportSheet(link, month);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Kết nối thất bại";
+          if (message === "GOOGLE_NOT_CONNECTED") return { ok: false, error: message, needsGoogleAuth: true } as const;
+          return { ok: false, error: message } as const;
+        }
+      },
+      resyncOwnReportSheet: async (month) => {
+        try {
+          return await api.resyncOwnReportSheet(month);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Đồng bộ lại thất bại";
+          if (message === "GOOGLE_NOT_CONNECTED") return { ok: false, error: message, needsGoogleAuth: true } as const;
+          return { ok: false, error: message } as const;
+        }
+      },
+      disconnectOwnReportSheet: async (month) => {
+        await api.disconnectOwnReportSheet(month).catch((err) => console.error("disconnectOwnReportSheet", err));
+      },
+      getOwnReportSyncInfo: async (month) => {
+        try {
+          const result = await api.getOwnReportSyncInfo(month);
+          return { ok: true, ...result } as const;
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Không tải được thông tin đồng bộ" } as const;
+        }
       },
 
       // Foreground, cùng lý do sendCpaEmail — gửi có thể fail rõ ràng, cần await + báo

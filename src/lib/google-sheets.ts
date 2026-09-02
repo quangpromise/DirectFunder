@@ -372,6 +372,28 @@ export async function writeCells(
  * không bị Sheets tự "USER_ENTERED" diễn giải lại (vd tự đổi "08/10/26" thành
  * "2026-08-10") — còn giá trị number (cột tiền) vẫn được Sheets lưu đúng kiểu số, tự động
  * căn phải + hiển thị theo định dạng số/tiền tệ Ô ĐÓ ĐANG CÓ SẴN trên Sheet thật. */
+/** Client Sheets API xác thực bằng OAuth2 CỦA CHÍNH 1 USER (refresh_token của họ) — dùng cho
+ * mọi tính năng cần ghi vào Sheet do CHÍNH user đó sở hữu/có quyền Editor sẵn, KHÁC Service
+ * Account (không cần user share quyền cho ai khác — phù hợp khi Sheet bị khoá chia sẻ, chỉ
+ * đúng email chủ sở hữu mới sửa được, xem processor-own-report-sheet-sync.ts). Trả về đúng
+ * kiểu client mà mọi helper khác trong file này (writeCells/ensureRowExists/
+ * ensureSheetGridSize...) nhận vào — dùng thay thế trực tiếp cho getServiceAccountSheetsClient
+ * ở bất kỳ đâu cần ghi theo danh nghĩa 1 user cụ thể thay vì tài khoản chung. */
+export function getOAuthSheetsClient(refreshToken: string): ReturnType<typeof google.sheets> {
+  const client = getOAuthClient("");
+  client.setCredentials({ refresh_token: refreshToken });
+  return google.sheets({ version: "v4", auth: client });
+}
+
+/** Ném `GoogleAuthExpiredError` nếu `err` là lỗi refresh_token hết hạn/bị thu hồi (invalid_grant)
+ * — dùng ở nơi gọi `getOAuthSheetsClient` để bắt đúng lỗi này và yêu cầu kết nối lại, thay vì
+ * để lẫn vào lỗi Sheets API chung chung qua mapSheetsError. */
+export function throwIfGoogleAuthExpired(err: unknown): void {
+  if (isInvalidGrantError(err)) {
+    throw new GoogleAuthExpiredError("Kết nối Google đã hết hạn hoặc bị thu hồi — cần kết nối lại.");
+  }
+}
+
 export async function appendRowToSheet(input: AppendRowInput): Promise<void> {
   const client = getOAuthClient("");
   client.setCredentials({ refresh_token: input.refreshToken });

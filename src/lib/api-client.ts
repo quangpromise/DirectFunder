@@ -513,6 +513,27 @@ export const api = {
       `/api/config/cpa-review-sheet?month=${encodeURIComponent(month)}`
     ),
 
+  /** Sheet RIÊNG của 1 Processor cho bảng cá nhân "For Processor" — tự kết nối/ngắt kết nối,
+   * đồng bộ 2 chiều (khác Sheet tổng hợp của Leader — không cần Admin/Leader cấu hình hộ). */
+  connectOwnReportSheet: (link: string, month: string) =>
+    request<{ ok: true; month: string; sheetId: string; gid: string; tabName: string; webhookUrl: string; appsScript: string }>(
+      "/api/config/processor-own-report-sheet",
+      { method: "POST", body: JSON.stringify({ action: "connect", link, month }) }
+    ),
+  resyncOwnReportSheet: (month: string) =>
+    request<{ ok: true }>("/api/config/processor-own-report-sheet", {
+      method: "POST",
+      body: JSON.stringify({ action: "resync", month }),
+    }),
+  disconnectOwnReportSheet: (month: string) =>
+    request<{ ok: true }>(`/api/config/processor-own-report-sheet?month=${encodeURIComponent(month)}`, { method: "DELETE" }),
+  getOwnReportSyncInfo: (month: string) =>
+    request<{
+      googleConnected: boolean;
+      appsScript: string | null;
+      config: { sheetId: string; gid: string; tabName: string; connectedAt: string } | null;
+    }>(`/api/config/processor-own-report-sheet?month=${encodeURIComponent(month)}`),
+
   listEditHistory: () => request<EditHistoryRecord[]>("/api/history/edits"),
   createEditHistoryEntry: (entry: Omit<EditHistoryRecord, "id" | "editedByUserId" | "editedAt">) =>
     request<EditHistoryRecord>("/api/history/edits", { method: "POST", body: JSON.stringify(entry) }),

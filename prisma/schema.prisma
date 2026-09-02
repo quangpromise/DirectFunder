@@ -52,6 +52,16 @@ model User {
   /// (hasFeature-style bypass, xem OnlineUsersButton). Mặc định false — không đổi hành vi
   /// hiện có (trước đây chỉ Manager xem được qua trang /dashboard/users).
   canViewOnlinePresence Boolean @default(false)
+  /// Record<monthKey ("YYYY-MM"), OwnProcessorReportSheetConfig> — mỗi Processor tự "Kết nối
+  /// Sheet" RIÊNG CỦA HỌ cho bảng CÁ NHÂN (task x từng ngày) trong popup "For Processor" (tab
+  /// Report), đồng bộ 2 CHIỀU qua Service Account (giống hệt cơ chế CPA Review/Processor
+  /// Report Leader — Apps Script cài trên chính Sheet của họ, secret riêng mỗi tháng), thêm
+  /// 2026-09-02. KHÁC AppConfig.processorReportSheetConfig (bảng TỔNG HỢP của Leader, cộng dồn
+  /// mọi Processor) — đây là 1 Sheet RIÊNG cho từng cá nhân, chỉ họ (và Leader/Manager xem hộ)
+  /// mới thấy/kết nối được. OwnProcessorReportSheetConfig: { sheetId, gid, tabName,
+  /// webhookSecret, connectedAt }. Không cần rowIndex như CPA Review vì layout CỐ ĐỊNH (dòng =
+  /// thứ tự AppConfig.processorReportTasks, cột = ngày trong tháng) — không phải dữ liệu tự do.
+  ownProcessorReportSheetConfig Json?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

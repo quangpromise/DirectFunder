@@ -488,7 +488,10 @@ function ProcessorSelfReportGrid({ userId }: { userId: string }) {
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-2.5">
         <CpaReviewMonthPicker value={month} onChange={setMonth} />
-        {canManageTasks && <TaskManageDialog />}
+        <div className="flex items-center gap-1.5">
+          {canManageTasks && <TaskManageDialog />}
+          <OwnReportSheetConfigDialog month={month} />
+        </div>
       </div>
       <div className="flex-1 overflow-auto">
         <div className="grid text-sm" style={{ gridTemplateColumns }}>
@@ -877,6 +880,232 @@ function ProcessorReportSheetConfigDialog({ month }: { month: string }) {
                 {info?.appsScript && (
                   <div className="rounded-lg border border-accent/30 bg-accent-soft px-3 py-2 text-xs text-text-dim">
                     <p className="font-medium text-text">{t("processorReportSheet.scriptLabel")}</p>
+                    <textarea
+                      readOnly
+                      value={info.appsScript}
+                      rows={8}
+                      onClick={(e) => (e.target as HTMLTextAreaElement).select()}
+                      className="mt-2 w-full resize-none rounded-md border border-border bg-bg-elevated p-2 font-mono text-[10px] leading-snug text-text outline-none"
+                    />
+                  </div>
+                )}
+
+                {error && <p className="text-xs text-red-400">{error}</p>}
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+    </>
+  );
+}
+
+/** Sheet RIÊNG của chính Processor đang xem bảng cá nhân — CHỈ họ tự kết nối được (không phải
+ * Admin/Leader cấu hình hộ như ProcessorReportSheetConfigDialog ở trên), đồng bộ 2 chiều, thêm
+ * 2026-09-02. Auth: OAuth2 CỦA CHÍNH USER (dùng chung User.googleRefreshToken với "Send to
+ * Google Sheet" có sẵn) — KHÔNG phải Service Account như CPA Review/bảng Leader (đã thử Service
+ * Account trước đó rồi đổi lại, vì Sheet cá nhân của Processor có thể bị khoá chia sẻ, chỉ
+ * đúng email chủ sở hữu mới sửa được, không mời thêm Editor ngoài được — xem
+ * processor-own-report-sheet-sync.ts). Gộp luôn phần "Hướng dẫn" (script) vào 1 dialog duy
+ * nhất cho gọn, khác CPA Review tách 2 dialog riêng (Admin cấu hình cho CẢ hệ thống nên cần
+ * dialog riêng lớn hơn — ở đây chỉ 1 người dùng/1 Sheet nên gộp chung hợp lý hơn). */
+function OwnReportSheetConfigDialog({ month }: { month: string }) {
+  const [open, setOpen] = useState(false);
+  const [link, setLink] = useState("");
+  const [changingLink, setChangingLink] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<{
+    googleConnected: boolean;
+    appsScript: string | null;
+    config: { sheetId: string; gid: string; tabName: string; connectedAt: string } | null;
+  } | null>(null);
+  const connect = useAppStore((s) => s.connectOwnReportSheet);
+  const resync = useAppStore((s) => s.resyncOwnReportSheet);
+  const disconnect = useAppStore((s) => s.disconnectOwnReportSheet);
+  const connectGoogleAccount = useAppStore((s) => s.connectGoogleAccount);
+  const t = useT();
+
+  async function loadInfo() {
+    const result = await api.getOwnReportSyncInfo(month);
+    setInfo(result);
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadInfo();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, month]);
+
+  // needsGoogleAuth: server báo chưa kết nối Google cá nhân — tự mở popup kết nối rồi thử
+  // lại NGAY (không bắt user bấm 2 lần), cùng UX với nút "Send to Google Sheet" đã có.
+  async function handleConnect() {
+    if (!link.trim()) return;
+    setBusy(true);
+    setError(null);
+    let result = await connect(link.trim(), month);
+    if (!result.ok && result.needsGoogleAuth) {
+      const connected = await connectGoogleAccount();
+      if (connected) result = await connect(link.trim(), month);
+    }
+    setBusy(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setLink("");
+    setChangingLink(false);
+    await loadInfo();
+  }
+
+  async function handleResync() {
+    setBusy(true);
+    setError(null);
+    let result = await resync(month);
+    if (!result.ok && result.needsGoogleAuth) {
+      const connected = await connectGoogleAccount();
+      if (connected) result = await resync(month);
+    }
+    setBusy(false);
+    if (!result.ok) setError(result.error);
+  }
+
+  async function handleDisconnect() {
+    setBusy(true);
+    await disconnect(month);
+    setBusy(false);
+    await loadInfo();
+  }
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="flex h-7 items-center gap-1.5 rounded-md border border-border bg-bg-elevated px-2 text-[11px] text-text-dim transition hover:bg-surface-hover hover:text-text"
+      >
+        <FileSpreadsheet size={12} />
+        {info?.config ? t("cpaReviewConnect.connectedBtn") : t("ownReportSheet.btn")}
+      </button>
+
+      {open &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 px-4 py-8">
+            <div className="popover flex max-h-full w-full max-w-lg flex-col rounded-2xl shadow-2xl">
+              <div className="flex items-center justify-between px-5 pt-5">
+                <h3 className="text-sm font-semibold">
+                  {t("ownReportSheet.dialogTitle")} <span className="text-accent">{monthKeyLabel(month)}</span>
+                </h3>
+                <button onClick={() => setOpen(false)} className="text-text-faint hover:text-text" aria-label={t("common.close")}>
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="mt-4 flex flex-col gap-3 overflow-y-auto px-5 pb-5">
+                <p className="text-xs text-text-faint">{t("ownReportSheet.intro")}</p>
+
+                {info && !info.googleConnected && (
+                  <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-bg-elevated px-3 py-2 text-xs text-text-dim">
+                    <span>{t("ownReportSheet.step1")}</span>
+                    <button
+                      onClick={async () => {
+                        const connected = await connectGoogleAccount();
+                        if (connected) await loadInfo();
+                      }}
+                      className="shrink-0 rounded-md border border-border bg-surface px-2.5 py-1 text-xs text-text transition hover:bg-surface-hover"
+                    >
+                      {t("ownReportSheet.connectGoogleBtn")}
+                    </button>
+                  </div>
+                )}
+
+                {!info?.config ? (
+                  <>
+                    <p className="text-xs text-text-faint">{t("ownReportSheet.step2", { month: monthKeyLabel(month) })}</p>
+                    <input
+                      value={link}
+                      onChange={(e) => setLink(e.target.value)}
+                      placeholder="https://docs.google.com/spreadsheets/d/...#gid=..."
+                      className="w-full rounded-lg border border-border bg-bg-elevated px-3 py-2 text-sm outline-none focus:border-accent"
+                    />
+                    <button
+                      onClick={handleConnect}
+                      disabled={busy || !link.trim()}
+                      className="gradient-btn flex h-9 items-center justify-center rounded-lg text-sm font-medium text-white disabled:cursor-default disabled:opacity-60"
+                    >
+                      {busy ? t("ownReportSheet.connecting") : t("ownReportSheet.connectAction")}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div className="rounded-lg border border-border bg-bg-elevated px-3 py-2 text-xs text-text-dim">
+                      <p>
+                        {t("ownReportSheet.connectedTabPrefix")} <span className="font-medium text-text">{info.config.tabName}</span>
+                      </p>
+                      <a
+                        href={buildSheetLink(info.config.sheetId, info.config.gid)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-0.5 block truncate text-accent underline-offset-2 hover:underline"
+                      >
+                        {buildSheetLink(info.config.sheetId, info.config.gid)}
+                      </a>
+                      <p className="mt-0.5 text-text-faint">
+                        {t("ownReportSheet.connectedAtPrefix")} {new Date(info.config.connectedAt).toLocaleString("vi-VN")}
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleResync}
+                        disabled={busy}
+                        className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-border bg-surface text-sm text-text-dim transition hover:bg-surface-hover hover:text-text disabled:cursor-default disabled:opacity-60"
+                      >
+                        <RefreshCw size={14} />
+                        {t("ownReportSheet.resyncBtn")}
+                      </button>
+                      <button
+                        onClick={() => setChangingLink((v) => !v)}
+                        disabled={busy}
+                        className="flex h-9 items-center justify-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-sm text-text-dim transition hover:bg-surface-hover hover:text-text disabled:cursor-default disabled:opacity-60"
+                      >
+                        <FileSpreadsheet size={14} />
+                        {t("ownReportSheet.changeLinkBtn")}
+                      </button>
+                      <button
+                        onClick={handleDisconnect}
+                        disabled={busy}
+                        className="flex h-9 items-center justify-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-sm text-red-400 transition hover:bg-red-500/10 disabled:cursor-default disabled:opacity-60"
+                      >
+                        <Unlink size={14} />
+                        {t("ownReportSheet.disconnectBtn")}
+                      </button>
+                    </div>
+
+                    {changingLink && (
+                      <div className="rounded-lg border border-border bg-bg-elevated p-3">
+                        <p className="mb-2 text-xs text-text-faint">{t("ownReportSheet.step2", { month: monthKeyLabel(month) })}</p>
+                        <input
+                          value={link}
+                          onChange={(e) => setLink(e.target.value)}
+                          placeholder="https://docs.google.com/spreadsheets/d/...#gid=..."
+                          className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-accent"
+                        />
+                        <button
+                          onClick={handleConnect}
+                          disabled={busy || !link.trim()}
+                          className="gradient-btn mt-2 flex h-9 w-full items-center justify-center rounded-lg text-sm font-medium text-white disabled:cursor-default disabled:opacity-60"
+                        >
+                          {busy ? t("ownReportSheet.connecting") : t("ownReportSheet.reconnectAction")}
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {info?.appsScript && (
+                  <div className="rounded-lg border border-accent/30 bg-accent-soft px-3 py-2 text-xs text-text-dim">
+                    <p className="font-medium text-text">{t("ownReportSheet.scriptText")}</p>
                     <textarea
                       readOnly
                       value={info.appsScript}

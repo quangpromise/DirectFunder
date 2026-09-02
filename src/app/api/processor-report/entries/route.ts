@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
 import { hasFeature } from "@/lib/rbac";
 import { recomputeAndPushProcessorReportSummary } from "@/lib/processor-report-sheet-sync";
+import { pushOwnReportCell } from "@/lib/processor-own-report-sheet-sync";
 import { isValidMonthKey } from "@/lib/cpa-review-month";
 import type { FeaturePermissions } from "@/lib/types";
 
@@ -66,6 +67,9 @@ async function upsertEntry(request: NextRequest) {
   });
 
   after(() => recomputeAndPushProcessorReportSummary(userId, taskId, month));
+  // Đẩy đúng 1 ô lên Sheet RIÊNG của user đó (nếu đã tự kết nối) — hoàn toàn độc lập với
+  // bảng tổng hợp của Leader ở trên, không ảnh hưởng gì tới nhau (thêm 2026-09-02).
+  after(() => pushOwnReportCell(userId, month, taskId, date, value));
   return NextResponse.json({ entry });
 }
 

@@ -49,7 +49,7 @@ async function main() {
     await tx.user.deleteMany();
     await tx.appConfig.deleteMany();
 
-    if (users.length) await tx.user.createMany({ data: users });
+    if (users.length) await tx.user.createMany({ data: users as unknown as Prisma.UserCreateManyInput[] });
     if (cases.length) await tx.case.createMany({ data: cases as unknown as Prisma.CaseCreateManyInput[] });
     if (appConfigs.length) await tx.appConfig.createMany({ data: appConfigs as unknown as Prisma.AppConfigCreateManyInput[] });
   });

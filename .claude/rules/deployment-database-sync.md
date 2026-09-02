@@ -1203,6 +1203,114 @@ tra: (a) gõ 1 ngày bất kỳ vào cột Date của 1 năm trên Sheet → xá
 cả dòng) → xác nhận field ngày tương ứng trong app cũng bị xoá theo (trống, không giữ giá trị
 cũ); (c) gõ lại giá trị mới vào đúng ô đó → xác nhận app cập nhật đúng giá trị mới đó.
 
+### 4.48 [CHỜ XỬ LÝ] Mỗi Processor tự cấu hình Sheet RIÊNG cho bảng cá nhân "For Processor" (tab Report), đồng bộ 2 chiều (thêm 2026-09-02)
+
+Theo yêu cầu "ở màn hình Report của For Processor, cho mỗi tài khoản tự cấu hình link Google
+Sheet riêng để đồng bộ" — nút mới **"Sheet của tôi"** (cạnh nút "Quản lý task" nếu có, trong
+bảng CÁ NHÂN của Processor — KHÁC hẳn `ProcessorReportSheetConfigDialog` đã có sẵn cho bảng
+TỔNG HỢP của Leader, cả 2 tồn tại song song, không thay thế nhau) — mỗi Processor tự kết nối 1
+Google Sheet của riêng họ, đồng bộ 2 chiều ở mức TỪNG NGÀY (khác bảng Leader vốn chỉ đồng bộ số
+CỘNG DỒN cả tháng theo từng Processor).
+
+**Đổi kiến trúc giữa chừng (đọc trước khi động vào tính năng này)**: bản ĐẦU dùng Service
+Account chung (giống hệt CPA Review — mỗi Processor share quyền Editor Sheet của họ cho email
+Service Account) theo đúng yêu cầu ban đầu "dùng chung CPA Review". Ngay khi thử áp dụng thật,
+phát hiện **Sheet của Processor có thể bị khoá chia sẻ** (tổ chức/chủ sở hữu chỉ cho phép đúng
+1 email cụ thể sửa, không cho mời thêm Editor ngoài) — Service Account không share được vào
+Sheet dạng này. Đã đổi hẳn sang **OAuth2 THEO TỪNG USER** (dùng lại CHÍNH `User.googleRefreshToken`
+đã có sẵn cho tính năng "Send to Google Sheet" — không thêm field/token mới) — App ghi Sheet
+bằng danh nghĩa TÀI KHOẢN GOOGLE THẬT của Processor đó (vốn đã có quyền Editor sẵn trên Sheet
+của chính họ), không cần bước share quyền nào cả. Chiều Sheet→App (Apps Script) hoàn toàn
+KHÔNG đổi giữa 2 phương án — Apps Script luôn chạy dưới quyền chính chủ Sheet, không liên quan
+gì tới cách App ghi ngược lại.
+
+**Kiến trúc cuối cùng**:
+1. **`User.ownProcessorReportSheetConfig`** (cột `Json?` mới, additive, migration
+   `20260902094233_add_processor_own_report_sheet`) — `Record<"YYYY-MM",
+   OwnProcessorReportSheetConfig>` — mỗi tháng 1 kết nối riêng (cùng tinh thần CPA Review/bảng
+   Leader), nhưng lưu TRÊN CHÍNH User (không phải AppConfig) vì đây là cấu hình CÁ NHÂN, không
+   ai khác xem/sửa được. `OwnProcessorReportSheetConfig = {sheetId, gid, tabName, webhookSecret,
+   connectedAt}` — KHÔNG có `taskRowMap`/`userColumnMap`/`rowIndex` như CPA Review/bảng Leader
+   vì layout HOÀN TOÀN CỐ ĐỊNH, tính trực tiếp không cần cache: dòng = 2 + thứ tự task trong
+   `AppConfig.processorReportTasks` (cùng thứ tự bảng Leader dùng), cột = ngày trong tháng (cột
+   B = ngày 1).
+2. **`src/lib/processor-own-report-sheet-sync.ts`** (module mới) — `connectOwnReportSheet`/
+   `resyncOwnReportSheet` (ghi toàn bộ layout, nhận `refreshToken` do ROUTE tự kiểm tra/truyền
+   vào, KHÔNG tự throw khi "chưa kết nối" — phân biệt rõ với `GoogleAuthExpiredError` chỉ dùng
+   cho "đã kết nối nhưng token hết hạn/bị thu hồi" giữa chừng 1 lệnh gọi API), `pushOwnReportCell`
+   (đẩy đúng 1 ô, best-effort, tự xoá `googleRefreshToken` nếu phát hiện token chết — cùng
+   pattern route `send-to-sheet`), `applyOwnReportSheetCells` (webhook Sheet→App, "App luôn
+   thắng" grace window 5s dựa `ProcessorReportEntry.updatedAt`, KHÔNG cần marker `__syncedFrom`
+   phức tạp như CPA Review vì Apps Script chỉ gửi ĐÚNG ô vừa sửa — không full-row-rescan nên
+   tần suất webhook thấp hơn hẳn, ít rủi ro tự chặn nhầm).
+3. **`src/lib/google-sheets.ts`** thêm 2 export mới dùng chung: `getOAuthSheetsClient(refreshToken)`
+   (trả về client Sheets API OAuth theo user, tái dùng được cho MỌI helper khác trong file vốn
+   nhận tham số `sheets` chung — `writeCells`/`ensureRowExists`/`ensureSheetGridSize`/
+   `resolveTabNameFromGid`, tất cả AUTH-AGNOSTIC sẵn) và `throwIfGoogleAuthExpired(err)` (tách
+   riêng phần nhận diện lỗi `invalid_grant` từ `appendRowToSheet`, dùng lại được ở nơi khác).
+4. **Route `POST/GET/DELETE /api/config/processor-own-report-sheet`** — chỉ role `processor`
+   tự truy cập được (không cần feature permission riêng, không phải Admin/Leader cấu hình hộ).
+   `POST` (connect/resync) kiểm tra `me.googleRefreshToken` TRƯỚC, trả 428 "GOOGLE_NOT_CONNECTED"
+   nếu chưa kết nối — client tự mở popup `connectGoogleAccount()` (cùng UX nút "Send to Google
+   Sheet" đã có) rồi gọi lại action, không cần user bấm 2 lần.
+5. **Route `POST /api/processor-own-report-sheet/webhook`** — public (secret-based, giống CPA
+   Review), dò user+tháng khớp secret bằng cách quét toàn bộ user role `processor` (số lượng
+   nhỏ, chấp nhận quét thẳng thay vì lọc Json-null ở DB — tránh gotcha Prisma JSON null filter
+   dễ sai ngữ nghĩa).
+6. **Apps Script** (sinh trong route connect, không cần `LockService` như CPA Review — mỗi ô
+   (task, ngày) chỉ upsert theo VỊ TRÍ CỐ ĐỊNH, không có rủi ro tạo record trùng theo business
+   key như CPA Review) — vẫn lặp qua TOÀN BỘ `e.range` (nhiều dòng/cột cùng lúc, không chỉ ô
+   đầu tiên) theo đúng quy tắc mới thêm ở `workflow-conventions.md` (bôi đen nhiều dòng phải
+   đồng bộ đủ).
+7. Hook vào `POST/PATCH /api/processor-report/entries` (route CÓ SẴN, dùng chung cho cả bảng
+   cá nhân lẫn cache tổng hợp Leader) — thêm 1 `after()` gọi `pushOwnReportCell` cạnh
+   `recomputeAndPushProcessorReportSummary` có sẵn, 2 nhánh HOÀN TOÀN độc lập, không ảnh hưởng
+   nhau nếu 1 nhánh lỗi.
+
+**Đã tự kiểm tra (2026-09-02)**:
+- Script độc lập gọi thẳng `applyOwnReportSheetCells()` trên DB dev thật (tháng test riêng
+  `2099-03`, đã dọn sạch sau test) — 5 case: tạo mới đúng giá trị; grace window 5s chặn đúng
+  lượt ghi thứ 2 tới quá gần; sau khi hết grace window, xoá ô (rawValue rỗng) ra đúng giá trị
+  0; cột ngoài phạm vi tháng (col=40) bị bỏ qua đúng, không tạo entry rác.
+- Playwright thật (đăng nhập `quang@directfunder.com`, role processor, tài khoản NÀY đã từng
+  kết nối Google từ trước) — mở popup "For Processor" → tab Report → bấm "Sheet của tôi" → xác
+  nhận dialog mở đúng tiêu đề kèm tháng, hiện đúng ô dán link (KHÔNG hiện bước "Kết nối Google"
+  vì tài khoản test đã kết nối sẵn — chưa tự verify được nhánh "chưa kết nối" qua UI thật vì
+  không có tài khoản processor nào trong DB dev còn `googleRefreshToken = null` sẵn để test).
+- **CHƯA verify được luồng ghi Google Sheet thật** (connect/resync/push cell thật sự gọi
+  Sheets API) — không có Google Sheet thật để test trong môi trường này. Logic dùng lại NGUYÊN
+  VẸN các helper (`writeCells`/`ensureRowExists`/`ensureSheetGridSize`/`resolveTabNameFromGid`)
+  đã verify kỹ ở CPA Review/bảng Leader/`appendRowToSheet`, chỉ khác client OAuth thay Service
+  Account — rủi ro thấp nhưng NÊN tự kết nối 1 Sheet thật trước khi công bố rộng cho team.
+- **CHƯA verify được Apps Script thật** (Sheet→App qua trình duyệt Google Sheets thật) — cùng
+  lý do không có Sheet thật để dán script vào.
+- `tsc --noEmit`/`eslint` sạch trên toàn bộ file mới/sửa.
+
+**Sau khi deploy code này lên production PHẢI làm đủ các bước sau** (xoá mục này khỏi file khi đã làm xong):
+1. `prisma migrate deploy` nhắm production (thêm cột `ownProcessorReportSheetConfig` trên
+   `users`, an toàn/additive/nullable).
+2. Không cần script merge `AppConfig` (không đụng `columns`/`featurePermissions`).
+3. Đăng nhập production bằng tài khoản **Processor** thật (đã từng kết nối "Send to Google
+   Sheet" trước đó hoặc kết nối mới ngay tại đây), mở "For Processor" → Report → bấm "Sheet của
+   tôi" → nếu chưa kết nối Google, xác nhận bấm "Kết nối Google" mở đúng popup OAuth.
+4. Dán link 1 Google Sheet THẬT của chính Processor đó (Sheet họ sở hữu, không cần share cho
+   ai) → mở đúng tab tháng hiện tại trước khi copy link (URL có `#gid=...`) → bấm Kết nối → xác
+   nhận layout được ghi đúng (dòng 1 = "Tasks" + số ngày 1..N, các dòng sau = tên task theo
+   đúng thứ tự bảng Leader, số liệu hiện có được điền sẵn).
+5. Copy đoạn Apps Script hiện ra, dán vào Extensions → Apps Script của Sheet đó → Save → chọn
+   hàm `installOwnReportTriggers` → Run → Allow.
+6. Gõ số vào 1 ô bất kỳ trong bảng cá nhân trên app → xác nhận Sheet cập nhật đúng ô (dòng
+   task, cột ngày) trong vài giây.
+7. Sửa trực tiếp 1 ô trên Sheet → xác nhận app cập nhật lại đúng entry đó (Sheet→App, không
+   cần F5 nếu Pusher `case:changed`-style broadcast đã áp dụng cho processor report — nếu chưa
+   có realtime cho bảng này, xác nhận ít nhất reload thấy đúng).
+8. Xác nhận bảng TỔNG HỢP của Leader (nút "Sheet" của Leader, riêng biệt) vẫn cập nhật đúng số
+   liệu Processor đó — 2 luồng đồng bộ độc lập nhưng cùng nguồn dữ liệu (`ProcessorReportEntry`).
+9. Bấm "Đồng bộ lại toàn bộ" → xác nhận ghi lại đúng toàn bộ layout + số liệu tháng đó, không
+   mất dữ liệu cũ trên Sheet (không đụng cột/dòng ngoài phạm vi layout).
+10. Bấm "Ngắt kết nối" → kết nối lại (không cần đăng nhập Google lần nữa nếu token còn hiệu
+    lực) → xác nhận secret MỚI được sinh, cần dán lại Apps Script mới (secret cũ không còn khớp).
+
 Mục 2–5 bên dưới là kiến trúc/quy trình đề xuất (phần lớn đã áp dụng đúng như mô tả, trừ Auth đã nêu ở trên). Mục 6 là checklist hành động cụ thể để đưa app này lên cloud thật.
 
 ## 2. Kiến trúc đề xuất

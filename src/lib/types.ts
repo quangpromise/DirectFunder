@@ -655,6 +655,23 @@ export interface ProcessorReportSheetConfig {
 /** Record<monthKey ("YYYY-MM"), ProcessorReportSheetConfig> — mỗi tháng 1 kết nối Sheet riêng. */
 export type ProcessorReportSheetConfigMap = Record<string, ProcessorReportSheetConfig>;
 
+/** Cấu hình đồng bộ 2 chiều Google Sheet RIÊNG của 1 Processor cho bảng cá nhân (task x từng
+ * ngày) — xem User.ownProcessorReportSheetConfig. Không có `taskRowMap`/`userColumnMap` như
+ * ProcessorReportSheetConfig (bảng Leader) vì layout hoàn toàn CỐ ĐỊNH/tính được trực tiếp:
+ * dòng = 2 + thứ tự task trong AppConfig.processorReportTasks, cột = ngày trong tháng (cột B =
+ * ngày 1). Không có `connectedByUserId` vì luôn CHÍNH user đó tự kết nối (không ai kết nối hộ). */
+export interface OwnProcessorReportSheetConfig {
+  sheetId: string;
+  gid: string;
+  tabName: string;
+  webhookSecret: string;
+  connectedAt: string;
+}
+
+/** Record<monthKey ("YYYY-MM"), OwnProcessorReportSheetConfig> — mỗi tháng 1 kết nối Sheet
+ * riêng, lưu trên chính User.ownProcessorReportSheetConfig. */
+export type OwnProcessorReportSheetConfigMap = Record<string, OwnProcessorReportSheetConfig>;
+
 /** Lịch sử xóa hồ sơ — lưu lại toàn bộ snapshot của dòng đã xóa để có thể tra cứu/kiểm tra sau này. */
 export interface DeletedRowRecord {
   id: string;
