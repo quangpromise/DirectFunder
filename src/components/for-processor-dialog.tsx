@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
 import {
@@ -433,6 +433,12 @@ function TaskManageDialog() {
   );
 }
 
+// 2 task duy nhất cho phép ghi chú riêng theo ô (thêm 2026-09-02, theo yêu cầu "row Other 1
+// Other 2 có thể insert note") — id cố định trong DEFAULT_PROCESSOR_REPORT_TASKS (rbac.ts),
+// không đổi theo cấu hình tuỳ biến của Leader/Admin (TaskManageDialog chỉ đổi label, không
+// đổi id của 2 task mặc định này trừ khi họ tự xoá rồi tạo lại — chấp nhận được, hiếm gặp).
+const NOTE_ENABLED_TASK_IDS = new Set(["otherTasks_others1", "otherTasks_others2"]);
+
 function ProcessorSelfReportGrid({ userId }: { userId: string }) {
   const month = useAppStore((s) => s.processorReportSelectedMonth);
   const setMonth = useAppStore((s) => s.setProcessorReportSelectedMonth);
@@ -440,6 +446,7 @@ function ProcessorSelfReportGrid({ userId }: { userId: string }) {
   const entries = useAppStore((s) => s.processorReportEntries);
   const fetchEntries = useAppStore((s) => s.fetchProcessorReportEntries);
   const upsertEntry = useAppStore((s) => s.upsertProcessorReportEntry);
+  const updateNote = useAppStore((s) => s.updateProcessorReportEntryNote);
   const permissions = useAppStore((s) => s.featurePermissions);
   const role = useCurrentUser()?.role;
   const t = useT();
@@ -480,8 +487,20 @@ function ProcessorSelfReportGrid({ userId }: { userId: string }) {
     return map;
   }, [entries, userId]);
 
+  const noteByKey = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const e of entries) {
+      if (e.userId !== userId || !e.note) continue;
+      map.set(`${e.taskId}:${e.date}`, e.note);
+    }
+    return map;
+  }, [entries, userId]);
+
   function dayValue(taskId: string, date: string): number {
     return valueByKey.get(`${taskId}:${date}`) ?? 0;
+  }
+  function dayNote(taskId: string, date: string): string {
+    return noteByKey.get(`${taskId}:${date}`) ?? "";
   }
   function weekValue(taskId: string, weekIndex: number): number {
     return days.filter((d) => d.weekIndex === weekIndex).reduce((sum, d) => sum + dayValue(taskId, d.date), 0);
@@ -556,6 +575,16 @@ function ProcessorSelfReportGrid({ userId }: { userId: string }) {
                 );
               }
               const value = dayValue(taskId, col.date!);
+              if (NOTE_ENABLED_TASK_IDS.has(taskId)) {
+                return (
+                  <NumberCellWithNote
+                    value={value}
+                    note={dayNote(taskId, col.date!)}
+                    onChangeValue={(next) => upsertEntry(taskId, col.date!, next)}
+                    onChangeNote={(note) => updateNote(taskId, col.date!, note)}
+                  />
+                );
+              }
               return (
                 <input
                   type="number"
@@ -573,6 +602,107 @@ function ProcessorSelfReportGrid({ userId }: { userId: string }) {
           />
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Ô số + nút ghi chú nhỏ ở góc — CHỈ dùng cho task "Others 1"/"Others 2" (thêm 2026-09-02,
+ * xem NOTE_ENABLED_TASK_IDS) — cùng ý tưởng DateWithNote ở tab CPA Review nhưng gọn hơn (chấm
+ * góc thay vì icon riêng chiếm chỗ ngang) vì cột ngày ở đây co giãn theo `fr`, có thể rất hẹp
+ * ở tháng 31 ngày — 1 nút icon riêng cạnh input sẽ không đủ chỗ. Chấm góc chỉ chiếm 8x8px, đè
+ * lên góc phải-trên ô, không lấy chỗ của input số. */
+function NumberCellWithNote({
+  value,
+  note,
+  onChangeValue,
+  onChangeNote,
+}: {
+  value: number;
+  note: string;
+  onChangeValue: (v: number) => void;
+  onChangeNote: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(note);
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const t = useT();
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setDraft(note);
+  }, [note]);
+
+  // Ước lượng chiều cao popup (~150px: textarea 3 dòng + nút Lưu/Đóng) để tự lật lên TRÊN
+  // trigger khi mở gần cuối màn hình — trước đây luôn đặt popup BÊN DƯỚI trigger nên với các
+  // dòng gần cuối bảng (cuộn dọc sâu), popup + nút Lưu bị tràn khỏi viewport, không bấm được
+  // (phát hiện khi tự verify qua Playwright, thêm 2026-09-02).
+  const POPUP_HEIGHT_ESTIMATE = 150;
+  function openPopup() {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (rect) {
+      const fitsBelow = rect.bottom + 4 + POPUP_HEIGHT_ESTIMATE <= window.innerHeight;
+      const y = fitsBelow ? rect.bottom + 4 : Math.max(4, rect.top - POPUP_HEIGHT_ESTIMATE - 4);
+      setPos({ x: Math.min(rect.left, window.innerWidth - 200), y });
+    }
+    setOpen(true);
+  }
+
+  const hasNote = Boolean(note.trim());
+
+  return (
+    <div className="relative h-full w-full">
+      <input
+        type="number"
+        min={0}
+        defaultValue={value || ""}
+        key={`${value}`}
+        onBlur={(e) => {
+          const next = Number(e.target.value) || 0;
+          if (next !== value) onChangeValue(next);
+        }}
+        className="no-spinner h-full w-full bg-transparent px-0.5 text-center text-[10px] outline-none focus:bg-accent-soft"
+      />
+      <button
+        ref={triggerRef}
+        onClick={openPopup}
+        title={hasNote ? note : t("cpaReview.addNoteTitle")}
+        className={`absolute right-0 top-0 h-2 w-2 rounded-bl-sm ${
+          hasNote ? "bg-amber-400" : "bg-text-faint opacity-0 hover:opacity-70 group-hover:opacity-30"
+        }`}
+      />
+      {open &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <>
+            <div className="fixed inset-0 z-[120]" onClick={() => setOpen(false)} />
+            <div className="popover fixed z-[130] w-56 rounded-xl p-2 shadow-2xl shadow-black/60" style={{ left: pos.x, top: pos.y }}>
+              <textarea
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                rows={3}
+                autoFocus
+                placeholder={t("cpaReview.addNotePlaceholder")}
+                className="w-full resize-none rounded-md border border-border bg-bg-elevated p-1.5 text-xs outline-none focus:border-accent"
+              />
+              <div className="mt-1.5 flex justify-end gap-1.5">
+                <button onClick={() => setOpen(false)} className="rounded-md px-2 py-1 text-[11px] text-text-faint hover:bg-surface-hover">
+                  {t("common.close")}
+                </button>
+                <button
+                  onClick={() => {
+                    onChangeNote(draft);
+                    setOpen(false);
+                  }}
+                  className="gradient-btn rounded-md px-2 py-1 text-[11px] font-medium text-white"
+                >
+                  {t("common.save")}
+                </button>
+              </div>
+            </div>
+          </>,
+          document.body
+        )}
     </div>
   );
 }

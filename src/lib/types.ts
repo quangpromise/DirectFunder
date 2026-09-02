@@ -625,6 +625,10 @@ export interface ProcessorReportEntry {
   /** "YYYY-MM-DD" */
   date: string;
   value: number;
+  /** Ghi chú tự do riêng cho ô này — thêm 2026-09-02, UI hiện nút note CHỈ cho 2 task
+   * "Others 1"/"Others 2" (xem NumberCellWithNote trong for-processor-dialog.tsx). null/undefined
+   * = chưa có ghi chú. Không đồng bộ Sheet. */
+  note?: string | null;
 }
 
 /** Cache tổng theo (tháng, task, user) — bảng Leader đọc trực tiếp từ đây, xem Prisma model

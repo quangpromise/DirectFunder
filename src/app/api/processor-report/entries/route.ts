@@ -43,7 +43,11 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ entries });
 }
 
-/** POST/PATCH — upsert 1 ô (taskId, date, value). Body: { taskId, date, value, userId? }. */
+/** POST/PATCH — upsert 1 ô (taskId, date). Body: { taskId, date, value?, note?, userId? } —
+ * `value`/`note` đều OPTIONAL nhưng cần ÍT NHẤT 1 trong 2 (cho phép sửa riêng ghi chú mà
+ * không đụng số liệu, dùng cho popup ghi chú ở task "Others 1"/"Others 2" — thêm 2026-09-02,
+ * xem NumberCellWithNote trong for-processor-dialog.tsx). Field nào KHÔNG có trong body giữ
+ * nguyên giá trị cũ (không ghi đè về 0/rỗng). */
 async function upsertEntry(request: NextRequest) {
   const auth = await requireViewAccess();
   if ("error" in auth) return auth.error;
@@ -52,8 +56,16 @@ async function upsertEntry(request: NextRequest) {
   const body = await request.json().catch(() => null);
   const taskId = typeof body?.taskId === "string" ? body.taskId : "";
   const date = typeof body?.date === "string" ? body.date : "";
-  const value = Number(body?.value);
-  if (!taskId || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(value)) {
+  const hasValue = body?.value !== undefined;
+  const value = hasValue ? Number(body.value) : undefined;
+  const hasNote = body?.note !== undefined;
+  const note = hasNote ? (typeof body.note === "string" ? body.note : "") : undefined;
+  if (
+    !taskId ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+    (hasValue && !Number.isFinite(value)) ||
+    (!hasValue && !hasNote)
+  ) {
     return NextResponse.json({ error: "Payload không hợp lệ" }, { status: 400 });
   }
   const requestedUserId = typeof body?.userId === "string" ? body.userId : me.id;
@@ -62,14 +74,18 @@ async function upsertEntry(request: NextRequest) {
 
   const entry = await prisma.processorReportEntry.upsert({
     where: { userId_taskId_date: { userId, taskId, date } },
-    create: { userId, taskId, date, value },
-    update: { value },
+    create: { userId, taskId, date, value: hasValue ? value! : 0, note: hasNote ? note : null },
+    update: { ...(hasValue ? { value } : {}), ...(hasNote ? { note } : {}) },
   });
 
-  after(() => recomputeAndPushProcessorReportSummary(userId, taskId, month));
-  // Đẩy đúng 1 ô lên Sheet RIÊNG của user đó (nếu đã tự kết nối) — hoàn toàn độc lập với
-  // bảng tổng hợp của Leader ở trên, không ảnh hưởng gì tới nhau (thêm 2026-09-02).
-  after(() => pushOwnReportCell(userId, month, taskId, date, value));
+  // Ghi chú thuần app, không đồng bộ Sheet — chỉ đẩy khi THỰC SỰ đổi value (tránh gọi API
+  // Sheets thừa mỗi lần chỉ sửa ghi chú).
+  if (hasValue) {
+    after(() => recomputeAndPushProcessorReportSummary(userId, taskId, month));
+    // Đẩy đúng 1 ô lên Sheet RIÊNG của user đó (nếu đã tự kết nối) — hoàn toàn độc lập với
+    // bảng tổng hợp của Leader ở trên, không ảnh hưởng gì tới nhau (thêm 2026-09-02).
+    after(() => pushOwnReportCell(userId, month, taskId, date, value!));
+  }
   return NextResponse.json({ entry });
 }
 

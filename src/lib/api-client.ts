@@ -547,7 +547,9 @@ export const api = {
     request<{ entries: ProcessorReportEntry[] }>(
       `/api/processor-report/entries?month=${encodeURIComponent(month)}${userId ? `&userId=${encodeURIComponent(userId)}` : ""}`
     ),
-  upsertProcessorReportEntry: (payload: { taskId: string; date: string; value: number; userId?: string }) =>
+  // `value`/`note` optional (ít nhất 1 trong 2) — cho phép sửa riêng ghi chú mà không đụng số
+  // liệu, dùng cho popup ghi chú task "Others 1"/"Others 2" (thêm 2026-09-02).
+  upsertProcessorReportEntry: (payload: { taskId: string; date: string; value?: number; note?: string; userId?: string }) =>
     request<{ entry: ProcessorReportEntry }>("/api/processor-report/entries", {
       method: "POST",
       body: JSON.stringify(payload),

@@ -1287,8 +1287,11 @@ gì tới cách App ghi ngược lại.
 - `tsc --noEmit`/`eslint` sạch trên toàn bộ file mới/sửa.
 
 **Sau khi deploy code này lên production PHẢI làm đủ các bước sau** (xoá mục này khỏi file khi đã làm xong):
-1. `prisma migrate deploy` nhắm production (thêm cột `ownProcessorReportSheetConfig` trên
-   `users`, an toàn/additive/nullable).
+1. ✅ **Đã xong 2026-09-02** — `prisma migrate deploy` nhắm production đã chạy (thêm cột
+   `ownProcessorReportSheetConfig` trên `users`, an toàn/additive/nullable). **Chạy hơi muộn**:
+   code đã deploy trước, khiến production báo lỗi đăng nhập sai (thực ra do Prisma Client đọc
+   cột chưa tồn tại — đúng gotcha mục 4.8, xem thêm ghi chú ở mục 4.52) — người dùng báo "không
+   đăng nhập được sau khi push", đã chạy migrate ngay để khắc phục.
 2. Không cần script merge `AppConfig` (không đụng `columns`/`featurePermissions`).
 3. Đăng nhập production bằng tài khoản **Processor** thật (đã từng kết nối "Send to Google
    Sheet" trước đó hoặc kết nối mới ngay tại đây), mở "For Processor" → Report → bấm "Sheet của
@@ -1448,6 +1451,51 @@ mới nào xuất hiện ở tab CPA Review tháng 9. `tsc --noEmit`/`eslint` s�
    nhầm).
 5. Xoá thử 1 dòng ở tab "Aug26" → xác nhận KHÔNG có record nào ở tháng 2026-09 bị xoá theo
    (kiểm tra `onCpaReviewChange` cũng đã chặn đúng).
+
+### 4.52 Ghi chú riêng cho ô ở task "Others 1"/"Others 2" trong bảng cá nhân For Processor (thêm 2026-09-02)
+
+Theo yêu cầu "ở Report For Processor, các ô ở row Other 1 và Other 2 có thể insert note" — mỗi
+ô (task, ngày) của đúng 2 task `otherTasks_others1`/`otherTasks_others2` (id cố định trong
+`DEFAULT_PROCESSOR_REPORT_TASKS`, rbac.ts) giờ có thêm 1 nút ghi chú nhỏ (chấm góc trên-phải ô —
+vàng khi đã có ghi chú, gần như trong suốt khi chưa có) mở popup textarea, THUẦN TÍNH NĂNG APP
+(không đồng bộ Google Sheet nào — cả Sheet riêng của Processor lẫn Sheet tổng hợp Leader).
+
+**Schema**: `ProcessorReportEntry.note String?` (cột mới, additive, migration
+`20260902102419_add_processor_report_entry_note`) — field DÙNG CHUNG được cho MỌI task về mặt
+kỹ thuật, nhưng UI (`NOTE_ENABLED_TASK_IDS` trong `for-processor-dialog.tsx`) chỉ hiện nút cho
+đúng 2 task "Others 1"/"Others 2".
+
+**API** (`POST/PATCH /api/processor-report/entries`): `value`/`note` đều optional (cần ít nhất
+1 trong 2) — cho phép sửa RIÊNG ghi chú mà không đụng số liệu, và ngược lại. Field nào không có
+trong body giữ nguyên giá trị cũ (không ghi đè về 0/rỗng). Chỉ đẩy Sheet (`pushOwnReportCell`/
+`recomputeAndPushProcessorReportSummary`) khi THỰC SỰ đổi `value` — sửa ghi chú không gọi API
+Sheets thừa.
+
+**UI**: `NumberCellWithNote` (component mới) — input số + nút chấm góc (không dùng icon riêng
+chiếm chỗ ngang như `DateWithNote` ở tab CPA Review, vì cột ngày ở đây co giãn theo `fr` có thể
+rất hẹp ở tháng 31 ngày, xem mục 4.48). Popup tự lật lên TRÊN trigger nếu mở gần cuối màn hình
+(ước lượng chiều cao ~150px) — bug thật tự phát hiện khi verify: bản đầu luôn đặt popup BÊN
+DƯỚI trigger, dòng gần cuối bảng (cuộn dọc sâu) khiến nút "Lưu" tràn khỏi viewport, không bấm
+được.
+
+**Đã tự kiểm tra**: API qua server thật (3 case: lưu chỉ note giữ nguyên value, lưu chỉ value
+giữ nguyên note, thiếu cả 2 trả 400) — cả 3 đúng. Playwright thật: mở popup ở dòng "Others 1"
+gần cuối bảng (đã cuộn sâu) → xác nhận popup lật lên trên, nút Lưu nằm trong viewport, lưu
+thành công, chấm vàng hiện đúng sau khi lưu. **Gotcha gặp lại khi test** ("Prisma Client
+staleness" đã ghi nhận nhiều lần trong dự án) — dev server đang chạy từ trước khi thêm cột
+`note` vẫn giữ Prisma Client cũ trong bộ nhớ, phải kill hẳn process + `rm -rf .next` + khởi
+động lại mới hết lỗi 500. `tsc --noEmit`/`eslint` sạch.
+
+**Sau khi deploy code này lên production PHẢI làm đủ các bước sau** (xoá mục này khỏi file khi đã làm xong):
+1. ✅ **Đã xong 2026-09-02** — `prisma migrate deploy` nhắm production đã chạy (thêm cột `note`
+   trên `processor_report_entries`, an toàn/additive/nullable) — chạy CÙNG LÚC với migration
+   mục 4.48 ở trên (cả 2 migration đang chờ áp dụng cùng lúc lúc đó), sau khi phát hiện
+   production báo lỗi đăng nhập vì thiếu bước này (xem ghi chú ở mục 4.48).
+2. Không cần script merge `AppConfig` (không đụng `columns`/`featurePermissions`).
+3. Đăng nhập production bằng tài khoản Processor thật, mở "For Processor" → Report → cuộn tới
+   dòng "Others 1"/"Others 2" → bấm chấm góc ở 1 ô ngày bất kỳ → gõ ghi chú → Lưu → xác nhận
+   chấm chuyển vàng, reload popup vẫn giữ đúng ghi chú.
+4. Xác nhận các task KHÁC (không phải Others 1/2) KHÔNG có chấm góc/nút ghi chú nào.
 
 Mục 2–5 bên dưới là kiến trúc/quy trình đề xuất (phần lớn đã áp dụng đúng như mô tả, trừ Auth đã nêu ở trên). Mục 6 là checklist hành động cụ thể để đưa app này lên cloud thật.
 

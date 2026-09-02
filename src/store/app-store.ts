@@ -385,6 +385,9 @@ interface AppState {
   /** Ghi 1 ô (task, ngày) — optimistic local + PATCH nền, server tự tính lại
    * ProcessorReportMonthlySummary + đẩy Sheet (nếu tháng đã kết nối). */
   upsertProcessorReportEntry: (taskId: string, date: string, value: number, userId?: string) => void;
+  /** Ghi/xoá ghi chú riêng cho 1 ô (task, ngày) — KHÔNG đụng `value` (thêm 2026-09-02, dùng cho
+   * popup ghi chú task "Others 1"/"Others 2"). */
+  updateProcessorReportEntryNote: (taskId: string, date: string, note: string, userId?: string) => void;
   /** Nạp bảng tổng hợp (Processor Leader/Quản lý) cho 1 tháng — lazy. */
   fetchProcessorReportSummary: (month: string) => Promise<void>;
   /** Thêm/sửa/xoá/kéo-thả task (hàng) — local state + lưu qua syncConfig() (cùng cơ chế
@@ -2066,6 +2069,26 @@ export const useAppStore = create<AppState>()(
           return { processorReportEntries: next };
         });
         syncInBackground("upsertProcessorReportEntry", api.upsertProcessorReportEntry({ taskId, date, value, userId }));
+      },
+
+      updateProcessorReportEntryNote: (taskId, date, note, userId) => {
+        const meId = get().currentUserId ?? "";
+        const targetUserId = userId ?? meId;
+        set((state) => {
+          const idx = state.processorReportEntries.findIndex((e) => e.taskId === taskId && e.date === date && e.userId === targetUserId);
+          if (idx === -1) {
+            return {
+              processorReportEntries: [
+                ...state.processorReportEntries,
+                { id: uniqueId("pre"), userId: targetUserId, taskId, date, value: 0, note },
+              ],
+            };
+          }
+          const next = [...state.processorReportEntries];
+          next[idx] = { ...next[idx], note };
+          return { processorReportEntries: next };
+        });
+        syncInBackground("updateProcessorReportEntryNote", api.upsertProcessorReportEntry({ taskId, date, note, userId }));
       },
 
       fetchProcessorReportSummary: async (month) => {

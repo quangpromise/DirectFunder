@@ -429,6 +429,13 @@ model ProcessorReportEntry {
   /// "YYYY-MM-DD"
   date      String
   value     Int      @default(0)
+  /// Ghi chú tự do riêng cho ô (task, ngày) này — thêm 2026-09-02, ban đầu CHỈ dùng cho 2 task
+  /// "Others 1"/"Others 2" (id otherTasks_others1/otherTasks_others2 trong
+  /// DEFAULT_PROCESSOR_REPORT_TASKS, xem rbac.ts) theo yêu cầu "các ô ở row Other 1 và Other 2
+  /// có thể insert note" — nhưng field để CHUNG cho MỌI task (không giới hạn ở schema/DB), UI
+  /// (ProcessorSelfReportGrid) mới là nơi giới hạn CHỈ hiện nút note cho 2 task đó. Không đồng
+  /// bộ lên Sheet riêng/Sheet tổng hợp (chỉ `value` mới đồng bộ) — thuần tính năng app.
+  note      String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
