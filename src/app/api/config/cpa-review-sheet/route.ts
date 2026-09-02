@@ -44,8 +44,16 @@ function buildAppsScript(webhookUrl: string, secret: string, tabName: string): s
 // installCpaReviewTriggers bên dưới) thì mới chạy full authorization, gọi UrlFetchApp được.
 function onCpaReviewEdit(e) {
   var sheet = e.range.getSheet();
-  var row = e.range.getRow();
-  if (row < 4) return; // bỏ qua hàng tiêu đề/tổng (1-3)
+  // Bôi đen NHIỀU DÒNG rồi sửa/xoá/paste 1 lần (vd chọn A5:F20 rồi nhấn Delete, hoặc paste 1
+  // khối nhiều dòng từ nơi khác) chỉ bắn ĐÚNG 1 sự kiện onEdit cho CẢ VÙNG — bản trước chỉ đọc
+  // e.range.getRow() (dòng ĐẦU TIÊN của vùng), mọi dòng còn lại trong vùng bị bỏ sót hoàn
+  // toàn, không đồng bộ gì cả (bug thật gặp production 2026-09-02, phát hiện khi rà soát theo
+  // yêu cầu "tất cả sửa xoá ở các cột đều phải cập nhật đúng row"). Sửa: lặp qua TỪNG dòng
+  // trong e.range.getNumRows(), không chỉ dòng đầu.
+  var startRow = e.range.getRow();
+  var numRows = e.range.getNumRows();
+  var editedStartIdx = e.range.getColumn() - 1;
+  var editedNumCols = e.range.getNumColumns();
 
   // LOCK — gõ nhanh nhiều ô liên tiếp (vd Tab qua từng cột, hoặc paste nhiều ô cùng lúc) có
   // thể khiến 2 lượt onEdit CHẠY CHỒNG LẤN NHAU thật sự (UrlFetchApp.fetch tốn 200-500ms+,
@@ -65,7 +73,11 @@ function onCpaReviewEdit(e) {
   }
 
   try {
-    onCpaReviewEditLocked(sheet, row, e.range.getColumn() - 1, e.range.getNumColumns());
+    for (var i = 0; i < numRows; i++) {
+      var row = startRow + i;
+      if (row < 4) continue; // bỏ qua hàng tiêu đề/tổng (1-3), kể cả nếu nằm trong vùng chọn
+      onCpaReviewEditLocked(sheet, row, editedStartIdx, editedNumCols);
+    }
   } finally {
     lock.releaseLock();
   }

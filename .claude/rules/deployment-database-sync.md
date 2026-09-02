@@ -1179,13 +1179,22 @@ chạy thật, chỉ đọc DB để chẩn đoán, không ghi/xoá gì)**:
    giờ `cells` có thể chứa đúng 1 phần tử rỗng (ô vừa xoá) dù cả dòng đã trống, `cells.length`
    không còn đáng tin để phát hiện "xoá trắng cả dòng" nữa.
 
+3. **Bôi đen NHIỀU DÒNG rồi sửa/xoá/paste 1 lần chỉ đồng bộ đúng dòng ĐẦU TIÊN** (phát hiện khi
+   rà soát theo yêu cầu rõ ràng "tất cả sửa xoá ở các cột đều phải cập nhật đúng row") — Google
+   Sheets bắn ĐÚNG 1 sự kiện `onEdit` cho CẢ VÙNG khi chọn nhiều dòng rồi Delete/paste 1 khối,
+   nhưng `onCpaReviewEdit(e)` bản trước chỉ đọc `e.range.getRow()` (dòng đầu tiên của vùng) —
+   mọi dòng còn lại trong vùng bị bỏ sót hoàn toàn, không có tín hiệu nào gửi lên app. Sửa: lặp
+   qua từng dòng trong `e.range.getNumRows()` (từ `startRow` tới `startRow + numRows - 1`), gọi
+   `onCpaReviewEditLocked` cho từng dòng — vẫn trong CÙNG 1 lần giữ `LockService` (không lock
+   lại mỗi dòng), tuần tự từng `UrlFetchApp.fetch` một.
+
 **QUAN TRỌNG — như mọi lần đổi logic `onCpaReviewEdit`/`onCpaReviewEditLocked` trước đây, PHẢI
 dán lại script mới cho MỌI Sheet đang kết nối** (tab "Hướng dẫn" → "Copy script" → dán đè vào
 Apps Script → Save → chọn `installCpaReviewTriggers` → Run → Allow lại).
 
-**Chỉ verify được bug #1 qua script độc lập** (ép `TZ=UTC`, không cần Sheet thật) — bug #2 cần
-Apps Script thật chạy trong Google Sheet (không mô phỏng được `e.range`/`onEdit` từ máy local),
-**chưa tự verify sống**. `tsc --noEmit`/`eslint` sạch trên cả 2 file sửa.
+**Chỉ verify được bug #1 qua script độc lập** (ép `TZ=UTC`, không cần Sheet thật) — bug #2 và
+#3 cần Apps Script thật chạy trong Google Sheet (không mô phỏng được `e.range`/`onEdit` từ máy
+local), **chưa tự verify sống**. `tsc --noEmit`/`eslint` sạch trên cả 2 file sửa (cả 2 đợt).
 
 **Sau khi deploy code này lên production**: không cần `prisma migrate deploy`/script merge
 `AppConfig` (thuần logic parse ngày + Apps Script, không đổi schema/feature-permission). Kiểm
