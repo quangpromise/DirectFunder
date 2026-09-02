@@ -1,7 +1,8 @@
 import { prisma } from "./prisma";
 import { digitsOnly } from "./ssn";
 import { DEFAULT_REFUND_YEAR_STATUS_OPTIONS } from "./rbac";
-import { broadcastCaseChanged } from "./pusher-server";
+import { broadcastCaseChanged, broadcastNotification } from "./pusher-server";
+import { toNotificationRecord } from "@/app/api/notifications/route";
 import type { SelectOption } from "./types";
 import type { Prisma } from "@prisma/client";
 
@@ -106,4 +107,56 @@ export async function syncCpaReviewStatusToCase(
   // lần trước rồi ghi đè mất).
   await prisma.$executeRaw`UPDATE "cases" SET "refundYearStatus" = "refundYearStatus" || ${JSON.stringify(patch)}::jsonb WHERE id = ${caseId}`;
   await broadcastCaseChanged(caseId, null);
+}
+
+/** Tách các key `status_<year>` vừa đổi sang ĐÚNG "rejected" (khác extractChangedYearStatuses
+ * ở trên — hàm đó CHỈ khớp 4 giá trị dùng cho đồng bộ refundYearStatus, "rejected" không nằm
+ * trong đó) — dùng riêng cho tính năng báo Processor khi 1 năm bị Reject (thêm 2026-09-02,
+ * theo yêu cầu "khi Status của các năm... chuyển sang Reject, sẽ có thông báo đến Processor
+ * đó"). Chỉ xét field THỰC SỰ có trong request này, không phải toàn bộ custom đã merge —
+ * cùng nguyên tắc extractChangedYearStatuses (tránh báo lại mỗi lần sửa 1 field không liên
+ * quan của cùng record). */
+export function extractRejectedYearStatuses(incomingCustom: Record<string, unknown>): string[] {
+  const years: string[] = [];
+  for (const [key, value] of Object.entries(incomingCustom)) {
+    const year = yearFromStatusKey(key);
+    if (year && value === "rejected") years.push(year);
+  }
+  return years;
+}
+
+/** Báo Processor đã gán (`custom.processorUserId`) khi 1/nhiều năm của record vừa chuyển
+ * sang Status "Rejected" — gọi từ CẢ 2 chiều ghi (PATCH /api/cpa-review/[id] lẫn webhook
+ * Sheet→App), `fromUserId` = người/nguồn vừa thực hiện thay đổi (`me.id` phía app, chuỗi
+ * "system:cpa-review-sheet-sync" phía webhook Sheet — không có phiên user nào để gán). Record
+ * chưa gán Processor nào (`processorUserId` rỗng) -> bỏ qua im lặng, không có ai để báo. Tự
+ * dò Case khớp SSN (nếu có) để click-through notification nhảy đúng hồ sơ trên bảng chính,
+ * giống hành vi mọi Notification khác — không tìm thấy vẫn tạo Notification bình thường,
+ * chỉ click sẽ không nhảy tới đâu cả (caseId rỗng). */
+export async function notifyProcessorOnRejectedCpaReviewStatus(
+  record: { id: string; custom: Record<string, unknown> },
+  rejectedYears: string[],
+  fromUserId: string
+): Promise<void> {
+  if (rejectedYears.length === 0) return;
+  const processorUserId = typeof record.custom.processorUserId === "string" ? record.custom.processorUserId.trim() : "";
+  if (!processorUserId) return;
+
+  const name = typeof record.custom.name === "string" ? record.custom.name.trim() : "";
+  const ssn = typeof record.custom.ssn === "string" ? record.custom.ssn.trim() : "";
+  const refLabel = ssn ? `${name || "(chưa có tên)"} (SSN: ${ssn})` : name || "(chưa có tên)";
+  const caseId = ssn ? ((await findCaseIdBySsnField(ssn)) ?? "") : "";
+
+  for (const year of rejectedYears) {
+    const notif = await prisma.notification.create({
+      data: {
+        type: "status_change",
+        toUserId: processorUserId,
+        fromUserId,
+        caseId,
+        message: `CPA Review: ${refLabel} — Status năm ${year} đã chuyển sang Rejected`,
+      },
+    });
+    await broadcastNotification(processorUserId, toNotificationRecord(notif), null);
+  }
 }

@@ -3,7 +3,12 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
 import { hasFeature } from "@/lib/rbac";
 import { syncRecordToCpaReviewSheet, deleteRecordRowFromCpaReviewSheet } from "@/lib/cpa-review-sheet-sync";
-import { extractChangedYearStatuses, syncCpaReviewStatusToCase } from "@/lib/cpa-review-case-sync";
+import {
+  extractChangedYearStatuses,
+  syncCpaReviewStatusToCase,
+  extractRejectedYearStatuses,
+  notifyProcessorOnRejectedCpaReviewStatus,
+} from "@/lib/cpa-review-case-sync";
 import { broadcastCpaReviewChanged } from "@/lib/pusher-server";
 import { toCpaReviewRecord } from "@/app/api/cpa-review/route";
 import type { FeaturePermissions } from "@/lib/types";
@@ -50,6 +55,7 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/cpa-re
   // refundYearStatus tương ứng của Case khớp SSN (xem cpa-review-case-sync.ts) — chỉ xét
   // field THỰC SỰ có trong request này (incomingCustom), không phải toàn bộ custom đã merge.
   let changedYearStatuses: { year: string; status: string }[] = [];
+  let rejectedYears: string[] = [];
   let mergedSsn = "";
   for (const [field, value] of Object.entries(body)) {
     if (!ALLOWED_FIELDS.has(field)) continue;
@@ -66,6 +72,7 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/cpa-re
       const merged: Record<string, unknown> = { ...existingCustom, ...incomingCustom, __syncedFrom: "app" };
       data.custom = merged as Prisma.InputJsonValue;
       changedYearStatuses = extractChangedYearStatuses(incomingCustom);
+      rejectedYears = extractRejectedYearStatuses(incomingCustom);
       mergedSsn = typeof merged.ssn === "string" ? merged.ssn : "";
       continue;
     }
@@ -81,6 +88,9 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/cpa-re
   after(() => syncRecordToCpaReviewSheet(record));
   if (changedYearStatuses.length > 0) {
     after(() => syncCpaReviewStatusToCase(mergedSsn, changedYearStatuses));
+  }
+  if (rejectedYears.length > 0) {
+    after(() => notifyProcessorOnRejectedCpaReviewStatus(record, rejectedYears, me.id));
   }
   await broadcastCpaReviewChanged(record.id, request.headers.get("x-pusher-socket-id"));
 

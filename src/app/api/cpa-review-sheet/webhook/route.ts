@@ -11,7 +11,17 @@ import {
   rebuildCpaReviewRowIndex,
 } from "@/lib/cpa-review-sheet-sync";
 import { getServiceAccountSheetsClient } from "@/lib/google-service-account";
-import { extractChangedYearStatuses, syncCpaReviewStatusToCase } from "@/lib/cpa-review-case-sync";
+import {
+  extractChangedYearStatuses,
+  syncCpaReviewStatusToCase,
+  extractRejectedYearStatuses,
+  notifyProcessorOnRejectedCpaReviewStatus,
+} from "@/lib/cpa-review-case-sync";
+
+/** "fromUserId" gán cho Notification bắn qua chiều Sheet→App (không có phiên user nào —
+ * webhook xác thực bằng secret) — cùng quy ước "system:<nguồn>" đã dùng cho các tác vụ hệ
+ * thống khác trong repo (vd "system:agentc3-crm-sync"), thêm 2026-09-02. */
+const NOTIFY_FROM_SHEET_SYNC = "system:cpa-review-sheet-sync";
 import { broadcastCpaReviewChanged } from "@/lib/pusher-server";
 import type { Prisma } from "@prisma/client";
 
@@ -241,6 +251,10 @@ export async function POST(request: NextRequest) {
       }
       const changedYearStatuses = extractChangedYearStatuses(merged);
       if (changedYearStatuses.length > 0 && fullRowSsn) after(() => syncCpaReviewStatusToCase(fullRowSsn, changedYearStatuses));
+      const rejectedYears = extractRejectedYearStatuses(merged);
+      if (rejectedYears.length > 0) {
+        after(() => notifyProcessorOnRejectedCpaReviewStatus({ id: created.id, custom: merged }, rejectedYears, NOTIFY_FROM_SHEET_SYNC));
+      }
       await broadcastCpaReviewChanged(created.id, null);
       return NextResponse.json({ ok: true, created: created.id });
     }
@@ -274,6 +288,10 @@ export async function POST(request: NextRequest) {
     const updatedCustom = updated.custom as Record<string, unknown>;
     const ssnForCaseSync = typeof updatedCustom.ssn === "string" ? updatedCustom.ssn.trim() : fullRowSsn;
     if (changedYearStatuses.length > 0 && ssnForCaseSync) after(() => syncCpaReviewStatusToCase(ssnForCaseSync, changedYearStatuses));
+    const rejectedYears = extractRejectedYearStatuses(merged);
+    if (rejectedYears.length > 0) {
+      after(() => notifyProcessorOnRejectedCpaReviewStatus({ id: updated.id, custom: updatedCustom }, rejectedYears, NOTIFY_FROM_SHEET_SYNC));
+    }
     await broadcastCpaReviewChanged(updated.id, null);
     return NextResponse.json({ ok: true, updatedAt: updated.updatedAt.toISOString() });
   }
@@ -347,6 +365,10 @@ export async function POST(request: NextRequest) {
     if (changedYearStatuses.length > 0) {
       after(() => syncCpaReviewStatusToCase(ssn, changedYearStatuses));
     }
+    const rejectedYearsLegacy = extractRejectedYearStatuses({ [patch.key]: patch.value });
+    if (rejectedYearsLegacy.length > 0) {
+      after(() => notifyProcessorOnRejectedCpaReviewStatus({ id: created.id, custom: initialCustom }, rejectedYearsLegacy, NOTIFY_FROM_SHEET_SYNC));
+    }
     // Không có Pusher socket của trình duyệt nào để loại trừ (nguồn là Apps Script, không
     // phải 1 tab đang mở) -> socketId luôn null, mọi tab đều tự refetch (xem use-realtime.ts).
     await broadcastCpaReviewChanged(created.id, null);
@@ -379,6 +401,16 @@ export async function POST(request: NextRequest) {
   }
   if (changedYearStatuses.length > 0) {
     after(() => syncCpaReviewStatusToCase(ssn, changedYearStatuses));
+  }
+  const rejectedYearsLegacyUpdate = extractRejectedYearStatuses({ [patch.key]: patch.value });
+  if (rejectedYearsLegacyUpdate.length > 0) {
+    after(() =>
+      notifyProcessorOnRejectedCpaReviewStatus(
+        { id: updated.id, custom: updated.custom as Record<string, unknown> },
+        rejectedYearsLegacyUpdate,
+        NOTIFY_FROM_SHEET_SYNC
+      )
+    );
   }
   await broadcastCpaReviewChanged(updated.id, null);
 

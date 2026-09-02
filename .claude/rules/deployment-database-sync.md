@@ -1353,6 +1353,46 @@ deploy: đăng nhập bằng 1 tài khoản Processor, gán tên chính họ và
 được), nút xoá biến mất; đăng nhập lại đúng tài khoản đã gán → xác nhận sửa/xoá bình thường;
 đăng nhập Manager hoặc Processor Leader → xác nhận vẫn sửa/xoá được row đã khoá cho người khác.
 
+### 4.50 Thông báo cho Processor khi Status năm (2023/2024/2025) tab CPA Review chuyển sang Rejected (thêm 2026-09-02)
+
+Theo yêu cầu "khi Status của các năm 2023,2024,2025... chuyển sang trạng thái Reject, sẽ có
+thông báo đến Processor đó trên notification" — mỗi khi 1 trong 3 cột "{năm} Status" đổi sang
+đúng giá trị `"rejected"` (option "Rejected" trong `CPA_REVIEW_STATUS_OPTIONS`), tự tạo 1
+Notification cho ĐÚNG tài khoản đang được gán ở cột "Processor" (`custom.processorUserId`) của
+row đó — nếu row CHƯA gán Processor nào thì bỏ qua im lặng (không có ai để báo).
+
+**Áp dụng CẢ 2 chiều ghi** (khác mục 4.49 chỉ áp dụng chiều app):
+1. **App** (`PATCH /api/cpa-review/[id]`) — `fromUserId` = người vừa đổi Status (`me.id`).
+2. **Sheet→App** (`POST /api/cpa-review-sheet/webhook`, cả nhánh `fullRowSync` mới lẫn nhánh
+   single-cell cũ còn giữ để tương thích ngược) — `fromUserId` = chuỗi cố định
+   `"system:cpa-review-sheet-sync"` (không có phiên user nào, webhook xác thực bằng secret,
+   cùng quy ước "system:<nguồn>" đã dùng cho agentc3 sync).
+
+Chỉ báo khi field **THỰC SỰ có trong request/payload lần này** đổi sang rejected (không phải
+quét lại toàn bộ `custom` đã merge) — sửa 1 field không liên quan của cùng record không bắn lại
+thông báo cũ. 2 hàm mới trong `src/lib/cpa-review-case-sync.ts`:
+- `extractRejectedYearStatuses(incomingCustom)` — khác `extractChangedYearStatuses` có sẵn
+  (hàm đó CHỈ khớp 4 giá trị dùng cho đồng bộ `refundYearStatus`, không có "rejected").
+- `notifyProcessorOnRejectedCpaReviewStatus(record, rejectedYears, fromUserId)` — tạo 1
+  Notification/năm bị reject, tự dò Case khớp SSN (nếu có) để click-through notification nhảy
+  đúng hồ sơ trên bảng Hồ sơ chính (không tìm thấy vẫn tạo Notification bình thường, chỉ
+  `caseId` rỗng nên click không nhảy đi đâu).
+
+**Đã tự kiểm tra qua server thật** (session Manager thật, dữ liệu test tháng riêng `2099-05`,
+đã dọn sạch sau test): PATCH đổi `status_2024` sang "rejected" → đúng 1 Notification mới tạo
+cho Processor đã gán, nội dung đúng định dạng "CPA Review: {tên} (SSN: ...) — Status năm 2024
+đã chuyển sang Rejected"; PATCH đổi `status_2025` sang "accepted" (không phải rejected) ngay
+sau đó → KHÔNG tạo thêm Notification nào (đúng, không báo nhầm cho status khác). `tsc --noEmit`/
+`eslint` sạch. **Chưa verify được nhánh Sheet→App qua Apps Script thật** (không có Google Sheet
+thật để test đổi Status trực tiếp trên Sheet) — logic dùng chung `extractRejectedYearStatuses`
+đã verify đúng phía app, chỉ khác nguồn gọi.
+
+**Không cần bước production nào** (không đổi schema — `Notification` model và
+`custom.processorUserId` đã có sẵn từ trước, không đổi feature-permission) — chỉ cần deploy
+code. Sau khi deploy: đăng nhập 1 tài khoản bất kỳ có quyền sửa CPA Review, mở 1 row đã gán
+Processor, đổi Status 1 năm bất kỳ sang "Rejected" → đăng nhập bằng đúng tài khoản Processor đã
+gán → xác nhận nhận được thông báo (chuông + toast nếu đang mở app) đúng nội dung năm/tên/SSN.
+
 Mục 2–5 bên dưới là kiến trúc/quy trình đề xuất (phần lớn đã áp dụng đúng như mô tả, trừ Auth đã nêu ở trên). Mục 6 là checklist hành động cụ thể để đưa app này lên cloud thật.
 
 ## 2. Kiến trúc đề xuất
