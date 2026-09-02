@@ -1311,6 +1311,48 @@ gì tới cách App ghi ngược lại.
 10. Bấm "Ngắt kết nối" → kết nối lại (không cần đăng nhập Google lần nữa nếu token còn hiệu
     lực) → xác nhận secret MỚI được sinh, cần dán lại Apps Script mới (secret cũ không còn khớp).
 
+### 4.49 Khoá sửa/xoá row CPA Review theo Processor đã gán (thêm 2026-09-02)
+
+Theo yêu cầu "chỉ có tài khoản gắn tên Processor mới được sửa xóa ở row đó" — row nào ĐÃ được
+gán tên vào cột "Processor" (`custom.processorUserId`) thì từ nay CHỈ đúng tài khoản đó (hoặc
+role `manager`/`processor_leader`, vai trò quản lý trực tiếp — xác nhận qua AskUserQuestion) mới
+sửa/xoá được row đó qua UI app; các role khác (kể cả Agent/Agent Leader vốn cũng có quyền
+`addCpaReviewRow`/`deleteCpaReviewRow` theo role) bị khoá nếu không phải đúng người được gán.
+Row CHƯA gán Processor (cột đang trống) giữ nguyên quyền cũ — mọi user có quyền vào tab này vẫn
+sửa/xoá được, vì chưa có ai để khoá theo.
+
+**Phạm vi CHỈ áp dụng chiều APP** (PATCH/DELETE qua `/api/cpa-review/[id]`) — Sheet→App qua
+webhook (`onCpaReviewEdit`) KHÔNG áp dụng được ràng buộc này vì webhook xác thực bằng secret,
+không gắn với phiên đăng nhập của user nào — sửa trực tiếp trên Google Sheet vẫn không bị chặn
+bởi quy tắc này (Sheet vốn đã là nguồn "ai cũng sửa được" theo thiết kế đồng bộ 2 chiều có sẵn,
+không đổi ở đây).
+
+**2 lớp thực thi**:
+1. **Server (authoritative)** — `canEditRecord(me, custom)` (`src/app/api/cpa-review/[id]/route.ts`)
+   — PATCH đọc `custom.processorUserId` của record TRƯỚC khi merge, trả 403 nếu khoá; DELETE
+   kiểm tra tương tự trước khi xoá (thêm SAU check `hasFeature("deleteCpaReviewRow")` có sẵn —
+   2 lớp độc lập, role không đủ quyền bị chặn bởi lớp cũ trước khi chạm tới lớp mới).
+2. **Client (UX, không phải chặn thật)** — `canEditRow(row)` (`cpa-review/page.tsx`) tính
+   `rowEditable` cho MỖI row, truyền `editable={rowEditable}` xuống MỌI `EditableCell`/
+   `AssignMenu` của row đó (bao gồm cả 2 field bên trong `YearCells`/`DateWithNote` — phải
+   thêm prop `editable` xuyên suốt 2 component con này), ẩn cả nút xoá (`canDelete &&
+   rowEditable`) và nút "Lưu" ghi chú theo năm.
+
+**Đã tự kiểm tra qua server thật** (script gọi thẳng route qua session cookie thật, dữ liệu
+test tháng riêng `2099-04`, đã dọn sạch sau test) — 5 case: (1) user KHÁC bị chặn PATCH đúng
+403 kèm message rõ ràng; (2) đúng user được gán PATCH thành công; (3) user KHÁC bị chặn DELETE
+(403, dù message cụ thể có thể tới từ lớp permission cũ tuỳ role, hành vi chặn vẫn đúng); (4)
+Manager PATCH row đã khoá cho người khác vẫn thành công (bypass đúng thiết kế); (5) row CHƯA
+gán Processor — user bất kỳ vẫn PATCH thành công (không bị khoá nhầm). `tsc --noEmit`/`eslint`
+sạch (chỉ còn lỗi có sẵn từ trước, không liên quan, ở dòng khác trong cùng file).
+
+**Không cần bước production nào** (không đổi schema — `processorUserId` đã có sẵn trong
+`custom` JSON tự do từ trước, không đổi feature-permission) — chỉ cần deploy code. Sau khi
+deploy: đăng nhập bằng 1 tài khoản Processor, gán tên chính họ vào cột "Processor" của 1 row →
+đăng nhập bằng tài khoản Processor KHÁC → xác nhận các ô của row đó hiện khoá xám (không sửa
+được), nút xoá biến mất; đăng nhập lại đúng tài khoản đã gán → xác nhận sửa/xoá bình thường;
+đăng nhập Manager hoặc Processor Leader → xác nhận vẫn sửa/xoá được row đã khoá cho người khác.
+
 Mục 2–5 bên dưới là kiến trúc/quy trình đề xuất (phần lớn đã áp dụng đúng như mô tả, trừ Auth đã nêu ở trên). Mục 6 là checklist hành động cụ thể để đưa app này lên cloud thật.
 
 ## 2. Kiến trúc đề xuất

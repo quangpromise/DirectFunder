@@ -311,6 +311,21 @@ export default function CpaReviewPage() {
     }).length;
   }
 
+  // Row đã gán Processor (cột "Processor") -> CHỈ đúng tài khoản đó (hoặc Manager/Processor
+  // Leader, vai trò quản lý trực tiếp) mới sửa/xoá được row đó — theo yêu cầu 2026-09-02 "chỉ
+  // có tài khoản gắn tên Processor mới được sửa xóa ở row đó". Row CHƯA gán Processor (cột
+  // đang trống) vẫn theo quyền cũ (mọi user có addCpaReviewRow/deleteCpaReviewRow sửa được) —
+  // chưa có ai để khoá theo. CHỈ áp dụng phía APP (PATCH/DELETE qua UI này) — Sheet→App qua
+  // webhook không đi qua session user nên không áp dụng được (xem cpa-review-sheet webhook).
+  const myId = user.id;
+  const myRole = user.role;
+  function canEditRow(row: CpaReviewRecord): boolean {
+    const assignedProcessorId = typeof row.custom.processorUserId === "string" ? row.custom.processorUserId : "";
+    if (!assignedProcessorId) return true;
+    if (myRole === "manager" || myRole === "processor_leader") return true;
+    return assignedProcessorId === myId;
+  }
+
   async function handleDelete(rowId: string) {
     if (await confirm(t("collecting.deleteRowConfirm"), { title: t("collecting.deleteRowTitle"), tone: "danger" })) {
       deleteCpaReviewRow(rowId);
@@ -716,6 +731,7 @@ export default function CpaReviewPage() {
           <tbody>
             {filteredRows.map((row: CpaReviewRecord, i) => {
               const rowBg = i % 2 === 0 ? "bg-bg" : "bg-[var(--row-alt-bg)]";
+              const rowEditable = canEditRow(row);
               return (
               <tr key={row.id} className={rowBg}>
                 <td className={`group border-b border-r border-border p-0 align-middle ${rowBg}`} style={GUTTER_STYLE_BODY}>
@@ -725,7 +741,7 @@ export default function CpaReviewPage() {
                       dành cho tiêu đề, dữ liệu bắt đầu dòng 4), thêm 2026-08-15. */}
                   <div className="relative flex h-full w-full items-center justify-center">
                     <span className="text-[10px] text-text-faint transition-opacity [tr:hover_&]:opacity-0">{i + 4}</span>
-                    {canDelete && (
+                    {canDelete && rowEditable && (
                       <button
                         onClick={() => handleDelete(row.id)}
                         className="absolute inset-0 flex items-center justify-center text-text-faint opacity-0 transition hover:text-red-400 [tr:hover_&]:opacity-100"
@@ -750,7 +766,7 @@ export default function CpaReviewPage() {
                           value={(row.custom[col.key] as string | number | null) ?? null}
                           type={col.type}
                           options={col.options}
-                          editable
+                          editable={rowEditable}
                           dense
                           tinyDense
                           // Tên (khác 5 cột A-F còn lại) căn trái + màu xanh dương đậm khi có
@@ -812,6 +828,7 @@ export default function CpaReviewPage() {
                     <YearCells
                       key={year}
                       tint={yearTintFor(year)}
+                      editable={rowEditable}
                       statusOptions={statusOptions}
                       efileDate={(row.custom[yearEfileDateKey(year)] as string | null) ?? null}
                       status={(row.custom[yearStatusKey(year)] as string | null) ?? null}
@@ -837,7 +854,7 @@ export default function CpaReviewPage() {
                       <EditableCell
                         value={(row.custom.note as string | null) ?? null}
                         type="text"
-                        editable
+                        editable={rowEditable}
                         dense
                         tinyDense
                         wrap
@@ -853,7 +870,7 @@ export default function CpaReviewPage() {
                     <AssignMenu
                       users={processorUsers}
                       assignedTo={(row.custom.processorUserId as string) ?? null}
-                      canAssign
+                      canAssign={rowEditable}
                       compact
                       onAssign={(uid) => updateCpaReviewCell(row.id, "processorUserId", uid)}
                     />
@@ -864,7 +881,7 @@ export default function CpaReviewPage() {
                     <AssignMenu
                       users={agentUsers}
                       assignedTo={(row.custom.agentUserId as string) ?? null}
-                      canAssign
+                      canAssign={rowEditable}
                       compact
                       onAssign={(uid) => updateCpaReviewCell(row.id, "agentUserId", uid)}
                     />
@@ -877,7 +894,7 @@ export default function CpaReviewPage() {
                       value={(row.custom[col.key] as string | number | null) ?? null}
                       type={col.type}
                       options={col.key === "crmSource" ? crmSourceOptions : col.options}
-                      editable
+                      editable={rowEditable}
                       dense
                       tinyDense
                       searchable={col.key === "crmSource"}
@@ -1032,6 +1049,7 @@ function FilterSelect({
  * `=O+P` trên Sheet thật, không lưu/đồng bộ để không bao giờ ghi đè công thức gốc). */
 function YearCells({
   tint,
+  editable,
   statusOptions,
   efileDate,
   status,
@@ -1047,6 +1065,9 @@ function YearCells({
   /** Class màu nền xen kẽ theo năm (YEAR_TINT) — thêm 2026-08-14, yêu cầu "3 cột năm
    * highlight màu xen kẽ dễ phân biệt". */
   tint: string;
+  /** Row đã bị khoá cho tài khoản khác (đã gán Processor khác mình, không phải Manager/
+   * Processor Leader) — thêm 2026-09-02, xem canEditRow() ở CpaReviewPage. */
+  editable: boolean;
   statusOptions: { id: string; label: string; bg: string; color: string }[];
   efileDate: string | null;
   status: string | null;
@@ -1063,7 +1084,13 @@ function YearCells({
   return (
     <>
       <Cell className={tint}>
-        <DateWithNote value={efileDate} note={note} onChangeDate={(v) => onChangeEfileDate(v)} onChangeNote={onChangeNote} />
+        <DateWithNote
+          value={efileDate}
+          note={note}
+          editable={editable}
+          onChangeDate={(v) => onChangeEfileDate(v)}
+          onChangeNote={onChangeNote}
+        />
       </Cell>
       <Cell className={tint}>
         {/* Luôn hiện dropdown (kể cả dòng vừa thêm/chưa có Số tiền) — trước đây chỉ hiện khi
@@ -1072,7 +1099,7 @@ function YearCells({
           value={status}
           type="select"
           options={statusOptions}
-          editable
+          editable={editable}
           tinyDense
           searchable
           onCommit={(v) => onChangeStatus(v as string)}
@@ -1082,7 +1109,7 @@ function YearCells({
         <EditableCell
           value={amount || null}
           type="currency"
-          editable
+          editable={editable}
           dense
           tinyDense
           accent
@@ -1090,7 +1117,14 @@ function YearCells({
         />
       </Cell>
       <Cell className={tint}>
-        <EditableCell value={adjustment || null} type="currency" editable dense tinyDense onCommit={(v) => onChangeAdjustment((v as number) || 0)} />
+        <EditableCell
+          value={adjustment || null}
+          type="currency"
+          editable={editable}
+          dense
+          tinyDense
+          onCommit={(v) => onChangeAdjustment((v as number) || 0)}
+        />
       </Cell>
       <Cell className={tint}>
         {total > 0 ? (
@@ -1111,11 +1145,13 @@ function YearCells({
 function DateWithNote({
   value,
   note,
+  editable,
   onChangeDate,
   onChangeNote,
 }: {
   value: string | null;
   note: string | null;
+  editable: boolean;
   onChangeDate: (v: string | null) => void;
   onChangeNote: (v: string) => void;
 }) {
@@ -1140,7 +1176,7 @@ function DateWithNote({
   return (
     <div className={`relative flex items-center ${hasNote ? "bg-amber-500/10" : ""}`}>
       <div className="min-w-0 flex-1">
-        <EditableCell value={value} type="date" editable dense tinyDense dateFormat="mmddyy" onCommit={(v) => onChangeDate(v as string | null)} />
+        <EditableCell value={value} type="date" editable={editable} dense tinyDense dateFormat="mmddyy" onCommit={(v) => onChangeDate(v as string | null)} />
       </div>
       <button
         ref={triggerRef}
@@ -1167,8 +1203,9 @@ function DateWithNote({
                 onChange={(e) => setDraft(e.target.value)}
                 rows={3}
                 autoFocus
+                disabled={!editable}
                 placeholder={t("cpaReview.addNotePlaceholder")}
-                className="w-full resize-none rounded-md border border-border bg-bg-elevated p-1.5 text-xs outline-none focus:border-accent"
+                className="w-full resize-none rounded-md border border-border bg-bg-elevated p-1.5 text-xs outline-none focus:border-accent disabled:cursor-not-allowed disabled:opacity-60"
               />
               <div className="mt-1.5 flex justify-end gap-1.5">
                 <button
@@ -1177,15 +1214,17 @@ function DateWithNote({
                 >
                   {t("common.close")}
                 </button>
-                <button
-                  onClick={() => {
-                    onChangeNote(draft);
-                    setOpen(false);
-                  }}
-                  className="gradient-btn rounded-md px-2 py-1 text-[11px] font-medium text-white"
-                >
-                  {t("common.save")}
-                </button>
+                {editable && (
+                  <button
+                    onClick={() => {
+                      onChangeNote(draft);
+                      setOpen(false);
+                    }}
+                    className="gradient-btn rounded-md px-2 py-1 text-[11px] font-medium text-white"
+                  >
+                    {t("common.save")}
+                  </button>
+                )}
               </div>
             </div>
           </>,
