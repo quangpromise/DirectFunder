@@ -69,7 +69,20 @@ function groupTasksBySection(tasks: ProcessorReportTaskDef[]) {
 const TASK_COL_WIDTH = 190;
 const DAY_COL_WIDTH = 40;
 const WEEK_COL_WIDTH = 48;
-const ROW_TOTAL_COL_WIDTH = 52;
+
+// Bảng CÁ NHÂN (ProcessorSelfReportGrid) — cột Task/Tổng vẫn cố định (px), nhưng cột NGÀY/TUẦN
+// đổi sang co giãn theo `fr` (thêm 2026-09-02, theo yêu cầu "điều chỉnh lại text các cột ngày
+// để tất cả các ngày đều xem được trong cùng 1 màn hình mà không cần scroll ngang") — DAY_COL_WIDTH
+// cũ (40px) là width CỐ ĐỊNH nên tháng 31 ngày + ~5 cột tuần luôn vượt quá chiều rộng màn hình
+// hẹp/trung bình, bắt buộc cuộn ngang. `minmax(0, 1fr)` đảm bảo TỔNG chiều rộng các cột ngày
+// luôn vừa đúng phần còn lại của container (không bao giờ tràn ra ngoài phải cuộn), đổi lại cột
+// có thể rất hẹp ở tháng 31 ngày trên màn hình nhỏ — đánh đổi có chủ đích theo đúng yêu cầu ưu
+// tiên "không cuộn ngang" hơn "cột rộng rãi". Cột TUẦN rộng hơn 1 chút (1.3fr) vì số tổng tuần
+// thường 2-3 chữ số, dễ bị cắt hơn số ngày (1-2 chữ số) ở cùng độ rộng.
+const SELF_TASK_COL_WIDTH = 130;
+const SELF_ROW_TOTAL_COL_WIDTH = 40;
+const SELF_DAY_COL_FR = "minmax(0, 1fr)";
+const SELF_WEEK_COL_FR = "minmax(0, 1.3fr)";
 
 export function ForProcessorButton() {
   const user = useCurrentUser();
@@ -479,9 +492,15 @@ function ProcessorSelfReportGrid({ userId }: { userId: string }) {
     return days.reduce((sum, d) => sum + dayValue(taskId, d.date), 0);
   }
 
-  const gridTemplateColumns = [`${TASK_COL_WIDTH}px`, `${ROW_TOTAL_COL_WIDTH}px`, ...columns.map((c) => `${c.width}px`)].join(
-    " "
-  );
+  // Cột Task/Tổng cố định (px), cột ngày/tuần co giãn theo `fr` để LUÔN vừa đúng chiều rộng
+  // container hiện có, không bao giờ phải cuộn ngang dù tháng có 28-31 ngày (thêm 2026-09-02,
+  // xem giải thích ở SELF_DAY_COL_FR/SELF_WEEK_COL_FR phía trên) — khác ProcessorLeaderReportGrid
+  // bên dưới (cột theo processor, số lượng ít, vẫn giữ nguyên px cố định như cũ).
+  const gridTemplateColumns = [
+    `${SELF_TASK_COL_WIDTH}px`,
+    `${SELF_ROW_TOTAL_COL_WIDTH}px`,
+    ...columns.map((c) => (c.kind === "day" ? SELF_DAY_COL_FR : SELF_WEEK_COL_FR)),
+  ].join(" ");
   const canManageTasks = role ? hasFeature(permissions, "manageProcessorReportTasks", role) : false;
 
   return (
@@ -495,16 +514,16 @@ function ProcessorSelfReportGrid({ userId }: { userId: string }) {
       </div>
       <div className="flex-1 overflow-auto">
         <div className="grid text-sm" style={{ gridTemplateColumns }}>
-          <div className="sticky left-0 top-0 z-30 table-head-cell px-2 py-1.5 text-[10px] font-semibold uppercase text-table-head-text">
+          <div className="sticky left-0 top-0 z-30 table-head-cell px-1.5 py-1.5 text-[9px] font-semibold uppercase text-table-head-text">
             {t("processorReport.tasksHeader")}
           </div>
-          <div className="sticky top-0 z-20 flex items-center justify-center border-b border-r border-border-strong bg-accent-soft px-1 py-1.5 text-[10px] font-semibold text-table-head-text">
+          <div className="sticky top-0 z-20 flex items-center justify-center border-b border-r border-border-strong bg-accent-soft px-0.5 py-1.5 text-[9px] font-semibold text-table-head-text">
             {t("processorReport.totalHeader")}
           </div>
           {columns.map((col, colIndex) => (
             <div
               key={col.key}
-              className={`sticky top-0 z-20 flex items-center justify-center border-b border-r border-border-strong px-1 py-1.5 text-[10px] font-semibold text-table-head-text ${
+              className={`sticky top-0 z-20 flex items-center justify-center overflow-hidden border-b border-r border-border-strong px-0.5 py-1.5 text-[9px] font-semibold text-table-head-text ${
                 colIndex === todayColIndex
                   ? "bg-accent text-white"
                   : col.kind === "week"
@@ -531,7 +550,7 @@ function ProcessorSelfReportGrid({ userId }: { userId: string }) {
               const col = columns[colIndex];
               if (col.kind === "week") {
                 return (
-                  <div className="flex h-full items-center justify-center bg-surface text-[11px] font-medium text-text-dim">
+                  <div className="flex h-full items-center justify-center overflow-hidden bg-surface px-0.5 text-[10px] font-medium text-text-dim">
                     {weekValue(taskId, col.weekIndex!) || ""}
                   </div>
                 );
@@ -547,7 +566,7 @@ function ProcessorSelfReportGrid({ userId }: { userId: string }) {
                     const next = Number(e.target.value) || 0;
                     if (next !== value) upsertEntry(taskId, col.date!, next);
                   }}
-                  className="no-spinner h-full w-full bg-transparent px-1 text-center text-[11px] outline-none focus:bg-accent-soft"
+                  className="no-spinner h-full w-full bg-transparent px-0.5 text-center text-[10px] outline-none focus:bg-accent-soft"
                 />
               );
             }}
