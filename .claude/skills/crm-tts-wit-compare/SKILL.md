@@ -1124,6 +1124,35 @@ khác biệt so với 2 biến thể đã biết) thay vì đoán mò sửa lạ
     field $0.00 nào trong dữ liệu thật của họ). `tsc --noEmit`/`eslint` sạch. **Không cần bước
     production nào** (thuần logic lọc mảng + text prompt, không đổi schema/API).
 
+34. **(2026-09-02, sau mục #33) Cột "Chênh lệch" tính sai khi TTS âm cho category Capital
+    Gains — thổi phồng số do trừ vào số âm** — người dùng báo tổng quát trước, sau khi mình dùng
+    hồ sơ thật `BY309210` (2024) làm ví dụ minh hoạ (WIT $6,258.00 từ 66 giao dịch 1099-B, TTS
+    -$3,000.00 — Capital gain or loss (Schedule D) đã bị giới hạn khấu trừ lỗ vốn $3,000/năm
+    theo luật IRS, phần lỗ dư có thể đến từ Capital Loss Carryover các năm trước mà WIT KHÔNG
+    BAO GIỜ có vì chỉ báo cáo giao dịch năm hiện tại), người dùng xác nhận đúng công thức muốn:
+    **nếu TTS âm → Chênh lệch = |WIT| (không trừ/cộng gì với số âm của TTS); nếu TTS dương → giữ
+    nguyên công thức cũ (max − min)**. Trước đó (`computeDiff()`,
+    `crm-tts-wit-check-button.tsx`) công thức cũ áp dụng chung cho mọi trường hợp — khi TTS âm,
+    `max - min` thực chất là `WIT − TTS = WIT + |TTS|` (trừ 1 số âm = cộng), thổi phồng Chênh
+    lệch lên $9,258 thay vì $6,258 thực tế, không mang ý nghĩa đúng ("số WIT đang thiếu" so với
+    TTS chỉ nên là chính số WIT, vì bản chất TTS âm ở đây không phản ánh cùng 1 loại giao dịch mà
+    WIT có).
+    **Đã sửa**: thêm 1 nhánh RIÊNG trong `computeDiff()` — CHỈ áp dụng cho category bắt đầu bằng
+    `"Capital Gains"` (khớp đúng category cố định `"Capital Gains (1099-B + 1099-DA)"` do
+    `CHAT_SYSTEM_INSTRUCTION` sinh ra, xem mục lịch sử #16) — khi có cả giá trị WIT lẫn TTS đọc
+    được VÀ TTS < 0, trả thẳng `magnitude: Math.abs(witVal)` thay vì `max - min`. TTS ≥ 0 hoặc
+    category khác Capital Gains vẫn dùng nguyên công thức cũ — không đụng màu (`witIsHighest`)
+    của nhánh mới, giữ nguyên logic tô đỏ/xanh sẵn có (kể cả quy tắc "cả 2 đều âm → luôn xanh" đã
+    có từ trước, mục lịch sử #7, vẫn áp dụng TRƯỚC khi vào nhánh mới này).
+    **Đã verify qua script độc lập** (copy y hệt logic `computeDiff()`, không import trực tiếp vì
+    hàm không export) với 4 case: (1) dữ liệu thật WIT $6,258/TTS -$3,000 → đúng `magnitude:
+    6258` (không còn 9258); (2) TTS dương ($5,000) → vẫn `magnitude: 1258` (công thức cũ, không
+    hồi quy); (3) cả 2 âm (WIT -$5,000/TTS -$3,000) → `magnitude: 5000` (= |WIT|), màu vẫn xanh
+    (`witIsHighest: false`, đúng quy tắc cũ); (4) category KHÁC "Capital Gains" (WIT $6,258/TTS
+    -$3,000) → vẫn `magnitude: 9258` (công thức cũ, xác nhận rule mới CHỈ áp dụng đúng phạm vi
+    Capital Gains, không ảnh hưởng category khác). `tsc --noEmit`/`eslint` sạch. **Không cần bước
+    production nào** (thuần logic tính toán ở client, không đổi schema/API/prompt AI).
+
 ## 4. Giới hạn đã biết
 
 - Không có OCR/fallback nếu CRM đổi định dạng PDF hoàn toàn khác — Gemini vẫn đọc được text lộn

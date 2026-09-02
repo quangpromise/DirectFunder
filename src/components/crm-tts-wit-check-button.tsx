@@ -313,6 +313,18 @@ function computeDiff(row: AiCompareRow, columns: CompareColumns, isNonTaxable: b
   // vì với 1 khoản lỗ, "WIT ít âm hơn TTS" không mang ý nghĩa rủi ro khai thiếu thu nhập
   // như với khoản thu nhập dương (thêm 2026-08-27 theo yêu cầu người dùng).
   if (witIsHighest === true && values.every((v) => v < 0)) witIsHighest = false;
+  // Riêng category "Capital Gains" (1099-B + 1099-DA) — khi TTS ÂM (thường là lỗ vốn ĐÃ bị giới
+  // hạn khấu trừ $3,000/năm theo luật IRS, có thể gộp cả Capital Loss Carryover từ năm trước mà
+  // WIT KHÔNG BAO GIỜ có vì WIT chỉ báo cáo giao dịch NĂM HIỆN TẠI): công thức max-min thông
+  // thường (tương đương WIT - TTS, cộng dồn cả 2 số vì trừ 1 số âm) làm phép trừ vào đúng số âm
+  // của TTS, ra 1 số bị thổi phồng không mang ý nghĩa thực (thêm 2026-09-02 theo yêu cầu người
+  // dùng, xác nhận qua ví dụ thật WIT $6,258/TTS -$3,000: công thức cũ ra $9,258, không đúng ý
+  // nghĩa "số WIT đang thiếu"). Khi TTS âm, Chênh lệch đổi thành đúng giá trị WIT (trị tuyệt
+  // đối) — không trừ/cộng gì với số âm của TTS nữa. TTS dương vẫn giữ nguyên công thức cũ.
+  const ttsVal = columns.tts ? parseAmountLike(row.tts) : null;
+  if (row.category.startsWith("Capital Gains") && witVal !== null && ttsVal !== null && ttsVal < 0) {
+    return { magnitude: Math.abs(witVal), witIsHighest };
+  }
   return { magnitude: max - min, witIsHighest };
 }
 
