@@ -1153,6 +1153,25 @@ khác biệt so với 2 biến thể đã biết) thay vì đoán mò sửa lạ
     Capital Gains, không ảnh hưởng category khác). `tsc --noEmit`/`eslint` sạch. **Không cần bước
     production nào** (thuần logic tính toán ở client, không đổi schema/API/prompt AI).
 
+35. **(2026-09-02, ngay sau mục #34) Cả 2 số cùng âm → Chênh lệch = $0 (không chỉ đổi màu như
+    trước)** — người dùng yêu cầu tiếp: "Khi cả 2 số đều âm thì Difference sẽ = $0 màu xanh".
+    Trước mục #34, quy tắc "cả 2 âm" (mục lịch sử #7) CHỈ đổi màu (ép xanh dù WIT "cao nhất" theo
+    max/min) — số hiển thị vẫn là `max - min` như bình thường (vd WIT -$5,000/TTS -$3,000 vẫn ra
+    $2,000, chỉ khác màu). Giờ thêm 1 nhánh SỚM HƠN cả nhánh Capital-Gains-khi-TTS-âm ở mục #34 —
+    nếu MỌI giá trị đang so (không riêng Capital Gains, áp dụng chung mọi category) đều âm, trả
+    thẳng `{magnitude: 0, witIsHighest: false}` — số hiện ra LUÔN là $0.00, xanh, bất kể 2 số âm
+    lệch nhau bao nhiêu (vd -$5,000 vs -$3,000 → $0.00, không phải $2,000 như trước). Đặt nhánh
+    này TRƯỚC nhánh Capital-Gains-khi-TTS-âm (mục #34) trong code vì nếu WIT CŨNG âm, phải return
+    $0 sớm, không rơi vào nhánh Capital Gains bên dưới (nhánh đó chỉ còn áp dụng khi TTS âm NHƯNG
+    WIT không âm — dương hoặc bằng 0).
+    Đã verify qua script độc lập (mở rộng bộ test mục #34 thêm 3 case): cả 2 âm ở category
+    Capital Gains → `{0, false}`; cả 2 âm ở category KHÁC Capital Gains (vd "Wages (W-2)") →
+    cũng `{0, false}` (xác nhận rule mới KHÔNG giới hạn riêng Capital Gains, áp dụng chung); 2 số
+    âm bằng nhau tuyệt đối (-$3,000/-$3,000) → vẫn `{0, false}` (không đổi gì, magnitude vốn đã
+    là 0 theo công thức cũ). 3 case cũ của mục #34 (real data $6,258/-$3,000, TTS dương, category
+    khác) verify lại không hồi quy — kết quả giữ nguyên y hệt. `tsc --noEmit`/`eslint` sạch.
+    **Không cần bước production nào** (thuần logic tính toán ở client).
+
 ## 4. Giới hạn đã biết
 
 - Không có OCR/fallback nếu CRM đổi định dạng PDF hoàn toàn khác — Gemini vẫn đọc được text lộn

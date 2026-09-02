@@ -313,14 +313,23 @@ function computeDiff(row: AiCompareRow, columns: CompareColumns, isNonTaxable: b
   // vì với 1 khoản lỗ, "WIT ít âm hơn TTS" không mang ý nghĩa rủi ro khai thiếu thu nhập
   // như với khoản thu nhập dương (thêm 2026-08-27 theo yêu cầu người dùng).
   if (witIsHighest === true && values.every((v) => v < 0)) witIsHighest = false;
+  // Cả WIT và TTS ĐỀU âm (cùng thể hiện 1 khoản LỖ) — coi như KHỚP, Chênh lệch = $0, xanh
+  // (thêm 2026-09-02 theo yêu cầu người dùng, ngay sau quy tắc Capital Gains bên dưới) — khác
+  // quy tắc màu ở trên (chỉ đổi màu, vẫn hiện số magnitude khác 0), giờ số hiện ra cũng = 0
+  // luôn, không riêng category Capital Gains (áp dụng chung mọi trường hợp cả 2 giá trị đang so
+  // đều âm — đúng tinh thần "2 khoản lỗ, không đáng so bao nhiêu, chỉ cần biết cùng là lỗ").
+  if (values.every((v) => v < 0)) {
+    return { magnitude: 0, witIsHighest: false };
+  }
   // Riêng category "Capital Gains" (1099-B + 1099-DA) — khi TTS ÂM (thường là lỗ vốn ĐÃ bị giới
   // hạn khấu trừ $3,000/năm theo luật IRS, có thể gộp cả Capital Loss Carryover từ năm trước mà
   // WIT KHÔNG BAO GIỜ có vì WIT chỉ báo cáo giao dịch NĂM HIỆN TẠI): công thức max-min thông
   // thường (tương đương WIT - TTS, cộng dồn cả 2 số vì trừ 1 số âm) làm phép trừ vào đúng số âm
   // của TTS, ra 1 số bị thổi phồng không mang ý nghĩa thực (thêm 2026-09-02 theo yêu cầu người
   // dùng, xác nhận qua ví dụ thật WIT $6,258/TTS -$3,000: công thức cũ ra $9,258, không đúng ý
-  // nghĩa "số WIT đang thiếu"). Khi TTS âm, Chênh lệch đổi thành đúng giá trị WIT (trị tuyệt
-  // đối) — không trừ/cộng gì với số âm của TTS nữa. TTS dương vẫn giữ nguyên công thức cũ.
+  // nghĩa "số WIT đang thiếu"). Khi TTS âm (nhưng WIT KHÔNG âm — nếu WIT cũng âm đã trả sớm ở
+  // nhánh "cả 2 âm" bên trên), Chênh lệch đổi thành đúng giá trị WIT (trị tuyệt đối) — không
+  // trừ/cộng gì với số âm của TTS nữa. TTS dương vẫn giữ nguyên công thức cũ.
   const ttsVal = columns.tts ? parseAmountLike(row.tts) : null;
   if (row.category.startsWith("Capital Gains") && witVal !== null && ttsVal !== null && ttsVal < 0) {
     return { magnitude: Math.abs(witVal), witIsHighest };
