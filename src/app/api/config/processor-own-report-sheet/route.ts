@@ -11,6 +11,7 @@ import {
   resyncOwnReportSheet,
   SheetNotAccessibleError,
   mapSheetsError,
+  DAY_COL_OFFSET,
 } from "@/lib/processor-own-report-sheet-sync";
 import { isValidMonthKey } from "@/lib/cpa-review-month";
 
@@ -37,7 +38,7 @@ function buildAppsScript(webhookUrl: string, secret: string): string {
     if (row < 2) continue; // dòng 1 = header, không đồng bộ
     for (var c = 0; c < numCols; c++) {
       var col = startCol + c;
-      if (col < 1) continue; // cột A = nhãn task, không đồng bộ
+      if (col <= ${DAY_COL_OFFSET}) continue; // cột A-H không đồng bộ (ngày bắt đầu từ cột I)
       var v = sheet.getRange(row, col + 1).getValue();
       cells.push({ row: row, col: col, rawValue: (v === "" || v === null || v === undefined) ? "" : String(v) });
     }

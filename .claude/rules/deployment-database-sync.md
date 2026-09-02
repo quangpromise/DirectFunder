@@ -1267,6 +1267,30 @@ gì tới cách App ghi ngược lại.
    `recomputeAndPushProcessorReportSummary` có sẵn, 2 nhánh HOÀN TOÀN độc lập, không ảnh hưởng
    nhau nếu 1 nhánh lỗi.
 
+**Bổ sung cùng ngày (2026-09-02) — cột ngày đổi từ bắt đầu ở cột B sang bắt đầu ở cột I**:
+người dùng báo Sheet cá nhân của họ đã có sẵn các cột B-H dùng cho việc khác (template riêng,
+ngoài phạm vi app) — layout ban đầu (`DAY_COL_OFFSET` ngầm định = 0, cột ngày 1 = B) ghi đè lên
+đúng vùng đó. Đổi sang hằng số `DAY_COL_OFFSET = 7` (export từ
+`processor-own-report-sheet-sync.ts`) — cột ngày d (1-based) giờ = cột spreadsheet index
+`DAY_COL_OFFSET + d` (ngày 1 = cột I, `letterFor(8)`), cột A vẫn giữ nhãn task, cột B-H KHÔNG
+BAO GIỜ bị app đọc/ghi (Apps Script tự bỏ qua `col <= DAY_COL_OFFSET`, server tự bỏ qua nếu
+`day = cell.col - DAY_COL_OFFSET` ngoài phạm vi 1..days). Áp dụng cho `writeOwnReportLayout`
+(header + data + công thức SUM), `pushOwnReportCell`, `applyOwnReportSheetCells`, `minGridFor`.
+**Vì đây là hằng số CỐ ĐỊNH dùng chung cho MỌI Processor** (không phải cấu hình theo từng
+người) — nếu sau này có Processor khác có layout Sheet khác (cột ngày bắt đầu ở vị trí khác B/
+I), cần thiết kế lại thành trường cấu hình theo từng user thay vì hằng số toàn cục này.
+
+**QUAN TRỌNG — Sheet ĐÃ kết nối trước bản sửa này phải "Đồng bộ lại toàn bộ" (resync) VÀ dán
+lại Apps Script mới**: layout cũ đã ghi số ngày vào cột B-H (đè lên vùng của người dùng) — cần
+resync để ghi lại đúng vị trí (cột I trở đi); dán lại script mới để chiều Sheet→App đọc đúng
+cột (nếu không, sửa ô ở cột I sẽ bị Apps Script CŨ bỏ qua vì điều kiện skip cũ là `col < 1`,
+không phải lỗi nhưng webhook sẽ nhận offset sai, dữ liệu áp vào sai ngày).
+
+**Chưa verify được qua Google Sheet thật** (không có OAuth client id khớp môi trường dev để tự
+đọc/ghi Sheet thật của user từ đây) — chỉ verify qua `tsc --noEmit`/`eslint` sạch + đọc lại kỹ
+từng chỗ dùng `letterFor`/cột. Cần người dùng tự bấm "Đồng bộ lại toàn bộ" trong dialog "Sheet
+của tôi" rồi kiểm tra lại cột ngày trên Sheet thật đúng bắt đầu ở cột I.
+
 **Đã tự kiểm tra (2026-09-02)**:
 - Script độc lập gọi thẳng `applyOwnReportSheetCells()` trên DB dev thật (tháng test riêng
   `2099-03`, đã dọn sạch sau test) — 5 case: tạo mới đúng giá trị; grace window 5s chặn đúng

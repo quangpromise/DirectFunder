@@ -23,6 +23,11 @@ import type { OwnProcessorReportSheetConfig, OwnProcessorReportSheetConfigMap, P
 const HEADER_ROW = 1;
 const FIRST_DATA_ROW = 2;
 const TASK_LABEL_COL = 0; // cột A
+/** Cột B..H (0-based index 1-7) KHÔNG do app quản lý — theo yêu cầu người dùng
+ * (2026-09-02), Sheet cá nhân của Processor có sẵn các cột khác ở khu vực đó (template
+ * riêng của họ, ngoài phạm vi app) — app CHỈ đọc/ghi cột ngày bắt đầu từ cột I (0-based
+ * index 8) trở đi. Cột ngày d (1-based) -> spreadsheet column index = DAY_COL_OFFSET + d. */
+export const DAY_COL_OFFSET = 7;
 
 export function daysInMonth(month: string): number {
   const [y, m] = month.split("-").map(Number);
@@ -70,11 +75,12 @@ async function writeOwnReportLayout(
 ): Promise<void> {
   const days = daysInMonth(month);
   const orderedTasks = [...tasks].sort((a, b) => a.sectionOrder - b.sectionOrder || a.order - b.order);
-  const lastDayCol = days;
-  const totalCol = days + 1;
+  const firstDayCol = DAY_COL_OFFSET + 1;
+  const lastDayCol = DAY_COL_OFFSET + days;
+  const totalCol = lastDayCol + 1;
 
   const headerCells: CellWrite[] = [{ column: letterFor(TASK_LABEL_COL), value: "Tasks" }];
-  for (let d = 1; d <= days; d++) headerCells.push({ column: letterFor(d), value: d });
+  for (let d = 1; d <= days; d++) headerCells.push({ column: letterFor(DAY_COL_OFFSET + d), value: d });
   headerCells.push({ column: letterFor(totalCol), value: "TOTAL" });
   await writeCells(sheets, sheetId, tabName, HEADER_ROW, headerCells);
 
@@ -85,11 +91,11 @@ async function writeOwnReportLayout(
     for (let d = 1; d <= days; d++) {
       const date = `${month}-${String(d).padStart(2, "0")}`;
       const value = entryByKey.get(`${task.id}:${date}`) ?? 0;
-      if (value !== 0) cells.push({ column: letterFor(d), value });
+      if (value !== 0) cells.push({ column: letterFor(DAY_COL_OFFSET + d), value });
     }
     cells.push({
       column: letterFor(totalCol),
-      value: `=SUM(${letterFor(1)}${row}:${letterFor(lastDayCol)}${row})`,
+      value: `=SUM(${letterFor(firstDayCol)}${row}:${letterFor(lastDayCol)}${row})`,
       isFormula: true,
     });
     await writeCells(sheets, sheetId, tabName, row, cells);
@@ -99,7 +105,7 @@ async function writeOwnReportLayout(
 /** Kích thước tối thiểu tab cần có — nhỏ hơn nhiều so với CPA Review (chỉ ~25-30 task x
  * 31 ngày), nhưng vẫn có thể vượt mặc định 26 cột (Z) nếu tháng đủ 31 ngày (cần tới cột AF). */
 function minGridFor(taskCount: number, days: number): { rows: number; cols: number } {
-  return { rows: FIRST_DATA_ROW + taskCount, cols: days + 2 };
+  return { rows: FIRST_DATA_ROW + taskCount, cols: DAY_COL_OFFSET + days + 2 };
 }
 
 /** `refreshToken` LUÔN do nơi gọi (route) tự kiểm tra/truyền vào — route trả 428
@@ -177,7 +183,7 @@ export async function pushOwnReportCell(userId: string, month: string, taskId: s
 
     const sheets = getOAuthSheetsClient(user.googleRefreshToken);
     await ensureRowExists(sheets, config.sheetId, config.tabName, row);
-    await writeCells(sheets, config.sheetId, config.tabName, row, [{ column: letterFor(day), value }]);
+    await writeCells(sheets, config.sheetId, config.tabName, row, [{ column: letterFor(DAY_COL_OFFSET + day), value }]);
   } catch (err) {
     if (err instanceof GoogleAuthExpiredError) {
       await prisma.user.update({ where: { id: userId }, data: { googleRefreshToken: null } }).catch(() => {});
@@ -205,10 +211,11 @@ export async function applyOwnReportSheetCells(
   let applied = 0;
 
   for (const cell of cells) {
-    if (cell.row < FIRST_DATA_ROW || cell.col < 1 || cell.col > days) continue;
+    const day = cell.col - DAY_COL_OFFSET;
+    if (cell.row < FIRST_DATA_ROW || day < 1 || day > days) continue;
     const task = orderedTasks[cell.row - FIRST_DATA_ROW];
     if (!task) continue;
-    const date = `${month}-${String(cell.col).padStart(2, "0")}`;
+    const date = `${month}-${String(day).padStart(2, "0")}`;
     const raw = cell.rawValue.trim();
     const value = raw === "" ? 0 : Number(raw.replace(/,/g, ""));
     if (!Number.isFinite(value)) continue;
