@@ -256,6 +256,12 @@ interface AppState {
   /** Nạp lại rules sau khi nhận tín hiệu "rules:changed" qua Pusher — trước đây rules chỉ
    * nạp 1 lần lúc hydrateFromServer nên user khác thấy rule mới rất trễ (phải tự F5). */
   refetchRules: () => Promise<void>;
+  /** Nạp lại processorReportEntries (đúng tháng đang xem) sau khi nhận tín hiệu
+   * "processorReport:changed" qua Pusher — trước đây popup "For Processor" hoàn toàn không
+   * có realtime, sửa trên Sheet cá nhân (Sheet→App) chỉ thấy sau khi tự đóng/mở lại popup
+   * (thêm 2026-09-02). No-op nếu chưa từng mở popup này (processorReportSelectedMonth vẫn có
+   * giá trị mặc định nên luôn gọi được, không cần điều kiện). */
+  refetchProcessorReportEntries: () => Promise<void>;
   /** Nạp cpaReviewRecords của 1 tháng nếu CHƯA có trong cache (xem cpaReviewLoadedMonths) —
    * no-op nếu đã nạp rồi. Gọi mỗi khi đổi tháng qua setCpaReviewSelectedMonth. */
   ensureCpaReviewMonthLoaded: (month: string) => Promise<void>;
@@ -2049,6 +2055,20 @@ export const useAppStore = create<AppState>()(
       fetchProcessorReportEntries: async (month, userId) => {
         const { entries } = await api.listProcessorReportEntries(month, userId);
         set({ processorReportEntries: entries });
+      },
+
+      // Tín hiệu "processorReport:changed" không kèm userId/tháng nào đã đổi — nạp lại CẢ 2
+      // nguồn dữ liệu popup "For Processor" đang dùng (bảng cá nhân processorReportEntries
+      // của CHÍNH mình, bảng tổng hợp processorReportSummary của Leader), đúng THÁNG đang xem
+      // (processorReportSelectedMonth). Vô hại nếu 1 trong 2 grid không đang mở (chỉ tốn 1
+      // lượt fetch thừa, không có gì hiện ra sai).
+      refetchProcessorReportEntries: async () => {
+        const month = get().processorReportSelectedMonth;
+        const meId = get().currentUserId;
+        await Promise.all([
+          meId ? get().fetchProcessorReportEntries(month) : Promise.resolve(),
+          get().fetchProcessorReportSummary(month),
+        ]);
       },
 
       upsertProcessorReportEntry: (taskId, date, value, userId) => {

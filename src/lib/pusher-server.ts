@@ -14,6 +14,7 @@ import Pusher from "pusher";
 const CASES_CHANNEL = "private-cases";
 const CPA_REVIEW_CHANNEL = "private-cpa-review";
 const RULES_CHANNEL = "private-rules";
+const PROCESSOR_REPORT_CHANNEL = "private-processor-report";
 /** Presence channel — MỌI user đăng nhập đều subscribe (xem use-realtime.ts) để Pusher tự
  * theo dõi ai đang online (member_added/member_removed khi kết nối/mất kết nối), dùng cho
  * chấm xanh "đang online" cạnh avatar ở trang Quản lý tài khoản (thêm 2026-08-23). Cùng
@@ -84,6 +85,15 @@ export async function broadcastRulesChanged(ruleId: string, socketId: string | n
   await safeTrigger(RULES_CHANNEL, "rules:changed", { ruleId }, socketId);
 }
 
+/** Tín hiệu RỖNG tương tự broadcastCaseChanged nhưng cho popup "For Processor" (bảng
+ * `ProcessorReportEntry`, độc lập với Case) — bắn khi 1 entry được lưu qua app (POST/PATCH
+ * /api/processor-report/entries) LẪN khi webhook Sheet cá nhân (Sheet→App) áp dụng ô sửa
+ * (thêm 2026-09-02, trước đó bảng này hoàn toàn không có realtime, phải tự đóng/mở lại popup
+ * mới thấy dữ liệu mới từ Sheet — xem deployment-database-sync.md mục 4.48). */
+export async function broadcastProcessorReportChanged(socketId: string | null): Promise<void> {
+  await safeTrigger(PROCESSOR_REPORT_CHANNEL, "processorReport:changed", {}, socketId);
+}
+
 /** Thông báo thật (Notification row đầy đủ) — an toàn để gửi thẳng vì luôn "địa chỉ hoá"
  * đúng 1 người nhận (kênh riêng theo userId, chỉ user đó auth được — xem
  * src/app/api/pusher/auth/route.ts), không phải kênh chung. */
@@ -95,4 +105,4 @@ export async function broadcastNotification(
   await safeTrigger(notificationChannel(toUserId), "notification:new", notification, socketId);
 }
 
-export { CASES_CHANNEL, CPA_REVIEW_CHANNEL, RULES_CHANNEL, PRESENCE_ONLINE_CHANNEL, notificationChannel, getPusherServer };
+export { CASES_CHANNEL, CPA_REVIEW_CHANNEL, RULES_CHANNEL, PROCESSOR_REPORT_CHANNEL, PRESENCE_ONLINE_CHANNEL, notificationChannel, getPusherServer };

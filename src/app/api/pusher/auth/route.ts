@@ -6,6 +6,7 @@ import {
   CASES_CHANNEL,
   CPA_REVIEW_CHANNEL,
   RULES_CHANNEL,
+  PROCESSOR_REPORT_CHANNEL,
   PRESENCE_ONLINE_CHANNEL,
 } from "@/lib/pusher-server";
 
@@ -15,8 +16,9 @@ import {
  * subscribe 1 kênh, kèm socket_id + channel_name.
  *
  * Chỉ cho phép subscribe: "private-cases"/"private-cpa-review"/"private-rules"/
- * "presence-online-users" (mọi user đã đăng nhập — kênh tín hiệu chung, không kèm dữ liệu
- * nhạy cảm, xem broadcastCaseChanged/broadcastCpaReviewChanged) hoặc đúng kênh thông báo
+ * "private-processor-report"/"presence-online-users" (mọi user đã đăng nhập — kênh tín hiệu
+ * chung, không kèm dữ liệu nhạy cảm, xem broadcastCaseChanged/broadcastCpaReviewChanged/
+ * broadcastProcessorReportChanged) hoặc đúng kênh thông báo
  * CỦA CHÍNH MÌNH ("private-notifications-{userId}") — chặn nghe lén kênh thông báo người
  * khác. Kênh presence cần thêm `channel_data` (user_id + user_info) khi authorize.
  */
@@ -46,6 +48,7 @@ export async function POST(request: NextRequest) {
     channelName === CASES_CHANNEL ||
     channelName === CPA_REVIEW_CHANNEL ||
     channelName === RULES_CHANNEL ||
+    channelName === PROCESSOR_REPORT_CHANNEL ||
     channelName === notificationChannel(me.id);
   if (!allowed) return NextResponse.json({ error: "Không có quyền subscribe kênh này" }, { status: 403 });
 

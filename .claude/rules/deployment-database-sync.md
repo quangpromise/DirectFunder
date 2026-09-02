@@ -1323,6 +1323,34 @@ thuộc Prisma/React, dùng chung được cả client lẫn server):
   tra cứu 2 chiều qua `buildReportRows`/`buildReportColumns` thay vì phép tính số học trực
   tiếp như code cũ.
 
+**Bổ sung cùng ngày (2026-09-02, lần 3) — realtime, phân biệt màu cột tổng, tự đóng băng
+tháng đã qua**:
+1. **Realtime (Pusher)** — trước đây bảng cá nhân/bảng tổng hợp Leader HOÀN TOÀN không có tín
+   hiệu nào, sửa trên Sheet cá nhân (Sheet→App) chỉ thấy sau khi tự đóng/mở lại popup. Thêm
+   kênh mới `private-processor-report` (`broadcastProcessorReportChanged`, `pusher-server.ts`)
+   — bắn khi `POST/PATCH /api/processor-report/entries` (App sửa) LẪN khi webhook Sheet cá
+   nhân áp dụng thành công ≥1 ô (Sheet sửa). Client (`use-realtime.ts`) debounce 500ms rồi gọi
+   `refetchProcessorReportEntries()` (action mới, `app-store.ts`) — nạp lại CẢ
+   `processorReportEntries` (bảng cá nhân, đúng `currentUserId`) LẪN `processorReportSummary`
+   (bảng tổng hợp Leader), đúng THÁNG đang chọn (`processorReportSelectedMonth`) — vô hại nếu 1
+   trong 2 grid không đang mở. Phải thêm `PROCESSOR_REPORT_CHANNEL` vào danh sách kênh cho phép
+   subscribe ở `POST /api/pusher/auth` (giống 3 kênh private khác đã có).
+2. **Màu cột "Tổng"/cột tuần tách biệt khỏi highlight "hôm nay"** — trước đó cả 3 (cột "Tổng"
+   cố định, cột tổng tuần W1/W2, cột NGÀY HÔM NAY) đều dùng chung tông `bg-accent`/
+   `bg-accent-soft`, dễ nhầm lẫn. Đổi: cột "Tổng" → xanh lá (`bg-emerald-500/…`, header/dòng
+   section/dòng task), cột tổng tuần → hổ phách (`bg-amber-500/…`, cả header lẫn thân cột —
+   trước đó thân cột tuần hoàn toàn không tô gì), cột NGÀY HÔM NAY giữ nguyên `bg-accent`
+   (xanh dương, ưu tiên cao nhất, đè lên nếu trùng — nhưng không bao giờ trùng thật vì 1 cột
+   chỉ là "day" HOẶC "week", không bao giờ cả 2). `SectionRows` (dùng chung Self/Leader grid)
+   nhận thêm field `kind?: "day"|"week"` trong `columns` để biết tô đúng — Leader's `columns`
+   không có field này nên không bị ảnh hưởng.
+3. **Tự đóng băng đồng bộ khi tháng đã kết thúc** (`isMonthSyncActive()`,
+   `processor-own-report-sheet-sync.ts`, so `month >= currentMonthKey()` theo giờ Phoenix) —
+   `pushOwnReportCell` (App→Sheet) và `applyOwnReportSheetCells` (Sheet→App qua webhook) đều tự
+   bỏ qua nếu tháng đã qua tháng hiện tại. **CHỈ chặn 2 đường TỰ ĐỘNG này** — `connectOwnReportSheet`/
+   `resyncOwnReportSheet` (Processor chủ động bấm "Kết nối"/"Đồng bộ lại toàn bộ") KHÔNG bị chặn,
+   vẫn dùng được để sửa tay dữ liệu tháng cũ nếu cần.
+
 **Đã tự kiểm tra (2026-09-02, lần 2)**: script độc lập gọi `buildReportRows`/`buildReportColumns`
 với đúng `DEFAULT_PROCESSOR_REPORT_TASKS` + tháng `2026-09` — khớp CHÍNH XÁC toàn bộ 32 dòng
 (6 header + 25 task, đúng thứ tự/đúng số dòng) và 12 cột đầu (I-N = 6 ngày, O = "W1", P.. = 7

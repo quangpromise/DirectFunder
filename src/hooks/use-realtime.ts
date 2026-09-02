@@ -9,6 +9,7 @@ import type { AppNotification } from "@/lib/types";
 const CASES_CHANNEL = "private-cases";
 const CPA_REVIEW_CHANNEL = "private-cpa-review";
 const RULES_CHANNEL = "private-rules";
+const PROCESSOR_REPORT_CHANNEL = "private-processor-report";
 const PRESENCE_ONLINE_CHANNEL = "presence-online-users";
 
 interface PresenceMembers {
@@ -26,6 +27,9 @@ interface PresenceMembers {
  *   src/lib/pusher-server.ts cho lý do). Debounce 500ms để gộp nhiều tín hiệu dồn dập.
  * - "private-notifications-{userId}": "notification:new" — thông báo thật, prepend thẳng
  *   vào store qua receiveNotification.
+ * - "private-processor-report": "processorReport:changed" — popup "For Processor" (bảng cá
+ *   nhân LẪN bảng tổng hợp Leader) tự refetch, kể cả thay đổi đến từ webhook Sheet cá nhân
+ *   (thêm 2026-09-02, xem broadcastProcessorReportChanged/pusher-server.ts).
  * - "presence-online-users": Pusher tự theo dõi ai đang online, MỌI user đăng nhập đều
  *   subscribe (không chỉ Admin) để chính mình được tính vào danh sách — chấm xanh cạnh
  *   avatar ở trang Quản lý tài khoản chỉ Admin mới thấy UI, nhưng dữ liệu presence không
@@ -70,6 +74,13 @@ export function useRealtime(userId: string | undefined): void {
         useAppStore.getState().refetchRules();
       }, 500);
     }
+    let processorReportDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+    function onProcessorReportChanged() {
+      if (processorReportDebounceTimer) clearTimeout(processorReportDebounceTimer);
+      processorReportDebounceTimer = setTimeout(() => {
+        useAppStore.getState().refetchProcessorReportEntries();
+      }, 500);
+    }
 
     const casesChannel = pusher.subscribe(CASES_CHANNEL);
     casesChannel.bind("case:changed", onCaseChanged);
@@ -79,6 +90,9 @@ export function useRealtime(userId: string | undefined): void {
 
     const rulesChannel = pusher.subscribe(RULES_CHANNEL);
     rulesChannel.bind("rules:changed", onRulesChanged);
+
+    const processorReportChannel = pusher.subscribe(PROCESSOR_REPORT_CHANNEL);
+    processorReportChannel.bind("processorReport:changed", onProcessorReportChanged);
 
     const notifChannelName = `private-notifications-${userId}`;
     const notifChannel = pusher.subscribe(notifChannelName);
@@ -104,9 +118,11 @@ export function useRealtime(userId: string | undefined): void {
       if (debounceTimer) clearTimeout(debounceTimer);
       if (cpaReviewDebounceTimer) clearTimeout(cpaReviewDebounceTimer);
       if (rulesDebounceTimer) clearTimeout(rulesDebounceTimer);
+      if (processorReportDebounceTimer) clearTimeout(processorReportDebounceTimer);
       casesChannel.unbind("case:changed", onCaseChanged);
       cpaReviewChannel.unbind("cpaReview:changed", onCpaReviewChanged);
       rulesChannel.unbind("rules:changed", onRulesChanged);
+      processorReportChannel.unbind("processorReport:changed", onProcessorReportChanged);
       notifChannel.unbind("notification:new", onNotification);
       presenceChannel.unbind("pusher:subscription_succeeded", onPresenceSubscribed);
       presenceChannel.unbind("pusher:member_added", onMemberAdded);
@@ -114,6 +130,7 @@ export function useRealtime(userId: string | undefined): void {
       pusher.unsubscribe(CASES_CHANNEL);
       pusher.unsubscribe(CPA_REVIEW_CHANNEL);
       pusher.unsubscribe(RULES_CHANNEL);
+      pusher.unsubscribe(PROCESSOR_REPORT_CHANNEL);
       pusher.unsubscribe(notifChannelName);
       pusher.unsubscribe(PRESENCE_ONLINE_CHANNEL);
       useAppStore.getState().setOnlineUserIds([]);

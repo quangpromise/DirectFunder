@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { findOwnReportConfigBySecret, applyOwnReportSheetCells } from "@/lib/processor-own-report-sheet-sync";
+import { broadcastProcessorReportChanged } from "@/lib/pusher-server";
 
 /**
  * Webhook nhận thay đổi TỪ Sheet RIÊNG của 1 Processor (Apps Script `onOwnReportEdit`) —
@@ -29,5 +30,8 @@ export async function POST(request: NextRequest) {
   if (cells.length === 0) return NextResponse.json({ ok: true, applied: 0 });
 
   const applied = await applyOwnReportSheetCells(found.userId, found.month, cells);
+  // Webhook không có Pusher socket của trình duyệt nào để loại trừ -> socketId = null (mọi
+  // trình duyệt đang mở popup "For Processor" đều tự refetch, kể cả chủ nhân Sheet vừa sửa).
+  if (applied > 0) await broadcastProcessorReportChanged(null);
   return NextResponse.json({ ok: true, applied });
 }

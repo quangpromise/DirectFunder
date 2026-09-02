@@ -5,6 +5,7 @@ import { letterFor } from "./cpa-review-sheet-columns";
 import { resolveTabNameFromGid, ensureSheetGridSize, SheetNotAccessibleError } from "./cpa-review-sheet-sync";
 import { getProcessorReportTasks, recomputeAndPushProcessorReportSummary } from "./processor-report-sheet-sync";
 import { daysInMonth, buildReportColumns, buildReportRows, DAY_COL_OFFSET } from "./processor-report-layout";
+import { currentMonthKey } from "./cpa-review-month";
 import type { OwnProcessorReportSheetConfig, OwnProcessorReportSheetConfigMap } from "./types";
 
 /** Sheet RIÊNG của 1 Processor cho bảng cá nhân (task x từng ngày) — layout khớp ĐÚNG template
@@ -25,6 +26,16 @@ import type { OwnProcessorReportSheetConfig, OwnProcessorReportSheetConfigMap } 
  * luôn chạy dưới quyền chính chủ Sheet, không liên quan gì tới cách App ghi ngược lại. */
 
 const FIRST_DATA_ROW = 2;
+
+/** Chỉ tháng HIỆN TẠI trở đi (theo giờ Phoenix, cùng quy ước `currentMonthKey()` dùng cho CPA
+ * Review) mới còn đồng bộ TỰ ĐỘNG (push khi sửa entry trong app, webhook nhận sửa từ Sheet) —
+ * tháng đã qua (đã "kết thúc ngày cuối") tự đóng băng, không còn nhận thay đổi 2 chiều nữa
+ * (thêm 2026-09-02). KHÔNG áp dụng cho connect/resync (`connectOwnReportSheet`/
+ * `resyncOwnReportSheet`) — đó là hành động Processor CHỦ ĐỘNG bấm, vẫn cho phép chạy tay với
+ * tháng cũ nếu cần sửa lại dữ liệu lịch sử. */
+function isMonthSyncActive(month: string): boolean {
+  return month >= currentMonthKey();
+}
 
 export async function getOwnReportSheetConfigMap(userId: string): Promise<OwnProcessorReportSheetConfigMap> {
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { ownProcessorReportSheetConfig: true } });
@@ -155,6 +166,7 @@ export async function resyncOwnReportSheet(userId: string, month: string, refres
  * googleRefreshToken (giống send-to-sheet route) để lần kết nối/gửi tiếp theo phát hiện đúng
  * "chưa kết nối" thay vì thử lại token đã chết. */
 export async function pushOwnReportCell(userId: string, month: string, taskId: string, date: string, value: number): Promise<void> {
+  if (!isMonthSyncActive(month)) return; // tháng đã kết thúc -> đóng băng, không đẩy nữa
   try {
     const map = await getOwnReportSheetConfigMap(userId);
     const config = map[month];
@@ -196,6 +208,7 @@ export async function applyOwnReportSheetCells(
   month: string,
   cells: Array<{ row: number; col: number; rawValue: string }>
 ): Promise<number> {
+  if (!isMonthSyncActive(month)) return 0; // tháng đã kết thúc -> đóng băng, bỏ qua mọi sửa từ Sheet
   const tasks = await getProcessorReportTasks();
   const rows = buildReportRows(tasks);
   const columns = buildReportColumns(month);

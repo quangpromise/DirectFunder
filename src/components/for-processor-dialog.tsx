@@ -193,7 +193,10 @@ function SectionRows({
   sections: ReturnType<typeof groupTasksBySection>;
   renderCell: (taskId: string, colIndex: number) => React.ReactNode;
   computeSectionTotal: (taskIds: string[], colIndex: number) => number;
-  columns: { key: string; width: number; sticky?: boolean }[];
+  /** `kind: "week"` (chỉ ProcessorSelfReportGrid truyền, Leader không có cột tuần nào) —
+   * dùng để tô riêng cột tổng kết tuần (W1/W2...) khác màu với cột NGÀY HÔM NAY, tránh nhầm
+   * lẫn 2 loại highlight (thêm 2026-09-02, theo yêu cầu "highlight các cột tổng kết tuần"). */
+  columns: { key: string; width: number; sticky?: boolean; kind?: "day" | "week" }[];
   /** Cột "Tổng" riêng, đặt NGAY SAU cột Task/tên section (trước các cột ngày/tuần) — khác
    * cột TOTAL cuối bảng (nếu có, xem ProcessorLeaderReportGrid) vốn tổng theo processor.
    * Optional: chỉ render khi có truyền vào (ProcessorSelfReportGrid dùng, tổng theo NGÀY
@@ -220,7 +223,7 @@ function SectionRows({
             {sIdx + 1} {section.sectionLabel}
           </div>
           {renderRowTotal && computeSectionRowTotal && (
-            <div className="flex items-center justify-center border-b border-r border-border-strong bg-accent-soft text-[11px] font-semibold text-red-400 light:text-red-600">
+            <div className="flex items-center justify-center border-b border-r border-border-strong bg-emerald-500/15 text-[11px] font-semibold text-red-400 light:text-red-600">
               {computeSectionRowTotal(section.tasks.map((tk) => tk.id)) || ""}
             </div>
           )}
@@ -228,7 +231,7 @@ function SectionRows({
             <div
               key={col.key}
               className={`flex items-center justify-center border-b border-r border-border text-[11px] font-semibold text-red-400 light:text-red-600 ${
-                colIndex === highlightColIndex ? "bg-accent-soft" : "bg-surface"
+                colIndex === highlightColIndex ? "bg-accent-soft" : col.kind === "week" ? "bg-amber-500/10" : "bg-surface"
               }`}
             >
               {computeSectionTotal(
@@ -252,7 +255,7 @@ function SectionRows({
                 <span className="truncate">{task.label}</span>
               </div>
               {renderRowTotal && (
-                <div className="flex h-full items-center justify-center border-b border-r border-border bg-accent-soft text-[11px] font-medium text-text group-focus-within:ring-1 group-focus-within:ring-inset group-focus-within:ring-accent">
+                <div className="flex h-full items-center justify-center border-b border-r border-border bg-emerald-500/10 text-[11px] font-medium text-text group-focus-within:ring-1 group-focus-within:ring-inset group-focus-within:ring-accent">
                   {renderRowTotal(task.id)}
                 </div>
               )}
@@ -260,7 +263,7 @@ function SectionRows({
                 <div
                   key={col.key}
                   className={`border-b border-r border-border group-focus-within:bg-accent-soft ${
-                    colIndex === highlightColIndex ? "bg-accent-soft/40" : ""
+                    colIndex === highlightColIndex ? "bg-accent-soft/40" : col.kind === "week" ? "bg-amber-500/5" : ""
                   }`}
                 >
                   {renderCell(task.id, colIndex)}
@@ -524,7 +527,7 @@ function ProcessorSelfReportGrid({ userId }: { userId: string }) {
           <div className="sticky left-0 top-0 z-30 table-head-cell px-1.5 py-1.5 text-[9px] font-semibold uppercase text-table-head-text">
             {t("processorReport.tasksHeader")}
           </div>
-          <div className="sticky top-0 z-20 flex items-center justify-center border-b border-r border-border-strong bg-accent-soft px-0.5 py-1.5 text-[9px] font-semibold text-table-head-text">
+          <div className="sticky top-0 z-20 flex items-center justify-center border-b border-r border-border-strong bg-emerald-500/15 px-0.5 py-1.5 text-[9px] font-semibold text-table-head-text">
             {t("processorReport.totalHeader")}
           </div>
           {columns.map((col, colIndex) => (
@@ -534,7 +537,7 @@ function ProcessorSelfReportGrid({ userId }: { userId: string }) {
                 colIndex === todayColIndex
                   ? "bg-accent text-white"
                   : col.kind === "week"
-                    ? "bg-accent-soft"
+                    ? "bg-amber-500/20"
                     : "bg-table-head-bg"
               }`}
             >
@@ -557,7 +560,7 @@ function ProcessorSelfReportGrid({ userId }: { userId: string }) {
               const col = columns[colIndex];
               if (col.kind === "week") {
                 return (
-                  <div className="flex h-full items-center justify-center overflow-hidden bg-surface px-0.5 text-[10px] font-medium text-text-dim">
+                  <div className="flex h-full items-center justify-center overflow-hidden px-0.5 text-[10px] font-medium text-text-dim">
                     {weekValue(taskId, col.weekIndex!) || ""}
                   </div>
                 );

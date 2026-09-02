@@ -5,6 +5,7 @@ import { hasFeature } from "@/lib/rbac";
 import { recomputeAndPushProcessorReportSummary } from "@/lib/processor-report-sheet-sync";
 import { pushOwnReportCell } from "@/lib/processor-own-report-sheet-sync";
 import { isValidMonthKey } from "@/lib/cpa-review-month";
+import { broadcastProcessorReportChanged } from "@/lib/pusher-server";
 import type { FeaturePermissions } from "@/lib/types";
 
 /** true nếu `me` được phép xem/sửa entries của `targetUserId` — chính mình luôn được, Quản
@@ -86,6 +87,10 @@ async function upsertEntry(request: NextRequest) {
     // bảng tổng hợp của Leader ở trên, không ảnh hưởng gì tới nhau (thêm 2026-09-02).
     after(() => pushOwnReportCell(userId, month, taskId, date, value!));
   }
+  // Báo các trình duyệt khác đang mở popup "For Processor" (bảng cá nhân LẪN bảng tổng hợp
+  // Leader, cả 2 cùng đọc chung processorReportEntries) tự refetch — trừ chính trình duyệt
+  // vừa gửi request này (loại qua socket_id, cùng pattern broadcastCaseChanged).
+  after(() => broadcastProcessorReportChanged(request.headers.get("x-pusher-socket-id")));
   return NextResponse.json({ entry });
 }
 
