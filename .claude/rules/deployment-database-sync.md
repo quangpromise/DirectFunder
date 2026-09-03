@@ -1736,6 +1736,48 @@ feature-permission) — chỉ cần deploy code. Kiểm tra sau khi deploy: sử
 app (hoặc để webhook tự đẩy từ Sheet rồi đẩy ngược lại) → xác nhận ô Note trên Sheet thật canh
 trái, không cần Admin tự chỉnh tay.
 
+### 4.57 Fix: DOB hiển thị nguyên chuỗi `Date.toString()` khi đồng bộ từ Sheet (thêm 2026-09-03)
+
+Người dùng gửi ảnh chụp production: cột DOB hiện nguyên `"Thu Apr 16 1998 00:00:00 GMT+0700
+(Indochina Time)"` thay vì `04/16/1998`. Nguyên nhân: cột "dob" là kiểu `"text"` (không phải
+`"date"`, cố ý để giữ được 2 ngày sinh Taxpayer+Spouse cách nhau bằng `\n` trong 1 ô) — nên
+KHÔNG đi qua nhánh `parseSheetDate()` dành cho cột `"date"` trong `sheetChangeToPatch()`, giá
+trị Sheet trả về (chuỗi `Date.toString()` đầy đủ khi ô có định dạng Date thuần) bị lưu y
+nguyên. `formatMmDdYyyy()` (`editable-cell.tsx`, tầng hiển thị) chỉ nhận ISO/MM-DD-YYYY, không
+tự parse được dạng này nên hiện xấu nguyên văn.
+
+Đã sửa: thêm nhánh riêng cho `key === "dob"` trong `sheetChangeToPatch()` — tách theo `"\n"`
+(KHÔNG tách theo mọi khoảng trắng, vì `Date.toString()` tự nó chứa nhiều khoảng trắng bên
+trong, tách theo `\s+` sẽ băm vụn 1 giá trị), parse TỪNG DÒNG qua `parseSheetDate()` (đã xử lý
+sẵn cả serial number lẫn `Date.toString()`), nối lại bằng `"\n"` — dòng nào không parse được
+vẫn giữ nguyên văn. Đã tự kiểm tra qua script độc lập (3 case: 1 ngày dạng `Date.toString()`, 2
+ngày dạng đó nối `\n`, 1 ngày dạng `mm/dd/yyyy`) — cả 3 ra đúng ISO. Đã sửa luôn dữ liệu hồ sơ
+thật bị lỗi trên production ("LEONARDO QUACH", `cmtlebac1000104ijuvm0feep`) về đúng
+`1998-04-16`.
+
+**Không cần bước production nào** (thuần sửa logic parse, không đổi schema/feature-permission)
+— chỉ cần deploy code.
+
+### 4.58 Fix: SĐT 2 số dính liền 1 dòng khi đẩy xuống Google Sheet (thêm 2026-09-03)
+
+Người dùng gửi ảnh: 2 hồ sơ có 2 số điện thoại (Taxpayer + Spouse) hiện dính liền thành 1 chuỗi
+trên Sheet (vd `"4083044360 4088884856"` bị cắt hiển thị thành `"044360 408888"` do cột hẹp)
+thay vì xuống 2 dòng riêng. Nguyên nhân: dữ liệu `custom.phone` không LUÔN dùng `"\n"` làm dấu
+phân cách nhất quán như `dob`/`ssn` (có nơi lưu cách nhau bằng khoảng trắng thường), và
+`buildCpaReviewSheetCells()` (App→Sheet) trước đây KHÔNG có xử lý riêng cho cột "phone" — ghi
+thẳng giá trị thô lên Sheet, giữ nguyên dấu cách thay vì xuống dòng.
+
+Đã sửa: thêm nhánh riêng cho `key === "phone"` trong `buildCpaReviewSheetCells()` — tách theo
+MỌI khoảng trắng (`\s+`, an toàn cho số điện thoại vì 1 số không có khoảng trắng bên trong,
+khác `Date.toString()` của DOB) rồi nối lại bằng `"\n"`, áp dụng đồng nhất bất kể dữ liệu gốc
+đang phân cách bằng dấu cách hay đã là `"\n"` sẵn. Đã ghi đè trực tiếp 2 ô Phone thật trên
+production (`Quoc B Pham` dòng 10, `Thuy Nghe & Thu Ho` dòng 11) qua Service Account để sửa
+ngay dữ liệu đang hiển thị sai, không cần đợi deploy.
+
+**Không cần bước production nào** (thuần sửa logic ghi Sheet, không đổi schema/feature-
+permission) — chỉ cần deploy code. Kiểm tra sau khi deploy: sửa 1 hồ sơ có 2 SĐT qua app (hoặc
+Test Sheet/Send to CPA Review) → xác nhận ô Phone trên Sheet hiện đúng 2 dòng riêng biệt.
+
 Mục 2–5 bên dưới là kiến trúc/quy trình đề xuất (phần lớn đã áp dụng đúng như mô tả, trừ Auth đã nêu ở trên). Mục 6 là checklist hành động cụ thể để đưa app này lên cloud thật.
 
 ## 2. Kiến trúc đề xuất

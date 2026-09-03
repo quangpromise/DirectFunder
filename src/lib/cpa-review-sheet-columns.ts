@@ -86,6 +86,17 @@ export function buildCpaReviewSheetCells(
       cells.push({ column: letterFor(index), value: formatted });
       continue;
     }
+    // "phone" có thể chứa 2 số (Taxpayer + Spouse) — dữ liệu lưu trong custom không luôn dùng
+    // "\n" làm dấu phân cách nhất quán (có nơi lưu cách nhau bằng khoảng trắng), khiến 2 số
+    // dính liền thành 1 dòng khi đẩy nguyên văn lên Sheet (báo cáo thật 2026-09-03: "044360
+    // 408888" nhìn như 1 số bị cắt thay vì rõ 2 số riêng). Tách theo MỌI khoảng trắng (số điện
+    // thoại không có khoảng trắng bên trong 1 số, khác Date.toString() của DOB) rồi nối lại
+    // bằng "\n" để Sheet hiển thị đúng 2 dòng riêng biệt.
+    if (key === "phone" && typeof value === "string") {
+      const formatted = value.split(/\s+/).filter(Boolean).join("\n");
+      cells.push({ column: letterFor(index), value: formatted });
+      continue;
+    }
     if (typeof value === "number") {
       cells.push({ column: letterFor(index), value });
       continue;
