@@ -70,13 +70,27 @@ function onCpaReviewEdit(e) {
   // 1 row dưới Google Sheet thì phần mềm nhảy 2 row"). Khoá tuần tự hoá MỌI lượt onCpaReviewEdit
   // của CÙNG script (không chỉ cùng dòng — đơn giản/an toàn hơn khoá theo từng dòng), đảm bảo
   // lượt sau LUÔN thấy đúng kết quả đã lưu của lượt trước trước khi tự quyết định tạo/cập nhật.
+  //
+  // "waitLock timeout -> vẫn tiếp tục KHÔNG có khoá" (SỬA 2026-09-03, thay vì bỏ qua hẳn) —
+  // bug thật gặp production: 1 Sheet có TỚI 2 người khác nhau từng tự chạy
+  // installCpaReviewTriggers (mỗi lần chạy chỉ xoá được trigger CỦA CHÍNH MÌNH —
+  // ScriptApp.getProjectTriggers() không thấy được trigger người khác cài — nên cả 2 bộ
+  // trigger cùng tồn tại song song, MỖI LẦN edit fire onCpaReviewEdit 2 LẦN). LockService là
+  // khoá CHUNG CHO CẢ SCRIPT (không phân biệt trigger nào/user nào gọi) — khi 1 trong 2 bộ
+  // trigger bị lỗi/treo (vd tài khoản cài trigger đó mất quyền UrlFetchApp), nó chiếm khoá
+  // suốt 10s rồi mới lỗi, khiến bộ trigger ĐÚNG luôn timeout waitLock theo, return sớm ->
+  // MẤT TRẮNG dữ liệu (không có tín hiệu nào gửi lên webhook, khác hẳn ý định ban đầu "cực
+  // hiếm, lượt sau sẽ tự bù lại" — với 2 trigger tranh chấp, tình huống này xảy ra THƯỜNG
+  // XUYÊN, không hiếm). Đánh đổi: chấp nhận rủi ro nhỏ tạo trùng dòng (nếu đúng lúc có 2 lượt
+  // edit chồng lấn THẬT — hiếm) còn hơn mất dữ liệu hoàn toàn (xảy ra liên tục khi có trigger
+  // trùng lặp/lỗi như trường hợp này).
   var lock = LockService.getScriptLock();
+  var locked = false;
   try {
     lock.waitLock(10000);
+    locked = true;
   } catch (lockErr) {
-    // Không giành được khoá trong 10s (cực hiếm) — bỏ qua lượt này thay vì crash/treo Apps
-    // Script; lượt edit tiếp theo (nếu có) hoặc lần "Đồng bộ lại" thủ công sẽ tự bù lại.
-    return;
+    // Không giành được khoá trong 10s — KHÔNG return nữa, tiếp tục chạy không khoá bên dưới.
   }
 
   try {
@@ -86,7 +100,7 @@ function onCpaReviewEdit(e) {
       onCpaReviewEditLocked(sheet, row, editedStartIdx, editedNumCols);
     }
   } finally {
-    lock.releaseLock();
+    if (locked) lock.releaseLock();
   }
 }
 

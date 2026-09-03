@@ -1666,6 +1666,63 @@ nên tự xác nhận: sửa 1 ô ở tab KHÁC (không phải tab đã kết n�
 → xác nhận KHÔNG có dữ liệu nào bị đồng bộ nhầm vào bảng "For Processor" của tháng đang kết
 nối.
 
+### 4.55 Fix: 2 bug thật gặp khi điều tra "row 9 CPA Review không đồng bộ" trên production (thêm 2026-09-03)
+
+Điều tra live trên production (Service Account đọc trực tiếp Google Sheet thật, không đổi gì)
+phát hiện dòng 9 (khách "Thang V Phan & Thanh Thuy Ngo") có đủ dữ liệu trên Sheet nhưng KHÔNG
+có bản ghi nào trong app — 0 request nào từng chạm webhook cho dòng này. Người dùng xác nhận
+qua Apps Script Triggers panel: **1 Sheet có TỚI 2 người khác nhau (Owned by "Me" VÀ "Other
+user") từng tự chạy `installCpaReviewTriggers`** — mỗi lần chạy chỉ xoá được trigger CỦA CHÍNH
+MÌNH (`ScriptApp.getProjectTriggers()` không thấy được trigger người khác cài, giới hạn CỐ Ý
+của Google Apps Script API) — kết quả: **6 trigger cùng tồn tại song song** (3+3), mỗi lần
+sửa 1 ô fire `onCpaReviewEdit` **2 LẦN**, và trigger của "Other user" có **error rate 70.95%**
+(rất có thể tài khoản đó đã mất quyền `UrlFetchApp`/bị thu hồi quyền truy cập).
+
+1. **Bug LockService chiếm khoá khi có trigger lỗi** — `LockService.getScriptLock()` là khoá
+   CHUNG CHO CẢ SCRIPT (không phân biệt trigger nào/user nào gọi nó). Khi trigger lỗi của
+   "Other user" chiếm khoá gần hết 10s rồi mới lỗi, trigger ĐÚNG (của "Me") liên tục bị
+   `waitLock(10000)` timeout theo → code CŨ `return` ngay khi timeout → **mất trắng dữ liệu,
+   không có tín hiệu nào gửi lên webhook** — khác hẳn ý định thiết kế ban đầu ở mục 4.47
+   ("cực hiếm, lượt sau tự bù lại"), với 2 trigger tranh chấp tình huống này xảy ra THƯỜNG
+   XUYÊN. Sửa: `onCpaReviewEdit` giờ, nếu `waitLock` timeout, **vẫn tiếp tục chạy KHÔNG có
+   khoá** (chấp nhận rủi ro nhỏ tạo trùng dòng nếu đúng lúc có 2 lượt edit chồng lấn thật —
+   hiếm) thay vì bỏ hẳn — đánh đổi hợp lý vì mất dữ liệu hoàn toàn tệ hơn nhiều so với 1 dòng
+   trùng thỉnh thoảng (có thể tự dọn tay như các lần trước).
+   - **Người dùng ĐÃ tự xoá được 3 trigger "Other user"** qua nút ⋮ trên UI Triggers (ban đầu
+     tưởng không xoá được, nhưng thử lại thành công) — nguyên nhân gốc (trigger trùng) đã hết,
+     bản vá LockService ở trên vẫn giữ lại làm lớp phòng thủ cho các trường hợp tương tự sau
+     này (vd nếu lại có người khác vô tình chạy `installCpaReviewTriggers` lần nữa).
+2. **Bug parse ngày: cột "date" (FC Date/EL Date/Processing Date) ÂM THẦM BỎ QUA giá trị
+   không phải ngày hợp lệ** — dữ liệu thật trên Sheet thường xuyên dùng "N/A"/"NA" làm giá trị
+   đặt chỗ cho các cột này (chưa có ngày cụ thể), nhưng `sheetChangeToPatch()`
+   (`cpa-review-sheet-columns.ts`) trước đây: parse ngày thất bại → trả `null` → server coi
+   như "ô này không đổi gì", ÂM THẦM bỏ qua — vi phạm nguyên tắc "không được mất dữ liệu khi
+   đồng bộ Sheet" đã áp dụng nhất quán cho mọi cột khác trong file này. Sửa: parse thất bại
+   thì lưu NGUYÊN VĂN raw text thay vì bỏ qua (`value: iso ?? raw`) — áp dụng cho MỌI cột
+   `type: "date"` (không riêng FC/EL/Processing Date, kể cả "{năm} Date" nếu ai đó gõ text lạ
+   vào đó cũng không còn bị mất nữa).
+
+**Đã tự sửa dữ liệu row 9 trên production** — đẩy tay qua webhook (mô phỏng đúng payload Apps
+Script sẽ gửi, đọc dữ liệu thật từ Sheet qua Service Account) sau khi xác nhận link Name
+(`nameLink`) và FC Date ("N/A") — 2 lần đẩy: lần đầu thiếu 2 field này (trước khi phát hiện bug
+#2 ở trên), lần 2 bổ sung `nameLink` (thành công ngay, không phụ thuộc bug đã sửa) nhưng
+`fcDate` VẪN CHƯA lưu được vì code sửa bug #2 CHƯA DEPLOY lúc đó (production vẫn chạy code cũ)
+— **cần đẩy lại LẦN 3 sau khi deploy xong** để `fcDate="N/A"` thực sự lưu vào record này.
+
+**Sau khi deploy code này lên production PHẢI làm đủ các bước sau** (xoá mục này khỏi file khi đã làm xong):
+1. Không cần `prisma migrate deploy`/script merge `AppConfig` (thuần sửa logic parse +
+   Apps Script, không đổi schema/feature-permission).
+2. **Dán lại Apps Script mới** cho Sheet CPA Review tháng 2026-09 (Hướng dẫn → Copy script →
+   dán đè → Save → chạy lại `installCpaReviewTriggers`) — bắt buộc vì đã đổi logic
+   `onCpaReviewEdit` (đoạn LockService).
+3. Đẩy lại `fcDate` cho record row 9 ("Thang V Phan & Thanh Thuy Ngo", id
+   `cmtksuya4000104kzlb1hrvtx`) bằng 1 lệnh webhook thủ công tương tự đã làm (hoặc đơn giản
+   hơn: đợi người dùng tự sửa lại ô FC Date đó trên Sheet 1 lần — giờ sẽ tự lưu đúng).
+4. Thử gõ "N/A"/"NA" vào 1 ô FC Date/EL Date/Processing Date khác trên Sheet → xác nhận app
+   nhận đúng giá trị text đó (không còn bị bỏ qua).
+5. Xác nhận sửa 1 ô bất kỳ trên Sheet vẫn đồng bộ đúng bình thường (không có tác dụng phụ nào
+   từ việc bỏ bớt phụ thuộc vào LockService khi timeout).
+
 Mục 2–5 bên dưới là kiến trúc/quy trình đề xuất (phần lớn đã áp dụng đúng như mô tả, trừ Auth đã nêu ở trên). Mục 6 là checklist hành động cụ thể để đưa app này lên cloud thật.
 
 ## 2. Kiến trúc đề xuất

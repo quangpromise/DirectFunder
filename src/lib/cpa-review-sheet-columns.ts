@@ -243,8 +243,14 @@ export function sheetChangeToPatch(
 
   const col = COLUMN_BY_KEY.get(key);
   if (col?.type === "date") {
+    // Nếu parse được thành ngày thật -> lưu ISO. Không parse được (vd "N/A"/"NA", giá trị
+    // đặt chỗ RẤT PHỔ BIẾN thật ở cột FC Date/Processing Date/EL Date trên Sheet thật) -> vẫn
+    // lưu NGUYÊN VĂN thay vì trả null/bỏ qua (sửa 2026-09-03, bug thật báo production: dán dữ
+    // liệu "N/A" vào FC Date không bao giờ lên app vì trước đây coi "không phải ngày hợp lệ"
+    // là tín hiệu bỏ qua toàn bộ ô, đúng nguyên tắc "không được mất dữ liệu khi đồng bộ Sheet"
+    // đã áp dụng cho mọi cột khác — cột "date" không nên là ngoại lệ).
     const iso = parseSheetDate(raw);
-    return iso ? { key, value: iso } : null;
+    return { key, value: iso ?? raw };
   }
   if (col?.type === "currency") {
     const amount = parseSheetAmount(raw);
