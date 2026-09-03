@@ -241,6 +241,21 @@ export function sheetChangeToPatch(
     return { key, value: userId };
   }
 
+  // "dob" kiểu "text" (không phải "date") vì 1 ô có thể chứa 2 ngày sinh (Taxpayer + Spouse)
+  // cách nhau bằng dấu xuống dòng — nhưng vì thế KHÔNG đi qua nhánh parseSheetDate ở dưới, nên
+  // khi Sheet trả nguyên chuỗi Date.toString() (ô có định dạng Date thuần, gặp thật 2026-09-03:
+  // "Thu Apr 16 1998 00:00:00 GMT+0700 (Indochina Time)") thì chuỗi thô đó bị lưu y nguyên,
+  // hiển thị xấu ở app (EditableCell chỉ nhận ISO/MM-DD-YYYY, không tự parse được dạng này).
+  // CHỈ tách theo "\n" (KHÔNG tách theo mọi khoảng trắng — Date.toString() tự nó CHỨA nhiều
+  // khoảng trắng bên trong, tách theo \s+ sẽ băm vụn 1 giá trị thành nhiều mảnh rác), parse
+  // TỪNG DÒNG qua parseSheetDate (đã xử lý sẵn cả serial number lẫn Date.toString()), rồi nối
+  // lại bằng "\n" — dòng nào không parse được vẫn giữ nguyên văn (không mất dữ liệu).
+  if (key === "dob") {
+    const lines = raw.split("\n").filter((l) => l.trim());
+    const formatted = lines.map((l) => parseSheetDate(l.trim()) ?? l.trim()).join("\n");
+    return { key, value: formatted };
+  }
+
   const col = COLUMN_BY_KEY.get(key);
   if (col?.type === "date") {
     // Nếu parse được thành ngày thật -> lưu ISO. Không parse được (vd "N/A"/"NA", giá trị
