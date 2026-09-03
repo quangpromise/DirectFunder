@@ -1723,6 +1723,19 @@ Script sẽ gửi, đọc dữ liệu thật từ Sheet qua Service Account) sau
 5. Xác nhận sửa 1 ô bất kỳ trên Sheet vẫn đồng bộ đúng bình thường (không có tác dụng phụ nào
    từ việc bỏ bớt phụ thuộc vào LockService khi timeout).
 
+### 4.56 Cột "Note" App→Sheet đổi sang canh TRÁI (giống cột Name) (thêm 2026-09-03)
+
+Theo yêu cầu người dùng — cột "Note" (index 27, cột AB, ghi chú tự do, KHÁC icon 📌 gắn ở ô
+"Ngày" mỗi năm) giờ luôn được ép căn TRÁI mỗi lần app ghi xuống Sheet, giống hệt cách cột Name
+đã xử lý từ mục 4.16/4.47 (`leftAlignColumn`, gọi lại ở MỌI lần ghi — cả dòng mới lẫn dòng có
+sẵn, không chỉ riêng dòng mới như `centerAlignRow`). Chỉ thêm 1 dòng gọi hàm có sẵn
+(`leftAlignColumn`) với `NOTE_COLUMN_INDEX = 27` — không có logic mới nào khác.
+
+**Không cần bước production nào** (thuần gọi thêm 1 hàm format có sẵn, không đổi schema/
+feature-permission) — chỉ cần deploy code. Kiểm tra sau khi deploy: sửa 1 ô Note bất kỳ trên
+app (hoặc để webhook tự đẩy từ Sheet rồi đẩy ngược lại) → xác nhận ô Note trên Sheet thật canh
+trái, không cần Admin tự chỉnh tay.
+
 Mục 2–5 bên dưới là kiến trúc/quy trình đề xuất (phần lớn đã áp dụng đúng như mô tả, trừ Auth đã nêu ở trên). Mục 6 là checklist hành động cụ thể để đưa app này lên cloud thật.
 
 ## 2. Kiến trúc đề xuất

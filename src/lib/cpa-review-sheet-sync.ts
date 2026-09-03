@@ -207,6 +207,7 @@ export async function scanDistinctNames(
 }
 
 const NAME_COLUMN_INDEX = 1; // cột B
+const NOTE_COLUMN_INDEX = 27; // cột AB — "Note" (ghi chú tự do, khác icon 📌 ở ô Ngày mỗi năm)
 
 /** Đọc link đính kèm ô Name (cột B) cho từng dòng trong phạm vi quét — Sheets API chỉ trả
  * hyperlink qua `spreadsheets.get` (không có ở `values.get` dùng để đọc giá trị thường),
@@ -432,8 +433,11 @@ async function pushRecordToSheet(
   }
   // Cột Name luôn căn TRÁI (yêu cầu 2026-08-31) — ghi đè lại NGAY SAU `centerAlignRow` (chỉ
   // chạy cho dòng mới) VÀ cho cả dòng có sẵn (dòng cũ có thể đã bị căn giữa từ trước khi có
-  // yêu cầu này), nên gọi ở đây, ngoài nhánh `if (appendedRow !== undefined)`.
+  // yêu cầu này), nên gọi ở đây, ngoài nhánh `if (appendedRow !== undefined)`. Cột Note cũng
+  // căn TRÁI theo cùng yêu cầu (thêm 2026-09-03) — cùng lý do, áp dụng cho MỌI lần ghi (dòng
+  // mới lẫn dòng có sẵn), không riêng dòng mới.
   await leftAlignColumn(sheets, config.sheetId, Number(config.gid), targetRow, NAME_COLUMN_INDEX);
+  await leftAlignColumn(sheets, config.sheetId, Number(config.gid), targetRow, NOTE_COLUMN_INDEX);
   // Chỉ tốn thêm 1 lệnh batchUpdate ghi Note khi thật sự có liên quan tới ghi chú (record có
   // Note hoặc lần lưu này đụng tới field ghi chú) — tránh gọi API thừa mỗi lần sửa 1 ô KHÔNG
   // liên quan gì tới Note (vd chỉ đổi Status).
