@@ -1123,7 +1123,7 @@ function YearCells({
       </Cell>
       <Cell className={tint}>
         {total > 0 ? (
-          <div className="px-1.5 py-2 text-[10px] font-semibold text-accent">${total.toLocaleString("en-US")}</div>
+          <div className="px-1.5 py-2 text-[10px] font-bold text-emerald-400">${total.toLocaleString("en-US")}</div>
         ) : (
           <div className="px-1.5 py-2 text-[10px] font-semibold text-text-faint">—</div>
         )}
