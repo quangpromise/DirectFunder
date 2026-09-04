@@ -1107,7 +1107,7 @@ function YearCells({
           editable={editable}
           dense
           tinyDense
-          accent
+          moneyBright
           onCommit={(v) => onChangeAmount((v as number) || 0)}
         />
       </Cell>

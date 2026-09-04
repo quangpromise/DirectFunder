@@ -59,6 +59,7 @@ export function EditableCell({
   dateFormat,
   align,
   accent,
+  moneyBright,
   multilineEdit,
   searchable,
 }: {
@@ -97,6 +98,11 @@ export function EditableCell({
   /** Chữ đậm màu accent xanh dương (thay cho màu mặc định) — dùng đánh dấu ô Name có gắn
    * link tới hồ sơ gốc trên Sheet (thêm 2026-08-14). Mặc định false. */
   accent?: boolean;
+  /** Chữ xanh lá sáng + đậm hơn hẳn (thay cho `accent`/màu mặc định) — dùng riêng cho cột
+   * "Số tiền" theo năm (2023/2024/2025) của tab CPA Review, theo yêu cầu "màu sáng và đậm
+   * hơn cho dễ nhìn" (thêm 2026-09-03). Ưu tiên cao hơn `accent` nếu cả 2 cùng bật. Mặc định
+   * false (không ảnh hưởng mọi cột khác trong app). */
+  moneyBright?: boolean;
   /** Chỉ áp dụng với type "text" — sửa bằng <textarea> thay vì <input>, Enter vẫn lưu như
    * cũ nhưng Ctrl+Enter (hoặc Cmd+Enter trên Mac) chèn xuống dòng thay vì lưu — dùng cho các
    * ô text box của tab "CPA Review" (thêm 2026-08-14, yêu cầu "ctrl + Enter để xuống
@@ -189,7 +195,7 @@ export function EditableCell({
   // giữa chừng khi cột hẹp, gây vỡ dòng giữa cụm số).
   const viewTextClass = wrap ? "whitespace-pre-wrap break-words" : breakOnSpace ? "whitespace-pre" : "truncate";
   const alignClass = align === "left" ? "text-left" : "text-center";
-  const colorClass = accent ? "text-accent" : undefined;
+  const colorClass = moneyBright ? "text-emerald-400 font-bold" : accent ? "text-accent" : undefined;
 
   if (!editable) {
     return (
