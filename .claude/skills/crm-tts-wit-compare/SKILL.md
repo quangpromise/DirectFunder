@@ -1172,6 +1172,41 @@ khác biệt so với 2 biến thể đã biết) thay vì đoán mò sửa lạ
     khác) verify lại không hồi quy — kết quả giữ nguyên y hệt. `tsc --noEmit`/`eslint` sạch.
     **Không cần bước production nào** (thuần logic tính toán ở client).
 
+36. **(2026-09-04, sau mục #35) Bug thật khiến 1099-B bị THIẾU giao dịch — transcript IRS bỏ
+    hẳn field "Proceeds:" khi giá trị = $0.00, code cũ bỏ qua LUÔN cả giao dịch** — người dùng
+    báo hồ sơ thật `BY307302` (2025): "W&I đưa ra kết quả tổng proceeds và cost or Basis khác
+    với bảng Sum W&IS... chưa sum total của Proceeds, Cost or Basis và Wash of Sale". Debug trực
+    tiếp CRM thật (viết file `.ts` riêng, KHÔNG dùng `node -e` — đúng bài học đã ghi ở mục lịch
+    sử #26 về việc backslash trong regex bị bash nuốt mất, tái phạm y hệt lúc đầu rồi tự sửa)
+    lộ ra: WIT năm 2025 của hồ sơ này có **6 giao dịch 1099-B** (National Financial Services
+    LLC), nhưng `extractCapitalGainsRecords()` chỉ đếm được **2/6** — `if (!proceedsMatch)
+    continue;` coi bất kỳ giao dịch nào THIẾU nhãn "Proceeds:" là "không có số liệu" rồi bỏ qua
+    TOÀN BỘ giao dịch đó, kể cả "Cost or Basis" thật sự có mặt. Xác nhận qua text thô: đúng 4/6
+    giao dịch có "Cost or Basis: $X.XX" nhưng hoàn toàn KHÔNG có dòng "Proceeds: $X.XX" nào (đi
+    thẳng từ "Proceeds reported to IRS: Gross Proceeds" sang "Cost or Basis:..." — transcript
+    IRS BỎ HẲN field bằng $0.00 thay vì ghi "$0.00", đúng quy ước đã biết từ trước ở
+    `summarizeOtherWitForms()` cho các loại Form khác, chỉ khác lần này rơi đúng vào field làm
+    ĐIỀU KIỆN GATE của `extractCapitalGainsRecords()`). Hậu quả: tổng Cost or Basis cộng dồn chỉ
+    ra $1,915 (từ đúng 2 giao dịch có đủ cả 2 field) thay vì $6,884 đúng theo số IRS tự tính sẵn
+    trong "W&IS" (khớp CHÍNH XÁC tuyệt đối khi cộng tay cả 6 giao dịch: $7+$35+$3,267+$1,890+
+    $25+$1,660 = $6,884) — giải thích đúng cả 2 triệu chứng người dùng báo (lệch W&I/W&IS VÀ
+    "chưa sum đủ").
+    **Cách sửa**: đổi điều kiện gate từ "phải có Proceeds" thành "phải có ÍT NHẤT 1 trong 2
+    (Proceeds HOẶC Cost or Basis)" — Proceeds thiếu thì coi = $0 (đúng nghĩa transcript lược bỏ
+    field bằng 0), không còn loại cả giao dịch chỉ vì thiếu 1 field.
+    **Đã verify sống bằng dữ liệu thật của chính hồ sơ `BY307302`**: `summarizeCapitalGains()`
+    sau khi sửa ra đúng `count: 6, totalProceeds: 5019, totalCostBasis: 6884` (khớp CHÍNH XÁC cả
+    2 số với "W&IS": "Proceeds: $5,019.00"/"Cost or Basis: $6,884.00"). Chạy lại `askCompareDocs()`
+    đầy đủ (WIT W&I+W&IS 2025 + TTS thật, câu hỏi mặc định) — category "Capital Gains (1099-B +
+    1099-DA)" ra đúng `-$1,865.00` (thay vì kết quả sai trước đó dựa trên dữ liệu thiếu), so với
+    TTS `-$1,500.00` (giới hạn khấu trừ lỗ vốn MFS theo luật — chênh lệch THẬT, không phải bug).
+    Không còn dòng "Gross Distribution" lệch bất thường nào nữa trong cùng lượt chạy (1099-R gộp
+    đúng thành "Taxable Amount" $11,408 vs TTS $11,409, lệch $1 làm tròn bình thường) — nhiều khả
+    năng dữ liệu Capital Gains sai lệch trước đó đã làm nhiễu ngữ cảnh khiến AI xử lý sai luôn cả
+    field không liên quan; sau khi sửa gốc, cả 2 triệu chứng người dùng báo đều hết. `tsc
+    --noEmit`/`eslint` sạch. **Không cần bước production nào** (thuần logic trích xuất, không
+    đổi schema/API/prompt).
+
 ## 4. Giới hạn đã biết
 
 - Không có OCR/fallback nếu CRM đổi định dạng PDF hoàn toàn khác — Gemini vẫn đọc được text lộn

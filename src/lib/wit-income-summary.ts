@@ -201,12 +201,20 @@ export function extractCapitalGainsRecords(text: string): CapitalGainsRecord[] {
   const records: CapitalGainsRecord[] = [];
   for (const { formType, segment } of splitRecords(text)) {
     const proceedsMatch = /Proceeds:\s*\$?([\d,]+\.\d{2})/i.exec(segment);
-    if (!proceedsMatch) continue; // dòng tiêu đề không kèm số liệu (hiếm) -> bỏ qua, không bịa 0
     const costMatch = /Cost\s*or\s*Basis:\s*\$?([\d,]+\.\d{2})/i.exec(segment);
+    // Bug thật gặp production (2026-09-04, hồ sơ BY307302): transcript IRS BỎ HẲN field "Proceeds:"
+    // khi giá trị đúng là $0.00 (thay vì ghi "$0.00") — trước đây coi thiếu "Proceeds:" là "không
+    // có số liệu" rồi BỎ QUA CẢ giao dịch (kể cả Cost or Basis thật sự có), khiến tổng Cost or
+    // Basis/Wash Sale cộng dồn bị thiếu hẳn nhiều giao dịch so với số IRS tự tính trong "W&IS"
+    // (đã xác nhận: hồ sơ này có 6 giao dịch 1099-B nhưng 4/6 KHÔNG có "Proceeds:", chỉ đúng 2
+    // giao dịch có đủ cả 2 field từng được tính vào tổng). Chỉ bỏ qua thật nếu CẢ Proceeds LẪN
+    // Cost or Basis đều không tìm thấy gì (không có số liệu nào để tính) — Proceeds thiếu thì coi
+    // là $0 (đúng nghĩa transcript lược bỏ field bằng 0), không còn loại cả giao dịch.
+    if (!proceedsMatch && !costMatch) continue;
     const washMatch = /Wash\s*Sale\s*Loss\s*Disallowed:\s*\$?([\d,]+\.\d{2})/i.exec(segment);
     records.push({
       formType,
-      proceeds: parseMoney(proceedsMatch[1]),
+      proceeds: proceedsMatch ? parseMoney(proceedsMatch[1]) : 0,
       costBasis: costMatch ? parseMoney(costMatch[1]) : null,
       washSale: washMatch ? parseMoney(washMatch[1]) : 0,
     });
