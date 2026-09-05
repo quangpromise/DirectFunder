@@ -1207,6 +1207,48 @@ khác biệt so với 2 biến thể đã biết) thay vì đoán mò sửa lạ
     --noEmit`/`eslint` sạch. **Không cần bước production nào** (thuần logic trích xuất, không
     đổi schema/API/prompt).
 
+37. **(2026-09-04, ngay sau mục #36) "Wage & Income Summary" (W&IS) ĐỨNG MỘT MÌNH — Proceeds/
+    Cost or Basis/Wash Sale giờ gộp đúng công thức Gain như W&I, không còn hiện rời rạc** —
+    người dùng yêu cầu: "Wage & Income Summary bỏ text này ra khỏi bảng so sánh với W&IS, khi
+    compare với W&IS nên gộp tính ra tổng Proceed, Cost or Basis, Wash of Sale như W&I để
+    compare with TTS" — đúng giới hạn đã ghi nhận CHƯA XỬ LÝ ở mục lịch sử #31 ("nếu 1 hồ sơ CHỈ
+    có W&IS và có phát sinh Capital Gains thật, các field liên quan sẽ được cộng dồn như field
+    tiền THƯỜNG... số liệu Capital Gains hiển thị có thể không đúng công thức chuẩn").
+    Nguyên nhân: `summarizeCapitalGains()` chỉ đọc được giao dịch 1099-B/1099-DA qua ranh giới
+    "Form 1099-B"/"Form 1099-DA" (từng giao dịch riêng lẻ, chỉ có ở bản "W&I" chi tiết) —
+    bản "W&IS" (tóm tắt phẳng do IRS tự tính, xem mục #31) hoàn toàn KHÔNG có ranh giới này, nên
+    hàm luôn trả `null` cho W&IS dù bản thân nó VẪN CÓ SẴN 3 field tổng "Proceeds"/"Cost or
+    Basis"/"Wash Sale Loss Disallowed" (IRS tự cộng dồn mọi giao dịch 1099-B/DA trong năm) —
+    3 field này bị `summarizeOtherWitForms()` cộng dồn NHƯ FIELD TIỀN THƯỜNG (không áp dụng
+    công thức Gain), hiện rời rạc và không so sánh nhất quán được với TTS.
+    **Cách sửa**: `extractCapitalGainsRecords()` giờ, ngoài các ranh giới "Form 1099-B"/"Form
+    1099-DA" như cũ, còn quét THÊM ranh giới "Wage & Income Summary" (`allBoundarySegments()`,
+    hàm mới — giống `splitRecords()` nhưng KHÔNG lọc riêng 1099-B/DA) — nếu khối này có Proceeds
+    hoặc Cost or Basis, tạo 1 record TỔNG HỢP DUY NHẤT (formType giả định `"1099-B"` để gộp
+    chung bucket, áp dụng ĐÚNG công thức Gain = Proceeds + WashSale − CostBasis). Đồng thời
+    `summarizeOtherWitForms()` LOẠI riêng 3 nhãn này (`CAPITAL_GAINS_SUMMARY_LABELS`) khỏi bucket
+    "W&IS SUMMARY" để không hiện trùng lặp cả 2 nơi.
+    **Bug thật tự phát hiện lúc verify**: khối W&IS có CẢ "Gross Proceeds: $0.00" (tổng riêng
+    1099-DA, thường $0) LẪN "Proceeds: $X.XX" (tổng 1099-B) — "Gross Proceeds: $0.00" đứng
+    TRƯỚC trong text, và vì "Gross Proceeds:" tự nó CHỨA substring "Proceeds:", regex không neo
+    ranh giới từ khớp NHẦM vào đó trước, đọc ra $0.00 thay vì $5,019.00 thật. Sửa bằng negative
+    lookbehind `(?<!Gross\s)Proceeds:` trong `extractCapitalGainsFields()` (hàm dùng chung, tách
+    ra từ logic cũ của `extractCapitalGainsRecords()` — không đổi hành vi nhánh 1099-B/DA thật,
+    nhánh đó không có cụm "Gross Proceeds:" nên lookbehind không ảnh hưởng).
+    **Đã verify sống bằng dữ liệu thật của chính hồ sơ `BY307302`** (2025), CHỈ dùng file
+    "W&IS" (không kèm "W&I", đúng kịch bản mục #31 mô tả): `summarizeCapitalGains(["W&IS
+    text"])` ra đúng `totalProceeds: 5019, totalCostBasis: 6884, gain: -1865` — KHỚP CHÍNH XÁC
+    với kết quả tính từ "W&I" chi tiết (mục #36). `summarizeOtherWitForms()` xác nhận bucket
+    "W&IS SUMMARY" không còn chứa "Proceeds"/"Cost or Basis"/"Wash Sale Loss Disallowed" nữa.
+    **Rủi ro đã biết, chấp nhận được**: nếu người dùng chọn CẢ "W&I" LẪN "W&IS" của CÙNG 1 người
+    cùng lúc (nhầm lẫn UI đã ghi ở mục lịch sử #16 — 2 dropdown liệt kê phẳng như ngang hàng),
+    Capital Gains sẽ bị CỘNG TRÙNG 2 lần (1 lần từ giao dịch chi tiết W&I, 1 lần từ tổng hợp
+    W&IS) — không có cách nào ở tầng này biết 2 văn bản có phải "cùng 1 người, 2 định dạng" hay
+    không (chỉ nhận mảng `texts: string[]` thô). Đây là hành vi CHỌN SAI vốn đã biết (không phải
+    lỗi mới), người dùng nên chỉ chọn 1 trong 2 định dạng cho mỗi người khi so sánh. `tsc
+    --noEmit`/`eslint` sạch. **Không cần bước production nào** (thuần logic trích xuất, không
+    đổi schema/API/prompt).
+
 ## 4. Giới hạn đã biết
 
 - Không có OCR/fallback nếu CRM đổi định dạng PDF hoàn toàn khác — Gemini vẫn đọc được text lộn

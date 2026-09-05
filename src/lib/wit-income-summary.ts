@@ -195,30 +195,71 @@ function splitRecords(text: string): { formType: "1099-B" | "1099-DA"; segment: 
   return records;
 }
 
+/** Giống `splitRecords` nhưng trả segment cho MỌI loại ranh giới (không lọc riêng 1099-B/DA) —
+ * dùng khi cần đọc nội dung của 1 loại boundary khác, vd "W&IS SUMMARY". */
+function allBoundarySegments(text: string): { formType: string; segment: string }[] {
+  const boundaries = findFormBoundaries(text);
+  return boundaries.map((b, i) => {
+    const end = i + 1 < boundaries.length ? boundaries[i + 1].index : text.length;
+    return { formType: b.formType, segment: text.slice(b.index, end) };
+  });
+}
+
+/** Đọc Proceeds/Cost or Basis/Wash Sale Loss Disallowed trong 1 đoạn text — dùng chung cho cả
+ * 1 giao dịch 1099-B/DA thật LẪN khối "Wage & Income Summary" tổng hợp (xem lời gọi bên dưới).
+ * Trả `null` nếu thiếu CẢ Proceeds LẪN Cost or Basis (không có số liệu nào để tính). */
+function extractCapitalGainsFields(segment: string): { proceeds: number; costBasis: number | null; washSale: number } | null {
+  // "(?<!Gross\s)" — khối "Wage & Income Summary" có CẢ "Gross Proceeds: $0.00" (tổng riêng cho
+  // 1099-DA, thường $0 nếu không phát sinh) LẪN "Proceeds: $X.XX" (tổng 1099-B) — không có
+  // lookbehind, regex khớp NHẦM vào "Proceeds:" nằm NGAY TRONG cụm "Gross Proceeds:" (đứng
+  // trước trong text) thay vì field "Proceeds:" thật, đọc ra $0.00 sai hoàn toàn (bug thật gặp
+  // khi verify tính năng "gộp Proceeds/Cost or Basis/Wash Sale cho W&IS", 2026-09-04).
+  const proceedsMatch = /(?<!Gross\s)Proceeds:\s*\$?([\d,]+\.\d{2})/i.exec(segment);
+  const costMatch = /Cost\s*or\s*Basis:\s*\$?([\d,]+\.\d{2})/i.exec(segment);
+  // Bug thật gặp production (2026-09-04, hồ sơ BY307302): transcript IRS BỎ HẲN field "Proceeds:"
+  // khi giá trị đúng là $0.00 (thay vì ghi "$0.00") — trước đây coi thiếu "Proceeds:" là "không
+  // có số liệu" rồi BỎ QUA CẢ giao dịch (kể cả Cost or Basis thật sự có), khiến tổng Cost or
+  // Basis/Wash Sale cộng dồn bị thiếu hẳn nhiều giao dịch so với số IRS tự tính trong "W&IS"
+  // (đã xác nhận: hồ sơ này có 6 giao dịch 1099-B nhưng 4/6 KHÔNG có "Proceeds:", chỉ đúng 2
+  // giao dịch có đủ cả 2 field từng được tính vào tổng). Chỉ bỏ qua thật nếu CẢ Proceeds LẪN
+  // Cost or Basis đều không tìm thấy gì (không có số liệu nào để tính) — Proceeds thiếu thì coi
+  // là $0 (đúng nghĩa transcript lược bỏ field bằng 0), không còn loại cả giao dịch.
+  if (!proceedsMatch && !costMatch) return null;
+  const washMatch = /Wash\s*Sale\s*Loss\s*Disallowed:\s*\$?([\d,]+\.\d{2})/i.exec(segment);
+  return {
+    proceeds: proceedsMatch ? parseMoney(proceedsMatch[1]) : 0,
+    costBasis: costMatch ? parseMoney(costMatch[1]) : null,
+    washSale: washMatch ? parseMoney(washMatch[1]) : 0,
+  };
+}
+
 /** Trích TOÀN BỘ giao dịch 1099-B/1099-DA từ 1 khối text WIT (1 file — Taxpayer HOẶC Spouse).
- * Gọi riêng cho từng file WIT rồi cộng dồn ở tầng gọi nếu có nhiều khối (2 người). */
+ * Gọi riêng cho từng file WIT rồi cộng dồn ở tầng gọi nếu có nhiều khối (2 người).
+ *
+ * Bản "Wage & Income Summary" (W&IS, xem `findFormBoundaries`) KHÔNG có ranh giới "Form 1099-B"
+ * riêng từng giao dịch như bản "W&I" chi tiết, nhưng IRS vẫn tự cộng sẵn TOÀN BỘ giao dịch
+ * 1099-B/1099-DA trong năm thành đúng 3 field tổng "Proceeds"/"Cost or Basis"/"Wash Sale Loss
+ * Disallowed" ngay trong khối liệt kê phẳng đó — trước đây 3 field này bị `summarizeOtherWitForms()`
+ * cộng dồn như field tiền THƯỜNG (không áp dụng công thức Gain), hiện SAI lệch với "W&I" và
+ * KHÔNG so sánh được đúng nghĩa với TTS (thấy riêng lẻ Proceeds/Cost or Basis thay vì 1 dòng
+ * "Capital Gains" gộp đúng công thức) — sửa theo yêu cầu người dùng (2026-09-04): coi khối
+ * "Wage & Income Summary" (nếu có) như 1 giao dịch TỔNG HỢP DUY NHẤT (formType "1099-B"), áp
+ * dụng ĐÚNG công thức Gain giống hệt "W&I" chi tiết. `summarizeOtherWitForms()` loại bỏ riêng 3
+ * field này khỏi bucket "W&IS SUMMARY" (xem `CAPITAL_GAINS_SUMMARY_LABELS`) để không hiện trùng
+ * lặp dưới dạng field tiền thường nữa. */
 export function extractCapitalGainsRecords(text: string): CapitalGainsRecord[] {
   const records: CapitalGainsRecord[] = [];
   for (const { formType, segment } of splitRecords(text)) {
-    const proceedsMatch = /Proceeds:\s*\$?([\d,]+\.\d{2})/i.exec(segment);
-    const costMatch = /Cost\s*or\s*Basis:\s*\$?([\d,]+\.\d{2})/i.exec(segment);
-    // Bug thật gặp production (2026-09-04, hồ sơ BY307302): transcript IRS BỎ HẲN field "Proceeds:"
-    // khi giá trị đúng là $0.00 (thay vì ghi "$0.00") — trước đây coi thiếu "Proceeds:" là "không
-    // có số liệu" rồi BỎ QUA CẢ giao dịch (kể cả Cost or Basis thật sự có), khiến tổng Cost or
-    // Basis/Wash Sale cộng dồn bị thiếu hẳn nhiều giao dịch so với số IRS tự tính trong "W&IS"
-    // (đã xác nhận: hồ sơ này có 6 giao dịch 1099-B nhưng 4/6 KHÔNG có "Proceeds:", chỉ đúng 2
-    // giao dịch có đủ cả 2 field từng được tính vào tổng). Chỉ bỏ qua thật nếu CẢ Proceeds LẪN
-    // Cost or Basis đều không tìm thấy gì (không có số liệu nào để tính) — Proceeds thiếu thì coi
-    // là $0 (đúng nghĩa transcript lược bỏ field bằng 0), không còn loại cả giao dịch.
-    if (!proceedsMatch && !costMatch) continue;
-    const washMatch = /Wash\s*Sale\s*Loss\s*Disallowed:\s*\$?([\d,]+\.\d{2})/i.exec(segment);
-    records.push({
-      formType,
-      proceeds: proceedsMatch ? parseMoney(proceedsMatch[1]) : 0,
-      costBasis: costMatch ? parseMoney(costMatch[1]) : null,
-      washSale: washMatch ? parseMoney(washMatch[1]) : 0,
-    });
+    const fields = extractCapitalGainsFields(segment);
+    if (fields) records.push({ formType, ...fields });
   }
+
+  for (const boundary of allBoundarySegments(text)) {
+    if (boundary.formType !== "W&IS SUMMARY") continue;
+    const fields = extractCapitalGainsFields(boundary.segment);
+    if (fields) records.push({ formType: "1099-B", ...fields });
+  }
+
   return records;
 }
 
@@ -347,6 +388,13 @@ function extractDollarFields(segment: string): { label: string; amount: number }
   return out;
 }
 
+/** Field đã xử lý RIÊNG bằng công thức Gain của `extractCapitalGainsRecords()` khi xuất hiện
+ * trong khối "Wage & Income Summary" phẳng (thêm 2026-09-04, theo yêu cầu người dùng "gộp tính
+ * ra tổng Proceed, Cost or Basis, Wash of Sale như W&I") — loại khỏi bucket "W&IS SUMMARY" ở
+ * đây để không hiện TRÙNG LẶP vừa dạng field tiền thường vừa trong dòng "Capital Gains" đã gộp
+ * đúng công thức. */
+const CAPITAL_GAINS_SUMMARY_LABELS = new Set(["Proceeds", "Cost or Basis", "Wash Sale Loss Disallowed"]);
+
 /** Cộng dồn TOÀN BỘ field dạng tiền của MỌI loại Form khác 1099-B/1099-DA (đã có xử lý riêng ở
  * `summarizeCapitalGains` — công thức Gain đặc thù, không dùng cách cộng field trần này) — từ 1
  * HOẶC NHIỀU khối WIT (Taxpayer + Spouse), theo ĐÚNG nguyên tắc đã áp dụng cho 1099-B/DA: tính
@@ -363,7 +411,8 @@ export function summarizeOtherWitForms(texts: string[]): WitFormTypeSummary[] {
       if (b.formType === "1099-B" || b.formType === "1099-DA") continue;
       const end = i + 1 < boundaries.length ? boundaries[i + 1].index : text.length;
       const segment = text.slice(b.index, end);
-      const fields = extractDollarFields(segment);
+      let fields = extractDollarFields(segment);
+      if (b.formType === "W&IS SUMMARY") fields = fields.filter((f) => !CAPITAL_GAINS_SUMMARY_LABELS.has(f.label));
       if (fields.length === 0) continue; // tiêu đề không kèm số liệu -> bỏ qua
 
       let bucket = byFormType.get(b.formType);
