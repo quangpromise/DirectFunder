@@ -302,6 +302,14 @@ function computeDiff(row: AiCompareRow, columns: CompareColumns, isNonTaxable: b
   if (columns.tts) {
     const n = parseAmountLike(row.tts);
     if (n !== null) others.push(n);
+    // TTS hiện "—" (AI không đọc được/không thấy số tương ứng) NHƯNG note nói rõ khoản này
+    // "Bắt buộc" phải khai (không phải "Không bắt buộc"/thông tin thuần tuý như mã DD/W trên
+    // W-2) — coi TTS = $0 để vẫn tính ra Chênh lệch = đúng số WIT, tô đỏ (thêm 2026-09-04, báo
+    // cáo thật: 2 khoản 1099-C "Amount of Debt Discharged"/"Interest Forgiven Amount" ghi rõ
+    // "Bắt buộc phải khai" nhưng cột Chênh lệch trống trơn vì trước đây thiếu ≥2 giá trị đọc
+    // được thành số thì trả `null` ngay, không phân biệt "TTS thật sự không áp dụng" (mã W-2
+    // thông tin) với "TTS có thể đang thiếu khoản này" (khoản bắt buộc khai nhưng không thấy).
+    else if (witVal !== null && noteIndicatesMandatory(row.note)) others.push(0);
   }
   const values = [...(witVal !== null ? [witVal] : []), ...others];
   if (values.length < 2) return null;
@@ -345,6 +353,14 @@ function formatDiff(diff: number): string {
  * `(không\s+)?` đứng TRƯỚC "bắt buộc" trong chính pattern nên khi cụm "Không bắt buộc" xuất
  * hiện, điểm bắt đầu tô đỏ luôn tính từ "Không" (không phải từ "bắt buộc" nằm bên trong nó). */
 const MANDATORY_HIGHLIGHT_RE = /(không\s+)?bắt buộc/i;
+
+/** true nếu note ghi "bắt buộc" (khoản THẬT SỰ cần khai) chứ KHÔNG PHẢI "không bắt buộc"/thuần
+ * thông tin (vd mã DD/W trên W-2) — dùng ở `computeDiff()` để coi TTS "—" (không đọc được số)
+ * là $0 khi khoản này đáng lẽ phải xuất hiện trên TTS, thay vì bỏ qua hẳn Chênh lệch. */
+function noteIndicatesMandatory(note: string): boolean {
+  const m = MANDATORY_HIGHLIGHT_RE.exec(note);
+  return m !== null && !m[1];
+}
 
 /** Marker riêng cho quy tắc 1099-R "chỉ có Gross Distribution, không có Taxable Amount" (thêm
  * 2026-08-28) — AI được yêu cầu ghi ĐÚNG NGUYÊN VĂN cụm này ở ĐẦU note (xem
