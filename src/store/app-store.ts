@@ -782,7 +782,13 @@ export const useAppStore = create<AppState>()(
       login: async (email, password) => {
         try {
           const user = await api.login(email, password);
-          set({ currentUserId: user.id });
+          // myNotesData bị Zustand `persist` lưu chung 1 key localStorage cho MỌI tài khoản
+          // từng đăng nhập trên trình duyệt này (không tách theo user) — nếu không reset,
+          // MyNotesDialog (chỉ fetch lại khi `myNotesData === null`, xem my-notes-dialog.tsx)
+          // sẽ hiện NGUYÊN ghi chú của tài khoản đăng nhập TRƯỚC ĐÓ cho tới khi tự bấm mở lại
+          // popup lần 2 (bug thật gặp 2026-09-11: "đăng nhập và tài khoản khác vẫn thấy My
+          // Note giống nhau"). Reset về null ngay khi đăng nhập user mới, ép popup fetch lại.
+          set({ currentUserId: user.id, myNotesData: null });
           await get().hydrateFromServer();
           return true;
         } catch {
@@ -791,7 +797,7 @@ export const useAppStore = create<AppState>()(
       },
       logout: () => {
         syncInBackground("logout", api.logout());
-        set({ currentUserId: null });
+        set({ currentUserId: null, myNotesData: null });
       },
       // Users/Cases/Column config giờ lấy từ database thật qua API (xem
       // .claude/rules/deployment-database-sync.md) — bản trong localStorage chỉ còn là
