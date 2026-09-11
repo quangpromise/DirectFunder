@@ -14,31 +14,22 @@ import {
   fetchAgentC3Customer,
   parseAgentC3CustomerId,
 } from "@/lib/agentc3-client";
-import type { ColumnDef, FeaturePermissions, SelectOption } from "@/lib/types";
+import { matchStatusId } from "@/lib/status-match";
+import type { ColumnDef, FeaturePermissions } from "@/lib/types";
 
-/** Chuẩn hoá để so khớp status không phân biệt hoa/thường, dấu câu, số ít/nhiều — vd CRM trả
- * "Missing Doc"/"Missing Doc Process"/"Missing Docs Process" đều phải khớp đúng option "Missing
- * Docs" trong Direct Funder (yêu cầu 2026-08-21: "hồ sơ Missing Doc hay missing Doc process thì
- * trên Project đều lấy status có nội dung missing Docs"). Chỉ lấy 2 TỪ ĐẦU (đủ phân biệt các
- * status hiện có, tránh khớp nhầm 2 status khác nhau chỉ vì trùng 1 từ đầu như "Processing"). */
-function normalizeStatusPrefix(label: string): string {
-  const words = label
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .split(" ")
-    .filter(Boolean)
-    .map((w) => (w.length > 3 && w.endsWith("s") ? w.slice(0, -1) : w));
-  return words.slice(0, 2).join(" ");
-}
+/** Tên trên CRM agentc3 đôi khi KHÁC hẳn tên hiển thị trong Direct Funder cho cùng 1 người
+ * (biệt danh/tên khai sinh khác tên thường dùng) — auto-match theo tên trùng khớp tuyệt đối sẽ
+ * luôn thất bại cho các trường hợp này. Danh sách bí danh nhỏ, tra trước khi so khớp tên thật
+ * (thêm 2026-09-11, theo yêu cầu "Agent 1 nếu là Thuat Loc thì lên phần mềm tự động cập nhật
+ * là Lucas"). Key viết thường để so không phân biệt hoa/thường, value là tên THẬT trong
+ * Direct Funder cần tìm. */
+const CRM_AGENT_NAME_ALIASES: Record<string, string> = {
+  "thuat loc": "Lucas",
+};
 
-function matchStatusId(rawStatus: string, options: SelectOption[] | undefined): string | null {
-  if (!rawStatus.trim() || !options) return null;
-  const exact = options.find((o) => o.label.trim().toLowerCase() === rawStatus.trim().toLowerCase());
-  if (exact) return exact.id;
-  const rawPrefix = normalizeStatusPrefix(rawStatus);
-  if (!rawPrefix) return null;
-  return options.find((o) => normalizeStatusPrefix(o.label) === rawPrefix)?.id ?? null;
+function resolveAgentNameForMatch(rawAgentName: string): string {
+  const alias = CRM_AGENT_NAME_ALIASES[rawAgentName.trim().toLowerCase()];
+  return alias ?? rawAgentName;
 }
 
 /** Xem trước dữ liệu 1 hồ sơ trên CRM ngoài agentc3 (dán link) trước khi tạo/cập nhật hồ sơ
@@ -87,10 +78,10 @@ export async function POST(request: NextRequest) {
   // cases/page.tsx dùng cùng điều kiện) — bỏ sót role này khiến auto-match CRM thất bại cho
   // mọi Agent Leader dù tên khớp chính xác (lỗi thật gặp trên production 2026-08-25).
   const agentUsers = await prisma.user.findMany({ where: { role: { in: ["agent", "agent_leader"] } }, select: { id: true, name: true } });
-  const matchedAgentUserId =
-    raw.agentName.trim() && agentUsers.find((u) => u.name.trim().toLowerCase() === raw.agentName.trim().toLowerCase())?.id
-      ? agentUsers.find((u) => u.name.trim().toLowerCase() === raw.agentName.trim().toLowerCase())!.id
-      : null;
+  const agentNameForMatch = resolveAgentNameForMatch(raw.agentName).trim().toLowerCase();
+  const matchedAgentUserId = agentNameForMatch
+    ? (agentUsers.find((u) => u.name.trim().toLowerCase() === agentNameForMatch)?.id ?? null)
+    : null;
 
   const ssnPrimary = raw.ssn ? formatSsn(raw.ssn) : "";
   const ssnSpouse = raw.spouseSsn ? formatSsn(raw.spouseSsn) : "";

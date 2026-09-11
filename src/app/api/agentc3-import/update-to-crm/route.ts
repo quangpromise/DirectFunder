@@ -4,6 +4,9 @@ import { requireUser } from "@/lib/api-auth";
 import { canEditCase, canViewCase } from "@/lib/rbac";
 import { todayIsoDate } from "@/lib/date-format";
 import { REFUND_YEARS } from "@/lib/refund";
+import { matchStatusId } from "@/lib/status-match";
+import { broadcastCaseChanged } from "@/lib/pusher-server";
+import type { ColumnDef } from "@/lib/types";
 import {
   AgentC3ConfigError,
   AgentC3LoginError,
@@ -41,7 +44,7 @@ export async function POST(request: NextRequest) {
 
   const kase = await prisma.case.findUnique({
     where: { id: caseId },
-    select: { assignedTo: true, assignedProcessor: true, assignedTo2: true, assignedProcessor2: true, createdBy: true, clientLink: true },
+    select: { assignedTo: true, assignedProcessor: true, assignedTo2: true, assignedProcessor2: true, createdBy: true, clientLink: true, status: true },
   });
   if (!kase) return NextResponse.json({ error: "Không tìm thấy hồ sơ" }, { status: 404 });
   if (!canViewCase(me.role, me.id, kase, me.teamMemberIds)) {
@@ -83,6 +86,7 @@ export async function POST(request: NextRequest) {
     }
   }
   const status = form.get("status");
+  const statusLabel = form.get("statusLabel");
   const processingDate = form.get("processingDate");
   const note = form.get("note");
   const performedBy = form.get("performedBy");
@@ -114,6 +118,28 @@ export async function POST(request: NextRequest) {
   for (const year of years) leadOverrides[`cpa_review_${year}`] = cpaReviewDates[year] ?? today;
   if (Object.keys(leadOverrides).length > 0) {
     await runStep("leadInfo", () => updateCrmLeadInfo(customerId, leadOverrides));
+  }
+
+  // Đổi Status trên CRM (yêu cầu 2026-09-11: "khi thay đổi status on CRM sang trạng thái gì
+  // thì Status hồ sơ đó trên phần mềm cũng thay đổi theo") — khớp NHÃN CRM (`statusLabel`,
+  // dialog gửi kèm cùng lúc với `status` là raw value của <option>, không dùng để so khớp vì
+  // value không nhất thiết khớp id/label Status của Direct Funder) sang đúng option Status
+  // hiện có trên bảng Hồ sơ chính bằng `matchStatusId` (CÙNG hàm/CÙNG quy tắc mờ 2-từ-đầu đã
+  // dùng cho chiều "Nhập từ CRM", `agentc3-import/fetch`) — khớp được VÀ khác `Case.status`
+  // hiện tại thì cập nhật; không khớp được (status CRM không có option tương ứng bên Direct
+  // Funder) thì bỏ qua ÂM THẦM (không phải lỗi — nhiều status CRM không có ý nghĩa gì bên
+  // Direct Funder, vd trạng thái nội bộ CRM không liên quan quy trình công ty).
+  if (typeof statusLabel === "string" && statusLabel.trim()) {
+    await runStep("directFunderStatus", async () => {
+      const config = await prisma.appConfig.findUnique({ where: { id: "singleton" } });
+      const columns = (config?.columns as ColumnDef[] | undefined) ?? [];
+      const statusColumn = columns.find((c) => c.id === "status");
+      const matchedId = matchStatusId(statusLabel, statusColumn?.options);
+      if (matchedId && matchedId !== kase.status) {
+        await prisma.case.update({ where: { id: caseId }, data: { status: matchedId } });
+        await broadcastCaseChanged(caseId, null);
+      }
+    });
   }
 
   if (typeof note === "string" && note.trim()) {

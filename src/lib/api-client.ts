@@ -395,6 +395,11 @@ export const api = {
     years: string[];
     cpaReviewDates?: Record<string, string>;
     status?: string;
+    /** Nhãn hiển thị (không phải raw value) của Status CRM đã chọn — dùng RIÊNG để khớp mờ
+     * sang đúng option Status của Direct Funder (xem `matchStatusId`, route tự đồng bộ
+     * `Case.status` theo status CRM vừa chọn, thêm 2026-09-11). Chỉ gửi khi `status` không
+     * rỗng (rỗng = xoá Status trên CRM, không có nhãn nào để khớp). */
+    statusLabel?: string;
     processingDate?: string;
     note?: string;
     performedBy?: string;
@@ -408,6 +413,7 @@ export const api = {
     // giá trị THẬT đang có trên CRM lúc mở, nên rỗng ở đây nghĩa là người dùng chủ động XOÁ,
     // không phải "chưa đổi gì" — bỏ qua khi rỗng sẽ khiến CRM không xoá được field này.
     if (payload.status !== undefined) body.append("status", payload.status);
+    if (payload.statusLabel) body.append("statusLabel", payload.statusLabel);
     if (payload.processingDate !== undefined) body.append("processingDate", payload.processingDate);
     if (payload.note) body.append("note", payload.note);
     if (payload.performedBy) body.append("performedBy", payload.performedBy);

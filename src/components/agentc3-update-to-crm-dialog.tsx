@@ -194,6 +194,9 @@ export function AgentC3UpdateToCrmDialog({
         // Luôn gửi nguyên trạng thái hiện tại của 2 ô này (kể cả rỗng nếu người dùng đã xoá)
         // — cả 2 đều được điền sẵn từ CRM lúc mở popup, rỗng ở đây là chủ động xoá thật.
         status,
+        // Nhãn hiển thị (không phải raw value CRM) — server dùng để khớp mờ sang đúng Status
+        // của Direct Funder, tự cập nhật Case.status theo (thêm 2026-09-11).
+        statusLabel: status ? statusOptions.find((o) => o.value === status)?.label : undefined,
         processingDate,
         note: displayedNote.trim() || undefined,
         performedBy: performedBy || undefined,
