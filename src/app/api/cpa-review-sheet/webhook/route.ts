@@ -265,9 +265,9 @@ export async function POST(request: NextRequest) {
       }
       const changedYearStatuses = extractChangedYearStatuses(merged);
       if (changedYearStatuses.length > 0 && fullRowSsn) after(() => syncCpaReviewStatusToCase(fullRowSsn, changedYearStatuses));
-      const rejectedYears = extractRejectedYearStatuses(merged);
+      const rejectedYears = extractRejectedYearStatuses(merged, {});
       if (rejectedYears.length > 0) {
-        after(() => notifyProcessorOnRejectedCpaReviewStatus({ id: created.id, custom: merged }, rejectedYears, NOTIFY_FROM_SHEET_SYNC));
+        after(() => notifyProcessorOnRejectedCpaReviewStatus({ id: created.id, month: created.month, custom: merged }, rejectedYears, NOTIFY_FROM_SHEET_SYNC));
       }
       await broadcastCpaReviewChanged(created.id, null);
       return NextResponse.json({ ok: true, created: created.id });
@@ -302,9 +302,9 @@ export async function POST(request: NextRequest) {
     const updatedCustom = updated.custom as Record<string, unknown>;
     const ssnForCaseSync = typeof updatedCustom.ssn === "string" ? updatedCustom.ssn.trim() : fullRowSsn;
     if (changedYearStatuses.length > 0 && ssnForCaseSync) after(() => syncCpaReviewStatusToCase(ssnForCaseSync, changedYearStatuses));
-    const rejectedYears = extractRejectedYearStatuses(merged);
+    const rejectedYears = extractRejectedYearStatuses(merged, (existing.custom as Record<string, unknown>) ?? {});
     if (rejectedYears.length > 0) {
-      after(() => notifyProcessorOnRejectedCpaReviewStatus({ id: updated.id, custom: updatedCustom }, rejectedYears, NOTIFY_FROM_SHEET_SYNC));
+      after(() => notifyProcessorOnRejectedCpaReviewStatus({ id: updated.id, month: updated.month, custom: updatedCustom }, rejectedYears, NOTIFY_FROM_SHEET_SYNC));
     }
     await broadcastCpaReviewChanged(updated.id, null);
     return NextResponse.json({ ok: true, updatedAt: updated.updatedAt.toISOString() });
@@ -379,9 +379,9 @@ export async function POST(request: NextRequest) {
     if (changedYearStatuses.length > 0) {
       after(() => syncCpaReviewStatusToCase(ssn, changedYearStatuses));
     }
-    const rejectedYearsLegacy = extractRejectedYearStatuses({ [patch.key]: patch.value });
+    const rejectedYearsLegacy = extractRejectedYearStatuses({ [patch.key]: patch.value }, {});
     if (rejectedYearsLegacy.length > 0) {
-      after(() => notifyProcessorOnRejectedCpaReviewStatus({ id: created.id, custom: initialCustom }, rejectedYearsLegacy, NOTIFY_FROM_SHEET_SYNC));
+      after(() => notifyProcessorOnRejectedCpaReviewStatus({ id: created.id, month: created.month, custom: initialCustom }, rejectedYearsLegacy, NOTIFY_FROM_SHEET_SYNC));
     }
     // Không có Pusher socket của trình duyệt nào để loại trừ (nguồn là Apps Script, không
     // phải 1 tab đang mở) -> socketId luôn null, mọi tab đều tự refetch (xem use-realtime.ts).
@@ -416,11 +416,11 @@ export async function POST(request: NextRequest) {
   if (changedYearStatuses.length > 0) {
     after(() => syncCpaReviewStatusToCase(ssn, changedYearStatuses));
   }
-  const rejectedYearsLegacyUpdate = extractRejectedYearStatuses({ [patch.key]: patch.value });
+  const rejectedYearsLegacyUpdate = extractRejectedYearStatuses({ [patch.key]: patch.value }, (row.custom as Record<string, unknown>) ?? {});
   if (rejectedYearsLegacyUpdate.length > 0) {
     after(() =>
       notifyProcessorOnRejectedCpaReviewStatus(
-        { id: updated.id, custom: updated.custom as Record<string, unknown> },
+        { id: updated.id, month: updated.month, custom: updated.custom as Record<string, unknown> },
         rejectedYearsLegacyUpdate,
         NOTIFY_FROM_SHEET_SYNC
       )

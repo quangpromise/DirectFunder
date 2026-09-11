@@ -3,6 +3,7 @@ import { digitsOnly } from "./ssn";
 import { DEFAULT_REFUND_YEAR_STATUS_OPTIONS } from "./rbac";
 import { broadcastCaseChanged, broadcastNotification } from "./pusher-server";
 import { toNotificationRecord } from "@/app/api/notifications/route";
+import { encodeCpaReviewNotificationTarget } from "./cpa-review-notification-target";
 import type { SelectOption } from "./types";
 import type { Prisma } from "@prisma/client";
 
@@ -115,12 +116,24 @@ export async function syncCpaReviewStatusToCase(
  * theo yêu cầu "khi Status của các năm... chuyển sang Reject, sẽ có thông báo đến Processor
  * đó"). Chỉ xét field THỰC SỰ có trong request này, không phải toàn bộ custom đã merge —
  * cùng nguyên tắc extractChangedYearStatuses (tránh báo lại mỗi lần sửa 1 field không liên
- * quan của cùng record). */
-export function extractRejectedYearStatuses(incomingCustom: Record<string, unknown>): string[] {
+ * quan của cùng record).
+ *
+ * `previousCustom` (thêm 2026-09-11, sửa bug "thông báo lặp lại nhiều lần trong 30 phút") —
+ * BẮT BUỘC so với giá trị TRƯỚC ĐÓ, chỉ tính là "vừa chuyển sang Rejected" nếu năm đó CHƯA
+ * SẴN "rejected" từ trước. Cần thiết vì Apps Script `onCpaReviewEdit` gửi lại TOÀN BỘ dòng ở
+ * MỌI lần sửa (xem fullRowSync trong webhook/route.ts) — sửa 1 ô KHÔNG liên quan (vd Note) của
+ * 1 dòng đã Rejected từ trước vẫn khiến `status_<year>: "rejected"` xuất hiện lại trong
+ * `incomingCustom`, dẫn tới báo lại y hệt thông báo cũ mỗi lần Sheet gửi webhook (report thật
+ * "thông báo đang lặp đi lặp lại nhiều lần trong 30'"). Record MỚI TẠO (chưa có
+ * `previousCustom`) coi mọi giá trị "rejected" là lần đầu — truyền `{}`. */
+export function extractRejectedYearStatuses(
+  incomingCustom: Record<string, unknown>,
+  previousCustom: Record<string, unknown>
+): string[] {
   const years: string[] = [];
   for (const [key, value] of Object.entries(incomingCustom)) {
     const year = yearFromStatusKey(key);
-    if (year && value === "rejected") years.push(year);
+    if (year && value === "rejected" && previousCustom[key] !== "rejected") years.push(year);
   }
   return years;
 }
@@ -129,12 +142,9 @@ export function extractRejectedYearStatuses(incomingCustom: Record<string, unkno
  * sang Status "Rejected" — gọi từ CẢ 2 chiều ghi (PATCH /api/cpa-review/[id] lẫn webhook
  * Sheet→App), `fromUserId` = người/nguồn vừa thực hiện thay đổi (`me.id` phía app, chuỗi
  * "system:cpa-review-sheet-sync" phía webhook Sheet — không có phiên user nào để gán). Record
- * chưa gán Processor nào (`processorUserId` rỗng) -> bỏ qua im lặng, không có ai để báo. Tự
- * dò Case khớp SSN (nếu có) để click-through notification nhảy đúng hồ sơ trên bảng chính,
- * giống hành vi mọi Notification khác — không tìm thấy vẫn tạo Notification bình thường,
- * chỉ click sẽ không nhảy tới đâu cả (caseId rỗng). */
+ * chưa gán Processor nào (`processorUserId` rỗng) -> bỏ qua im lặng, không có ai để báo. */
 export async function notifyProcessorOnRejectedCpaReviewStatus(
-  record: { id: string; custom: Record<string, unknown> },
+  record: { id: string; month: string; custom: Record<string, unknown> },
   rejectedYears: string[],
   fromUserId: string
 ): Promise<void> {
@@ -143,9 +153,17 @@ export async function notifyProcessorOnRejectedCpaReviewStatus(
   if (!processorUserId) return;
 
   const name = typeof record.custom.name === "string" ? record.custom.name.trim() : "";
-  const ssn = typeof record.custom.ssn === "string" ? record.custom.ssn.trim() : "";
+  // `custom.ssn` có thể chứa 2 SSN (Taxpayer & Spouse) cách nhau bằng xuống dòng/khoảng trắng
+  // (cùng quy ước với phone/dob, xem sheetChangeToPatch) — nối lại bằng " & " cho dễ đọc trong
+  // 1 dòng thông báo, thay vì để nguyên dấu xuống dòng thô (thêm 2026-09-11, theo yêu cầu "nếu
+  // có 2 SSN nên có dấu & ở giữa").
+  const ssnRaw = typeof record.custom.ssn === "string" ? record.custom.ssn.trim() : "";
+  const ssn = ssnRaw
+    .split(/\s+/)
+    .filter(Boolean)
+    .join(" & ");
   const refLabel = ssn ? `${name || "(chưa có tên)"} (SSN: ${ssn})` : name || "(chưa có tên)";
-  const caseId = ssn ? ((await findCaseIdBySsnField(ssn)) ?? "") : "";
+  const caseId = encodeCpaReviewNotificationTarget(record.month, record.id);
 
   for (const year of rejectedYears) {
     const notif = await prisma.notification.create({

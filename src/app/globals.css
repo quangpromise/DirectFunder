@@ -372,6 +372,11 @@ table {
 .row-highlight > div {
   animation: row-highlight-pulse 1s ease-in-out 5;
 }
+/* Bảng dùng <table>/<tr>/<td> thật (vd tab CPA Review) thay vì CSS grid "display: contents"
+   như bảng Hồ sơ/Order — cần riêng 1 rule nhắm <td> để nhấp nháy hiện ra (thêm 2026-09-11). */
+.row-highlight > td {
+  animation: row-highlight-pulse 1s ease-in-out 5;
+}
 
 /* Dòng chào đầu trang Hồ sơ ("Chào X - Chào buổi sáng 🌤️") — đứng yên, căn giữa (xem
    className ở cases/page.tsx), chỉ nhấp nháy CHẬM (mờ dần rồi rõ lại) để vẫn thu hút mắt

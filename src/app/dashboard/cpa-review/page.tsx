@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createPortal } from "react-dom";
 import { ShieldAlert, Trash2, ExternalLink, StickyNote, FileSpreadsheet, X, Filter, EyeOff, Table2, BarChart3, Search } from "lucide-react";
 import { CpaReviewReportView } from "@/components/cpa-review-report";
@@ -160,6 +161,9 @@ export default function CpaReviewPage() {
   const sheetConfigMap = useAppStore((s) => s.cpaReviewSheetConfig);
   const { confirm, ConfirmDialogUI } = useConfirm();
   const t = useT();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [highlightId, setHighlightId] = useState<string | null>(null);
 
   // Mỗi tháng 1 bảng dữ liệu riêng (thêm 2026-08-14, yêu cầu "chọn tháng nào sẽ ra bảng của
   // tháng đó") — lọc client-side từ toàn bộ cpaReviewRecords đã nạp sẵn (khối lượng dữ liệu
@@ -254,6 +258,38 @@ export default function CpaReviewPage() {
     }
     return true;
   });
+
+  // Bấm vào thông báo "Status năm ... đã chuyển sang Rejected" (notification-bell.tsx) -> nhảy
+  // tới đây kèm ?highlightRecord=<id>&highlightMonth=<YYYY-MM> (thêm 2026-09-11) — đổi đúng
+  // tháng đang xem + xoá mọi bộ lọc/tìm kiếm đang che dòng đó, rồi cuộn tới + nhấp nháy 5s
+  // (cùng cơ chế .row-highlight với bảng Hồ sơ chính, xem cases/page.tsx). Xoá query param khỏi
+  // URL ngay sau khi đọc để back/refresh không nhấp nháy lại.
+  useEffect(() => {
+    const id = searchParams.get("highlightRecord");
+    const month = searchParams.get("highlightMonth");
+    if (!id || !month) return;
+    setSelectedMonth(month);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setView("table");
+    setFilters({});
+    setSearch("");
+    setShowFilterRow(false);
+    setHighlightId(id);
+    router.replace("/dashboard/cpa-review");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!highlightId) return;
+    const timer = setTimeout(() => setHighlightId(null), 5000);
+    return () => clearTimeout(timer);
+  }, [highlightId]);
+
+  useEffect(() => {
+    if (!highlightId) return;
+    const el = document.querySelector(`[data-row-id="${highlightId}"]`);
+    el?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [highlightId, filteredRows]);
 
   if (!user) return null;
 
@@ -728,7 +764,7 @@ export default function CpaReviewPage() {
               const rowBg = i % 2 === 0 ? "bg-bg" : "bg-[var(--row-alt-bg)]";
               const rowEditable = canEditRow(row);
               return (
-              <tr key={row.id} className={rowBg}>
+              <tr key={row.id} data-row-id={row.id} className={`${rowBg} ${row.id === highlightId ? "row-highlight" : ""}`}>
                 <td className={`group border-b border-r border-border p-0 align-middle ${rowBg}`} style={GUTTER_STYLE_BODY}>
                   {/* Số dòng từ trên xuống (giống gutter Google Sheet) — ẩn đi, thay bằng
                       nút xoá khi hover, theo yêu cầu 2026-08-14. 3 hàng tiêu đề (chữ cái

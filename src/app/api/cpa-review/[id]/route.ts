@@ -72,7 +72,7 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/cpa-re
       const merged: Record<string, unknown> = { ...existingCustom, ...incomingCustom, __syncedFrom: "app" };
       data.custom = merged as Prisma.InputJsonValue;
       changedYearStatuses = extractChangedYearStatuses(incomingCustom);
-      rejectedYears = extractRejectedYearStatuses(incomingCustom);
+      rejectedYears = extractRejectedYearStatuses(incomingCustom, existingCustom);
       mergedSsn = typeof merged.ssn === "string" ? merged.ssn : "";
       continue;
     }

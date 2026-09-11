@@ -2,24 +2,46 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { Bell, Volume2, VolumeX, UserPlus, RefreshCw, AtSign, AlertTriangle, X } from "lucide-react";
 import { useAppStore } from "@/store/app-store";
 import { useLanguage, useT } from "@/lib/i18n";
 import { Avatar } from "@/components/avatar";
-import type { NotificationType } from "@/lib/types";
+import type { AppNotification, NotificationType } from "@/lib/types";
+import { parseCpaReviewNotificationTarget } from "@/lib/cpa-review-notification-target";
 
 /** Icon + màu badge nhỏ đè góc dưới-phải avatar (kiểu Facebook: mỗi loại thông báo có
  * 1 icon tròn màu riêng) — map trực tiếp theo NotificationType, không cần bảng cấu hình rời.
  * "rejected" (thêm 2026-09-02, riêng cho thông báo CPA Review chuyển Status sang Rejected —
- * xem notifyProcessorOnRejectedCpaReviewStatus) dùng icon cảnh báo + đỏ, tách khỏi
- * "status_change" (icon đồng bộ trung tính) theo đúng yêu cầu "đổi logo thông báo Reject
- * thành icon cảnh báo". */
+ * xem notifyProcessorOnRejectedCpaReviewStatus) ĐỔI SANG dùng logo Favicon của app (thêm
+ * 2026-09-11, theo yêu cầu "lấy logo ở Favicon làm logo của CPA Review trong thông báo") thay
+ * cho icon cảnh báo — xem `NOTIF_BADGE_LOGO_SRC`/`NotifBadge` bên dưới, `icon`/`className` ở
+ * đây không còn dùng cho type "rejected" (giữ lại field `icon` cho đủ shape Record, không dùng
+ * tới trong nhánh render riêng của loại này). */
+const NOTIF_BADGE_LOGO_SRC = "/cpa-review-notif-icon.jpg";
 const NOTIF_TYPE_STYLE: Record<NotificationType, { icon: typeof UserPlus; className: string }> = {
   assigned: { icon: UserPlus, className: "bg-blue-500" },
   status_change: { icon: RefreshCw, className: "bg-amber-500" },
   mention: { icon: AtSign, className: "bg-emerald-500" },
-  rejected: { icon: AlertTriangle, className: "bg-red-500" },
+  rejected: { icon: AlertTriangle, className: "bg-white" },
 };
+
+/** Badge tròn góc dưới-phải avatar — dùng chung cho cả banner toast lẫn dòng trong dropdown,
+ * tách riêng để không lặp lại nhánh "rejected dùng logo, còn lại dùng icon lucide" ở 2 chỗ. */
+function NotifBadge({ type }: { type: NotificationType }) {
+  const { icon: TypeIcon, className } = NOTIF_TYPE_STYLE[type];
+  return (
+    <span
+      className={`absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center overflow-hidden rounded-full ring-2 ring-bg-elevated ${className}`}
+    >
+      {type === "rejected" ? (
+        <Image src={NOTIF_BADGE_LOGO_SRC} alt="" width={20} height={20} className="h-full w-full object-cover" />
+      ) : (
+        <TypeIcon size={11} strokeWidth={2.5} className="text-white" />
+      )}
+    </span>
+  );
+}
 
 function timeAgo(iso: string, language: "vi" | "en"): string {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -57,12 +79,23 @@ export function NotificationBell({ currentUserId }: { currentUserId: string }) {
   const router = useRouter();
   const currentUser = users.find((u) => u.id === currentUserId);
 
-  // Bấm vào 1 thông báo -> nhảy tới đúng dòng (hồ sơ) mà thông báo đó nhắc tới rồi cuộn
-  // + nhấp nháy 5s (xem cases/page.tsx và orders/page.tsx). Support không có quyền vào
+  // Bấm vào 1 thông báo -> nhảy tới đúng dòng mà thông báo đó nhắc tới rồi cuộn + nhấp nháy
+  // (xem cases/page.tsx, orders/page.tsx, cpa-review/page.tsx). Support không có quyền vào
   // tab Hồ sơ (xem top-nav.tsx) nên đưa họ sang tab Order, nơi họ thực sự thao tác.
-  function goToNotification(caseId: string) {
+  // Thông báo "rejected" (CPA Review) mã hoá đích đến khác — KHÔNG phải 1 Case thật (xem
+  // encodeCpaReviewNotificationTarget trong cpa-review-case-sync.ts, thêm 2026-09-11, theo
+  // yêu cầu "bấm vào thông báo thì nên dẫn đến hồ sơ đó bên tab CPA Review và tự Scroll đến
+  // row hồ sơ đó") — nhảy sang tab CPA Review đúng tháng + record thay vì bảng Hồ sơ chính.
+  function goToNotification(n: AppNotification) {
+    if (n.type === "rejected") {
+      const target = parseCpaReviewNotificationTarget(n.caseId);
+      if (target) {
+        router.push(`/dashboard/cpa-review?highlightRecord=${target.recordId}&highlightMonth=${target.month}`);
+        return;
+      }
+    }
     const path = currentUser?.role === "support" ? "/dashboard/orders" : "/dashboard/cases";
-    router.push(`${path}?highlight=${caseId}`);
+    router.push(`${path}?highlight=${n.caseId}`);
   }
 
   const mine = notifications.filter((n) => n.toUserId === currentUserId);
@@ -149,24 +182,19 @@ export function NotificationBell({ currentUserId }: { currentUserId: string }) {
         (() => {
           const n = toastNotification;
           const from = users.find((u) => u.id === n.fromUserId);
-          const { icon: TypeIcon, className: badgeClassName } = NOTIF_TYPE_STYLE[n.type];
           return (
             <div className="notif-toast-in popover absolute right-0 top-full z-50 mt-2.5 w-80 max-w-[85vw] rounded-2xl p-3 shadow-2xl shadow-black/60">
               <button
                 onClick={() => {
                   markNotificationRead(n.id);
                   setToastNotification(null);
-                  goToNotification(n.caseId);
+                  goToNotification(n);
                 }}
                 className="flex w-full items-start gap-3 text-left"
               >
                 <div className="relative shrink-0">
                   <Avatar name={from?.name ?? "?"} color={from?.avatarColor ?? "#6b7280"} url={from?.avatarUrl} size={44} />
-                  <span
-                    className={`absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full ring-2 ring-bg-elevated ${badgeClassName}`}
-                  >
-                    <TypeIcon size={11} strokeWidth={2.5} className="text-white" />
-                  </span>
+                  <NotifBadge type={n.type} />
                 </div>
                 <div className="min-w-0 flex-1 pt-0.5 pr-5">
                   <p className="text-[13px] font-semibold leading-snug text-text">{n.message}</p>
@@ -237,14 +265,13 @@ export function NotificationBell({ currentUserId }: { currentUserId: string }) {
                 {visibleList.map((n) => {
                   const from = users.find((u) => u.id === n.fromUserId);
                   const unread = unreadSnapshot.has(n.id);
-                  const { icon: TypeIcon, className: badgeClassName } = NOTIF_TYPE_STYLE[n.type];
                   return (
                     <button
                       key={n.id}
                       onClick={() => {
                         markNotificationRead(n.id);
                         setOpen(false);
-                        goToNotification(n.caseId);
+                        goToNotification(n);
                       }}
                       className={`group flex w-full items-start gap-3 rounded-xl px-2.5 py-2.5 text-left transition ${
                         unread ? "bg-accent-soft hover:brightness-[1.08]" : "hover:bg-surface-hover"
@@ -252,11 +279,7 @@ export function NotificationBell({ currentUserId }: { currentUserId: string }) {
                     >
                       <div className="relative shrink-0">
                         <Avatar name={from?.name ?? "?"} color={from?.avatarColor ?? "#6b7280"} url={from?.avatarUrl} size={44} />
-                        <span
-                          className={`absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full ring-2 ring-bg-elevated ${badgeClassName}`}
-                        >
-                          <TypeIcon size={11} strokeWidth={2.5} className="text-white" />
-                        </span>
+                        <NotifBadge type={n.type} />
                       </div>
                       <div className="min-w-0 flex-1 pt-0.5">
                         <p className={`text-[13px] leading-snug ${unread ? "font-semibold text-text" : "text-text-dim"}`}>
