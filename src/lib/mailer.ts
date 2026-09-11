@@ -10,18 +10,33 @@ import nodemailer from "nodemailer";
  */
 
 let transporter: ReturnType<typeof nodemailer.createTransport> | null = null;
+// Ghi nhớ ĐÚNG cặp user/pass đã dùng để dựng `transporter` đang cache — nếu Admin đổi
+// GMAIL_APP_PASSWORD (App Password Gmail hết hạn/bị thu hồi, phải tạo cái mới) mà KHÔNG
+// redeploy lại (chỉ sửa Environment Variables trên Vercel Dashboard), các Serverless Function
+// instance ĐANG "warm" (còn giữ module state cũ trong bộ nhớ, chưa cold-start lại) vẫn tiếp
+// tục dùng `transporter` cache với mật khẩu CŨ cho tới khi tự bị Vercel tái chế — gây lỗi
+// "Sai thông tin đăng nhập Gmail" chỉ với MỘT SỐ lượt gửi (tuỳ request rơi trúng instance
+// nào), trong khi lượt test ngay sau khi đổi (thường hit đúng instance mới/cold-start) lại
+// thành công — bug thật gặp 2026-09-11 ("tôi đã cập nhật pass app mới và sent được trên tài
+// khoản tôi nhưng tài khoản khác ko sent đc", dù tính năng dùng CHUNG 1 tài khoản Gmail, không
+// phân biệt theo user đăng nhập app). Sửa: mỗi lần gọi đều so `process.env` hiện tại với cặp
+// đã cache, khác thì dựng lại `transporter` mới ngay (rẻ, không giữ kết nối SMTP thường trực).
+let cachedUser: string | undefined;
+let cachedPass: string | undefined;
 
 function getTransporter() {
-  if (transporter) return transporter;
   const user = process.env.GMAIL_USER;
   const pass = process.env.GMAIL_APP_PASSWORD;
   if (!user || !pass) {
     throw new Error("Thiếu GMAIL_USER/GMAIL_APP_PASSWORD trong biến môi trường");
   }
+  if (transporter && cachedUser === user && cachedPass === pass) return transporter;
   transporter = nodemailer.createTransport({
     service: "gmail",
     auth: { user, pass },
   });
+  cachedUser = user;
+  cachedPass = pass;
   return transporter;
 }
 
