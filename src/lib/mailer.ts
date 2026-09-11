@@ -98,6 +98,12 @@ export async function sendCpaEmail(input: SendCpaEmailInput): Promise<void> {
     }
   } catch (err) {
     if (err instanceof Error && err.message.startsWith("Địa chỉ bị từ chối:")) throw err;
+    // Log NGUYÊN VĂN lỗi SMTP thô (code/responseCode/response/command) vào Vercel Function
+    // Logs — message tiếng Việt trả về client chỉ là bản rút gọn, không đủ để chẩn đoán khi
+    // lỗi lặp lại sau khi đã loại trừ nguyên nhân cache transporter (thêm 2026-09-11, sau khi
+    // fix cache stale vẫn không hết lỗi cho 1 số tài khoản — cần xem log thật để biết có phải
+    // Google chặn đăng nhập từ IP lạ (Vercel serverless đổi IP liên tục) thay vì sai mật khẩu).
+    console.error("[mailer] Gửi email thất bại — lỗi SMTP gốc:", err);
     throw new Error(mapSendError(err));
   }
 }
