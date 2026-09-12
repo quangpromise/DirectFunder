@@ -89,8 +89,15 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/cpa-re
   if (changedYearStatuses.length > 0) {
     after(() => syncCpaReviewStatusToCase(mergedSsn, changedYearStatuses));
   }
+  // AWAIT trực tiếp (KHÔNG qua after()) — bug thật gặp production 2026-09-12: Notification
+  // được TẠO ĐÚNG trong DB (đọc lại xác nhận có) nhưng KHÔNG tới nơi realtime, Processor phải
+  // tự F5 mới thấy — nguyên nhân là `after()` không đảm bảo hoàn tất lệnh gọi Pusher API
+  // (network call bên trong `broadcastNotification`) trước khi Vercel dừng hẳn instance của
+  // request này, dù bản thân `prisma.notification.create()` (ghi DB) đã kịp chạy xong trước
+  // đó trong cùng hàm. Cùng nguyên tắc các Notification "assigned"/"status_change" khác trong
+  // `cases/[id]/route.ts` — LUÔN await trực tiếp trong request chính, không đẩy qua after().
   if (rejectedYears.length > 0) {
-    after(() => notifyProcessorOnRejectedCpaReviewStatus(record, rejectedYears, me.id));
+    await notifyProcessorOnRejectedCpaReviewStatus(record, rejectedYears, me.id);
   }
   await broadcastCpaReviewChanged(record.id, request.headers.get("x-pusher-socket-id"));
 
