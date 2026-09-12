@@ -11,34 +11,50 @@ import type { AppNotification, NotificationType } from "@/lib/types";
 import { parseCpaReviewNotificationTarget } from "@/lib/cpa-review-notification-target";
 
 /** Icon + màu badge nhỏ đè góc dưới-phải avatar (kiểu Facebook: mỗi loại thông báo có
- * 1 icon tròn màu riêng) — map trực tiếp theo NotificationType, không cần bảng cấu hình rời.
- * "rejected" (thêm 2026-09-02, riêng cho thông báo CPA Review chuyển Status sang Rejected —
- * xem notifyProcessorOnRejectedCpaReviewStatus) ĐỔI SANG dùng logo Favicon của app (thêm
- * 2026-09-11, theo yêu cầu "lấy logo ở Favicon làm logo của CPA Review trong thông báo") thay
- * cho icon cảnh báo — xem `NOTIF_BADGE_LOGO_SRC`/`NotifBadge` bên dưới, `icon`/`className` ở
- * đây không còn dùng cho type "rejected" (giữ lại field `icon` cho đủ shape Record, không dùng
- * tới trong nhánh render riêng của loại này). */
-const NOTIF_BADGE_LOGO_SRC = "/cpa-review-notif-icon.jpg";
+ * 1 icon tròn màu riêng) — map trực tiếp theo NotificationType, không cần bảng cấu hình rời. */
 const NOTIF_TYPE_STYLE: Record<NotificationType, { icon: typeof UserPlus; className: string }> = {
   assigned: { icon: UserPlus, className: "bg-blue-500" },
   status_change: { icon: RefreshCw, className: "bg-amber-500" },
   mention: { icon: AtSign, className: "bg-emerald-500" },
-  rejected: { icon: AlertTriangle, className: "bg-white" },
+  // Sửa lại 2026-09-12 (đảo ngược quyết định 2026-09-11 "logo Favicon ở badge nhỏ") — theo
+  // yêu cầu "logo to nên đổi sang Favicon, logo nhỏ hình cảnh báo": logo Favicon (nhận diện
+  // đây là thông báo hệ thống CPA Review, không phải từ 1 người cụ thể — nhiều thông báo loại
+  // này có `fromUserId` là "system:cpa-review-sheet-sync", không khớp user nào nên avatar lớn
+  // vốn sẽ hiện dấu "?" xấu) chuyển sang avatar LỚN (xem NotifAvatar bên dưới); badge nhỏ góc
+  // dưới-phải quay lại icon cảnh báo (⚠, đỏ) — đúng ý nghĩa "Rejected", dễ nhận ra hơn.
+  rejected: { icon: AlertTriangle, className: "bg-red-500" },
 };
 
-/** Badge tròn góc dưới-phải avatar — dùng chung cho cả banner toast lẫn dòng trong dropdown,
- * tách riêng để không lặp lại nhánh "rejected dùng logo, còn lại dùng icon lucide" ở 2 chỗ. */
+const NOTIF_BADGE_LOGO_SRC = "/cpa-review-notif-icon.jpg";
+
+/** Avatar LỚN bên trái mỗi thông báo — "rejected" luôn hiện logo Favicon (thay vì avatar của
+ * người gửi, vốn thường là "?" vì nguồn thật sự là hệ thống đồng bộ Sheet, không phải 1 user
+ * cụ thể) thay cho `Avatar` name-initial thông thường dùng cho các loại thông báo khác. */
+function NotifAvatar({
+  type,
+  from,
+}: {
+  type: NotificationType;
+  from: { name: string; avatarColor: string; avatarUrl?: string | null } | undefined;
+}) {
+  if (type === "rejected") {
+    return (
+      <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full">
+        <Image src={NOTIF_BADGE_LOGO_SRC} alt="" width={44} height={44} className="h-full w-full object-cover" />
+      </span>
+    );
+  }
+  return <Avatar name={from?.name ?? "?"} color={from?.avatarColor ?? "#6b7280"} url={from?.avatarUrl} size={44} />;
+}
+
+/** Badge tròn góc dưới-phải avatar — dùng chung cho cả banner toast lẫn dòng trong dropdown. */
 function NotifBadge({ type }: { type: NotificationType }) {
   const { icon: TypeIcon, className } = NOTIF_TYPE_STYLE[type];
   return (
     <span
       className={`absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center overflow-hidden rounded-full ring-2 ring-bg-elevated ${className}`}
     >
-      {type === "rejected" ? (
-        <Image src={NOTIF_BADGE_LOGO_SRC} alt="" width={20} height={20} className="h-full w-full object-cover" />
-      ) : (
-        <TypeIcon size={11} strokeWidth={2.5} className="text-white" />
-      )}
+      <TypeIcon size={11} strokeWidth={2.5} className="text-white" />
     </span>
   );
 }
@@ -193,7 +209,7 @@ export function NotificationBell({ currentUserId }: { currentUserId: string }) {
                 className="flex w-full items-start gap-3 text-left"
               >
                 <div className="relative shrink-0">
-                  <Avatar name={from?.name ?? "?"} color={from?.avatarColor ?? "#6b7280"} url={from?.avatarUrl} size={44} />
+                  <NotifAvatar type={n.type} from={from} />
                   <NotifBadge type={n.type} />
                 </div>
                 <div className="min-w-0 flex-1 pt-0.5 pr-5">
@@ -278,7 +294,7 @@ export function NotificationBell({ currentUserId }: { currentUserId: string }) {
                       }`}
                     >
                       <div className="relative shrink-0">
-                        <Avatar name={from?.name ?? "?"} color={from?.avatarColor ?? "#6b7280"} url={from?.avatarUrl} size={44} />
+                        <NotifAvatar type={n.type} from={from} />
                         <NotifBadge type={n.type} />
                       </div>
                       <div className="min-w-0 flex-1 pt-0.5">
