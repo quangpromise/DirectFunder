@@ -281,6 +281,10 @@ export interface CheckInitialValue {
   elAfter0716: boolean;
   securityCheck: boolean;
   agentGuaranteesSc: boolean;
+  /** "Upfront Collected" (thêm 2026-09-12) — cùng nhóm loại trừ 3 chiều với securityCheck/
+   * agentGuaranteesSc bên trong "EL after 07/16" (chỉ hiện khi elAfter0716 đang tick, giống
+   * 2 mục kia) — chọn mục nào tự ẨN 2 mục còn lại, xem check-initial-cell.tsx. */
+  upfrontCollected: boolean;
   bankInfo: boolean;
   /** null = chưa chọn. "yes"/"no" tô đỏ/xanh; "collected" ("Đã thu phí tạm ứng") tô xanh +
    * thêm hậu tố "(Collected)" vào nhãn — 3 lựa chọn loại trừ nhau, chọn qua 3 nút con hiện

@@ -15,6 +15,7 @@ export const CHECK_INITIAL_ITEMS: { key: keyof CheckInitialValue; label: string 
   { key: "elAfter0716", label: "EL after 07/16" },
   { key: "securityCheck", label: "Security Check" },
   { key: "agentGuaranteesSc", label: "Agent guarantees SC" },
+  { key: "upfrontCollected", label: "Upfront Collected" },
   { key: "bankInfo", label: "Bank Information" },
 ];
 
@@ -23,6 +24,7 @@ export const EMPTY_CHECK_INITIAL: CheckInitialValue = {
   elAfter0716: false,
   securityCheck: false,
   agentGuaranteesSc: false,
+  upfrontCollected: false,
   bankInfo: false,
   backTaxOwed: null,
 };

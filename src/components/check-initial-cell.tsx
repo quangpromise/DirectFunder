@@ -28,10 +28,15 @@ const WARNING_RED = "#fca5a5";
  * "Bank Information". 2 mốc EL loại trừ nhau HOÀN TOÀN — tick mốc nào thì ẨN HẲN mốc còn
  * lại (giống cơ chế Security Check/Agent guarantees SC), muốn quay lại mốc kia phải bỏ
  * tick mốc đang chọn trước. Riêng tick "EL after 07/16" còn hiện thêm "Security
- * Check"/"Agent guarantees SC" (2 checkbox này chỉ có ý nghĩa với mốc "sau 07/16"), 2
- * checkbox đó tiếp tục loại trừ nhau như rule cũ. Bỏ tick "EL after 07/16" (trực tiếp hoặc
- * gián tiếp do tick "EL before 07/16") sẽ tự xoá Security Check/Agent guarantees SC luôn,
- * tránh dữ liệu ẩn nhưng vẫn "true" gây hiểu nhầm khi xem lại. */
+ * Check"/"Agent guarantees SC"/"Upfront Collected" (3 checkbox này chỉ có ý nghĩa với mốc
+ * "sau 07/16"), 3 checkbox đó loại trừ NHAU THEO NHÓM 3 (thêm 2026-09-12, theo yêu cầu
+ * "chọn nút này sẽ xanh và ẩn 2 nút kia, ngược lại cũng vậy") — tick 1 trong 3 tự bỏ tick +
+ * ẨN HẲN 2 nút còn lại, không chỉ hiện xám. Bỏ tick "EL after 07/16" (trực tiếp hoặc gián
+ * tiếp do tick "EL before 07/16") sẽ tự xoá cả 3 luôn, tránh dữ liệu ẩn nhưng vẫn "true" gây
+ * hiểu nhầm khi xem lại. "Back Tax Owed" chọn "Collected Upfront Fee" (thêm cùng ngày) cũng
+ * tự ẨN cả 3 (ý nghĩa trùng "đã thu phí tạm ứng" qua đường khác), KHÔNG xoá dữ liệu 3 ô đó
+ * (chỉ ẩn UI — bỏ chọn "Collected Upfront Fee" ở Back Tax Owed sẽ hiện lại đúng trạng thái
+ * cũ, khác cách EL after/before xoá hẳn dữ liệu khi ẩn). */
 export function CheckInitialCell({
   value,
   editable,
@@ -61,13 +66,24 @@ export function CheckInitialCell({
     if (!next.elAfter0716) {
       next.securityCheck = false;
       next.agentGuaranteesSc = false;
+      next.upfrontCollected = false;
     }
-    // "Security Check" và "Agent guarantees SC" loại trừ nhau (cùng thể hiện 1 ý nghĩa: đã
-    // kiểm tra bảo mật trực tiếp HOẶC Agent đứng ra bảo đảm) — tick cái này tự bỏ tick cái
-    // kia ở dữ liệu, đồng thời ẨN HẲN nút kia khỏi danh sách (không chỉ hiện xám/chưa tick)
-    // cho tới khi bỏ tick lại.
-    if (key === "securityCheck" && next.securityCheck) next.agentGuaranteesSc = false;
-    if (key === "agentGuaranteesSc" && next.agentGuaranteesSc) next.securityCheck = false;
+    // "Security Check"/"Agent guarantees SC"/"Upfront Collected" loại trừ nhau THEO NHÓM 3
+    // (thêm 2026-09-12, mở rộng từ nhóm 2 cũ) — tick 1 trong 3 tự bỏ tick 2 mục còn lại ở dữ
+    // liệu, đồng thời ẨN HẲN 2 nút kia khỏi danh sách (không chỉ hiện xám/chưa tick) cho tới
+    // khi bỏ tick lại.
+    if (key === "securityCheck" && next.securityCheck) {
+      next.agentGuaranteesSc = false;
+      next.upfrontCollected = false;
+    }
+    if (key === "agentGuaranteesSc" && next.agentGuaranteesSc) {
+      next.securityCheck = false;
+      next.upfrontCollected = false;
+    }
+    if (key === "upfrontCollected" && next.upfrontCollected) {
+      next.securityCheck = false;
+      next.agentGuaranteesSc = false;
+    }
     onCommit(next);
   }
 
@@ -79,12 +95,18 @@ export function CheckInitialCell({
     setBackTaxExpanded(false);
   }
 
+  const SC_GROUP_KEYS = ["securityCheck", "agentGuaranteesSc", "upfrontCollected"] as const;
   const visibleItems = CHECK_INITIAL_ITEMS.filter((item) => {
     if (item.key === "elAfter0716" && current.elBefore0716) return false;
     if (item.key === "elBefore0716" && current.elAfter0716) return false;
-    if ((item.key === "securityCheck" || item.key === "agentGuaranteesSc") && !current.elAfter0716) return false;
-    if (item.key === "securityCheck" && current.agentGuaranteesSc) return false;
-    if (item.key === "agentGuaranteesSc" && current.securityCheck) return false;
+    const isScGroup = (SC_GROUP_KEYS as readonly string[]).includes(item.key);
+    if (isScGroup && !current.elAfter0716) return false;
+    // "Back Tax Owed" = "Collected Upfront Fee" trùng ý nghĩa "đã thu phí tạm ứng" qua
+    // đường khác — ẩn cả 3 nút nhóm Security Check/Agent guarantees SC/Upfront Collected
+    // (thêm 2026-09-12), KHÔNG xoá dữ liệu (chỉ ẩn UI, xem comment đầu file).
+    if (isScGroup && current.backTaxOwed === "collected") return false;
+    // Trong nhóm 3, mục nào ĐANG được tick sẽ ẨN 2 mục còn lại (loại trừ theo nhóm).
+    if (isScGroup && SC_GROUP_KEYS.some((k) => k !== item.key && current[k])) return false;
     return true;
   });
 
