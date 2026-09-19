@@ -3,15 +3,16 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
 import { hasFeature } from "@/lib/rbac";
 import { toE164US } from "@/lib/phone";
-import { isRingCentralConfigured, RingCentralApiError, sendRingCentralMms } from "@/lib/ringcentral";
+import { isRingCentralConfigured, RingCentralApiError } from "@/lib/ringcentral";
+import { sendMmsToPhone } from "@/lib/sms-thread";
 import type { FeaturePermissions } from "@/lib/types";
 
 const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
 
-/** Gửi ảnh đính kèm (MMS) tới số điện thoại chính của hồ sơ — CHỈ ĐẨY ĐI qua RingCentral,
- * KHÔNG lưu byte ảnh ở bất kỳ đâu trong app (không có `prisma.smsMessage.create` nào ở đây,
- * khác nhánh gửi text ở route.ts cùng cấp) — theo đúng yêu cầu "gửi ảnh mà không lưu lại".
- * Vì không lưu, ảnh này KHÔNG xuất hiện lại trong thread nếu tải lại trang/mở lại popup. */
+/** Gửi ảnh đính kèm (MMS) tới số điện thoại chính của hồ sơ — CHỈ BYTE ẢNH là không lưu ở
+ * đâu trong app (không có cột nào chứa dữ liệu ảnh), TIN NHẮN (dòng "[Hình ảnh]" kèm caption
+ * nếu có) vẫn lưu bình thường như SMS text — vẫn hiện lại đúng trong thread hồ sơ VÀ hộp thư
+ * tổng hợp (SmsInboxButton) sau khi tải lại trang, khác thiết kế "ephemeral hoàn toàn" ban đầu. */
 export async function POST(request: Request, ctx: RouteContext<"/api/cases/[id]/sms/image">) {
   const me = await requireUser();
   if (!me) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
@@ -50,8 +51,16 @@ export async function POST(request: Request, ctx: RouteContext<"/api/cases/[id]/
   if (!to) return NextResponse.json({ error: "Hồ sơ chưa có số điện thoại hợp lệ" }, { status: 400 });
 
   try {
-    await sendRingCentralMms(to, buffer, contentType, body?.filename?.trim() || "image.jpg", body?.caption?.trim() || undefined);
-    return NextResponse.json({ ok: true });
+    const created = await sendMmsToPhone(
+      to,
+      buffer,
+      contentType,
+      body?.filename?.trim() || "image.jpg",
+      body?.caption?.trim() || undefined,
+      me.id,
+      request.headers.get("x-pusher-socket-id")
+    );
+    return NextResponse.json(created, { status: 201 });
   } catch (err) {
     const message = err instanceof RingCentralApiError ? err.message : "Gửi ảnh thất bại, thử lại sau.";
     return NextResponse.json({ error: message }, { status: 502 });

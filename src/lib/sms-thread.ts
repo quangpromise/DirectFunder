@@ -1,5 +1,5 @@
 import { prisma } from "./prisma";
-import { sendRingCentralSms } from "./ringcentral";
+import { sendRingCentralSms, sendRingCentralMms } from "./ringcentral";
 import { broadcastCaseChanged } from "./pusher-server";
 import { toE164US } from "./phone";
 import { getAllClientNames } from "./client-name";
@@ -53,6 +53,29 @@ export async function sendSmsToPhone(
   socketId: string | null
 ): Promise<SmsMessageRecord> {
   const sent = await sendRingCentralSms(phone, text);
+  const created = await prisma.smsMessage.create({
+    data: { direction: "out", counterpartNumber: phone, text, ringcentralMessageId: sent.id, sentByUserId },
+  });
+  await broadcastCaseChanged(phone, socketId);
+  return toSmsRecord(created);
+}
+
+/** Gửi 1 ảnh đính kèm (MMS, thêm 2026-09-19) — CHỈ byte ảnh là không lưu (không có cột nào
+ * trên `SmsMessage` chứa dữ liệu ảnh), còn TIN NHẮN (dòng lịch sử "đã gửi ảnh" kèm caption
+ * nếu có) vẫn lưu bình thường như mọi SMS khác — nên vẫn hiện lại đúng vị trí trong thread
+ * của hồ sơ VÀ trong hộp thư tổng hợp (SmsInboxButton, tự dựng từ SmsMessage) sau khi tải lại
+ * trang, khác thiết kế "ephemeral hoàn toàn" ban đầu. */
+export async function sendMmsToPhone(
+  phone: string,
+  imageBuffer: Buffer,
+  contentType: string,
+  filename: string,
+  caption: string | undefined,
+  sentByUserId: string,
+  socketId: string | null
+): Promise<SmsMessageRecord> {
+  const sent = await sendRingCentralMms(phone, imageBuffer, contentType, filename, caption);
+  const text = caption ? `[Hình ảnh] ${caption}` : "[Hình ảnh]";
   const created = await prisma.smsMessage.create({
     data: { direction: "out", counterpartNumber: phone, text, ringcentralMessageId: sent.id, sentByUserId },
   });

@@ -11,10 +11,6 @@ import { fileToDataUrl } from "@/lib/file-to-data-url";
 
 const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
 
-type DisplayItem =
-  | { kind: "message"; id: string; direction: "in" | "out"; text: string; createdAt: string }
-  | { kind: "local-image"; id: string; previewUrl: string; caption: string; createdAt: string };
-
 /**
  * Icon nhắn tin SMS (RingCentral, thêm 2026-08-17) — đặt NGAY DƯỚI icon Send Data cạnh
  * Status (xem cases/page.tsx), nhấp nháy đỏ khi hồ sơ có tin nhắn "in" (khách nhắn tới)
@@ -61,18 +57,11 @@ export function CaseSmsButton({
   const hasPhone = phone.trim().length > 0;
 
   // Ảnh dán vào (Ctrl+V, thêm 2026-09-19) chờ gửi — CHỈ giữ tạm trong state trình duyệt
-  // (object URL), KHÔNG upload/lưu ở đâu cho tới khi bấm gửi, và ngay cả lúc đó cũng CHỈ đẩy
-  // đi qua RingCentral (route .../sms/image), không có SmsMessage nào được tạo trong DB — xem
-  // route đó. Sau khi gửi, chỉ hiện lại CỤC BỘ qua `localImages` (mất khi đóng popup/reload).
+  // (object URL) tới khi bấm gửi. Bấm gửi xong, route .../sms/image ĐẨY ảnh đi qua RingCentral
+  // rồi LƯU LẠI 1 dòng SmsMessage dạng text ("[Hình ảnh]" + caption nếu có, xem sendMmsToPhone)
+  // — CHỈ byte ảnh là không lưu, tin nhắn vẫn lưu như SMS thường nên hiện lại đúng vị trí
+  // trong thread lẫn hộp thư tổng hợp sau khi tải lại trang (fetchSmsThread bên dưới).
   const [pendingImage, setPendingImage] = useState<{ file: File; previewUrl: string } | null>(null);
-  const [localImages, setLocalImages] = useState<
-    { id: string; previewUrl: string; caption: string; createdAt: string }[]
-  >([]);
-
-  const displayItems: DisplayItem[] = [
-    ...messages.map((m) => ({ kind: "message" as const, id: m.id, direction: m.direction, text: m.text, createdAt: m.createdAt })),
-    ...localImages.map((img) => ({ kind: "local-image" as const, ...img })),
-  ].sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));
 
   // Popup con "Chèn mẫu thiếu INT" (thêm 2026-09-19) — chọn ngôn ngữ + 1/nhiều năm + số tiền
   // INT riêng từng năm, dựng sẵn nội dung rồi CHÈN VÀO ô soạn (không tự gửi) để người dùng
@@ -116,7 +105,6 @@ export function CaseSmsButton({
     setOpen(true);
     setLoading(true);
     setPendingImage(null);
-    setLocalImages([]);
     try {
       const rows = await fetchSmsThread(caseId);
       setMessages(rows);
@@ -128,7 +116,7 @@ export function CaseSmsButton({
 
   useEffect(() => {
     if (open) listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
-  }, [open, displayItems.length]);
+  }, [open, messages]);
 
   function handlePasteImage(e: ClipboardEvent<HTMLTextAreaElement>) {
     const item = Array.from(e.clipboardData.items).find((it) => it.type.startsWith("image/"));
@@ -174,12 +162,11 @@ export function CaseSmsButton({
           await alertWarn(result.error, { title: t("sms.sendImageErrorTitle") });
           return;
         }
-        setLocalImages((prev) => [
-          ...prev,
-          { id: `local-${Date.now()}`, previewUrl: pendingImage.previewUrl, caption: trimmed, createdAt: new Date().toISOString() },
-        ]);
+        URL.revokeObjectURL(pendingImage.previewUrl);
         setPendingImage(null);
         setText("");
+        const rows = await fetchSmsThread(caseId);
+        setMessages(rows);
         return;
       }
       const result = await sendSmsMessage(caseId, trimmed);
@@ -234,36 +221,23 @@ export function CaseSmsButton({
 
               <div ref={listRef} className="mt-3 flex-1 space-y-2 overflow-y-auto rounded-lg bg-bg-elevated/40 p-2">
                 {loading && <p className="text-center text-xs text-text-faint">{t("common.loading")}</p>}
-                {!loading && displayItems.length === 0 && <p className="text-center text-xs text-text-faint">{t("sms.empty")}</p>}
-                {displayItems.map((item) =>
-                  item.kind === "message" ? (
-                    <div key={item.id} className={`flex ${item.direction === "out" ? "justify-end" : "justify-start"}`}>
-                      <div
-                        className={`max-w-[80%] rounded-xl px-3 py-1.5 text-xs whitespace-pre-wrap break-words ${
-                          item.direction === "out"
-                            ? "gradient-btn text-white"
-                            : "border border-border bg-surface text-text"
-                        }`}
-                      >
-                        {item.text}
-                        <div className={`mt-0.5 text-[10px] ${item.direction === "out" ? "text-white/70" : "text-text-faint"}`}>
-                          {new Date(item.createdAt).toLocaleString()}
-                        </div>
+                {!loading && messages.length === 0 && <p className="text-center text-xs text-text-faint">{t("sms.empty")}</p>}
+                {messages.map((m) => (
+                  <div key={m.id} className={`flex ${m.direction === "out" ? "justify-end" : "justify-start"}`}>
+                    <div
+                      className={`max-w-[80%] rounded-xl px-3 py-1.5 text-xs whitespace-pre-wrap break-words ${
+                        m.direction === "out"
+                          ? "gradient-btn text-white"
+                          : "border border-border bg-surface text-text"
+                      }`}
+                    >
+                      {m.text}
+                      <div className={`mt-0.5 text-[10px] ${m.direction === "out" ? "text-white/70" : "text-text-faint"}`}>
+                        {new Date(m.createdAt).toLocaleString()}
                       </div>
                     </div>
-                  ) : (
-                    <div key={item.id} className="flex justify-end">
-                      <div className="max-w-[80%] rounded-xl bg-accent-soft p-1.5">
-                        {/* eslint-disable-next-line @next/next/no-img-element -- ảnh chỉ tồn tại trong bộ nhớ trình duyệt (object URL), không phải asset app nên không dùng next/image */}
-                        <img src={item.previewUrl} alt="" className="max-h-40 w-full rounded-lg object-cover" />
-                        {item.caption && <p className="mt-1 whitespace-pre-wrap break-words text-xs text-text">{item.caption}</p>}
-                        <div className="mt-0.5 text-[10px] text-text-faint">
-                          {new Date(item.createdAt).toLocaleString()} · {t("sms.localImageNote")}
-                        </div>
-                      </div>
-                    </div>
-                  )
-                )}
+                  </div>
+                ))}
               </div>
 
               <button
