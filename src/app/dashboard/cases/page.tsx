@@ -273,6 +273,7 @@ export default function CasesPage() {
   const connectWebmailAccount = useAppStore((s) => s.connectWebmailAccount);
   const fetchSmsThread = useAppStore((s) => s.fetchSmsThread);
   const sendSmsMessage = useAppStore((s) => s.sendSmsMessage);
+  const sendSmsImage = useAppStore((s) => s.sendSmsImage);
   const markSmsThreadRead = useAppStore((s) => s.markSmsThreadRead);
   const addRow = useAppStore((s) => s.addRow);
   const deleteRow = useAppStore((s) => s.deleteRow);
@@ -1284,6 +1285,7 @@ export default function CasesPage() {
               canSendSmsFeature={canSendSmsFeature}
               fetchSmsThread={fetchSmsThread}
               sendSmsMessage={sendSmsMessage}
+              sendSmsImage={sendSmsImage}
               markSmsThreadRead={markSmsThreadRead}
               confirm={confirm}
               alertWarn={alertWarn}
@@ -1494,6 +1496,7 @@ function RowCells({
   canSendSmsFeature,
   fetchSmsThread,
   sendSmsMessage,
+  sendSmsImage,
   markSmsThreadRead,
   confirm,
   alertWarn,
@@ -1621,6 +1624,10 @@ function RowCells({
   canSendSmsFeature: boolean;
   fetchSmsThread: (caseId: string) => Promise<SmsMessageRecord[]>;
   sendSmsMessage: (caseId: string, text: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+  sendSmsImage: (
+    caseId: string,
+    payload: { contentBase64: string; contentType: string; filename: string; caption?: string }
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
   markSmsThreadRead: (caseId: string) => Promise<void>;
   confirm: (message: string, opts?: { title?: string; tone?: "default" | "danger" }) => Promise<boolean>;
   alertWarn: (message: string, opts?: { title?: string }) => Promise<void>;
@@ -1812,9 +1819,13 @@ function RowCells({
                 caseId={row.id}
                 phone={row.phone}
                 hasUnreadSms={row.hasUnreadSms}
+                taxpayerName={getFullName(row)}
+                agentName={users.find((u) => u.id === row.assignedTo)?.name ?? ""}
+                userName={user.name}
                 alertWarn={alertWarn}
                 fetchSmsThread={fetchSmsThread}
                 sendSmsMessage={sendSmsMessage}
+                sendSmsImage={sendSmsImage}
                 markSmsThreadRead={markSmsThreadRead}
               />
             )}

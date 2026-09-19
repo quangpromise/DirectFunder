@@ -639,6 +639,12 @@ interface AppState {
    * processorReportEntries). */
   fetchSmsThread: (caseId: string) => Promise<SmsMessageRecord[]>;
   sendSmsMessage: (caseId: string, text: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+  /** Gửi ảnh đính kèm (MMS, Ctrl+V paste) — CHỈ ĐẨY ĐI qua RingCentral, KHÔNG lưu byte ảnh
+   * ở đâu (không có SmsMessage nào được tạo) — ảnh không xuất hiện lại nếu tải lại thread. */
+  sendSmsImage: (
+    caseId: string,
+    payload: { contentBase64: string; contentType: string; filename: string; caption?: string }
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
   /** Đánh dấu đã đọc + tắt icon đỏ ngay trên bảng Hồ sơ cục bộ (server cũng tự tắt cho mọi
    * user khác qua broadcastCaseChanged, xem POST .../sms/mark-read). */
   markSmsThreadRead: (caseId: string) => Promise<void>;
@@ -2745,6 +2751,15 @@ export const useAppStore = create<AppState>()(
           return { ok: true } as const;
         } catch (err) {
           const message = err instanceof Error ? err.message : "Gửi SMS thất bại";
+          return { ok: false, error: message } as const;
+        }
+      },
+      sendSmsImage: async (caseId, payload) => {
+        try {
+          await api.sendSmsImage(caseId, payload);
+          return { ok: true } as const;
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Gửi ảnh thất bại";
           return { ok: false, error: message } as const;
         }
       },

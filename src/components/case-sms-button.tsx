@@ -1,10 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ClipboardEvent } from "react";
 import { createPortal } from "react-dom";
-import { MessageCircle, Send, X } from "lucide-react";
+import { FileText, ImageIcon, MessageCircle, Send, X } from "lucide-react";
 import { useT } from "@/lib/i18n";
 import type { SmsMessageRecord } from "@/lib/types";
+import { REFUND_YEARS } from "@/lib/refund";
+import { buildTaxIntShortfallSms, type SmsTemplateLanguage } from "@/lib/sms-templates";
+import { fileToDataUrl } from "@/lib/file-to-data-url";
+
+const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
+
+type DisplayItem =
+  | { kind: "message"; id: string; direction: "in" | "out"; text: string; createdAt: string }
+  | { kind: "local-image"; id: string; previewUrl: string; caption: string; createdAt: string };
 
 /**
  * Icon nhắn tin SMS (RingCentral, thêm 2026-08-17) — đặt NGAY DƯỚI icon Send Data cạnh
@@ -18,17 +27,28 @@ export function CaseSmsButton({
   caseId,
   phone,
   hasUnreadSms,
+  taxpayerName,
+  agentName,
+  userName,
   alertWarn,
   fetchSmsThread,
   sendSmsMessage,
+  sendSmsImage,
   markSmsThreadRead,
 }: {
   caseId: string;
   phone: string;
   hasUnreadSms: boolean;
+  taxpayerName: string;
+  agentName: string;
+  userName: string;
   alertWarn: (message: string, opts?: { title?: string }) => Promise<void>;
   fetchSmsThread: (caseId: string) => Promise<SmsMessageRecord[]>;
   sendSmsMessage: (caseId: string, text: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+  sendSmsImage: (
+    caseId: string,
+    payload: { contentBase64: string; contentType: string; filename: string; caption?: string }
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
   markSmsThreadRead: (caseId: string) => Promise<void>;
 }) {
   const t = useT();
@@ -40,6 +60,53 @@ export function CaseSmsButton({
   const listRef = useRef<HTMLDivElement>(null);
   const hasPhone = phone.trim().length > 0;
 
+  // Ảnh dán vào (Ctrl+V, thêm 2026-09-19) chờ gửi — CHỈ giữ tạm trong state trình duyệt
+  // (object URL), KHÔNG upload/lưu ở đâu cho tới khi bấm gửi, và ngay cả lúc đó cũng CHỈ đẩy
+  // đi qua RingCentral (route .../sms/image), không có SmsMessage nào được tạo trong DB — xem
+  // route đó. Sau khi gửi, chỉ hiện lại CỤC BỘ qua `localImages` (mất khi đóng popup/reload).
+  const [pendingImage, setPendingImage] = useState<{ file: File; previewUrl: string } | null>(null);
+  const [localImages, setLocalImages] = useState<
+    { id: string; previewUrl: string; caption: string; createdAt: string }[]
+  >([]);
+
+  const displayItems: DisplayItem[] = [
+    ...messages.map((m) => ({ kind: "message" as const, id: m.id, direction: m.direction, text: m.text, createdAt: m.createdAt })),
+    ...localImages.map((img) => ({ kind: "local-image" as const, ...img })),
+  ].sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));
+
+  // Popup con "Chèn mẫu thiếu INT" (thêm 2026-09-19) — chọn ngôn ngữ + 1/nhiều năm + số tiền
+  // INT riêng từng năm, dựng sẵn nội dung rồi CHÈN VÀO ô soạn (không tự gửi) để người dùng
+  // sửa tự do trước khi bấm gửi thật.
+  const [templateOpen, setTemplateOpen] = useState(false);
+  const [templateLanguage, setTemplateLanguage] = useState<SmsTemplateLanguage>("vi");
+  const [templateYears, setTemplateYears] = useState<string[]>([]);
+  const [templateAmounts, setTemplateAmounts] = useState<Record<string, string>>({});
+
+  function openTemplatePicker() {
+    setTemplateLanguage("vi");
+    setTemplateYears([]);
+    setTemplateAmounts({});
+    setTemplateOpen(true);
+  }
+
+  function toggleTemplateYear(year: string) {
+    setTemplateYears((prev) => (prev.includes(year) ? prev.filter((y) => y !== year) : [...prev, year]));
+  }
+
+  function insertTemplate() {
+    if (templateYears.length === 0) return;
+    const generated = buildTaxIntShortfallSms({
+      taxpayerName,
+      userName,
+      agentName,
+      years: templateYears,
+      amounts: templateAmounts,
+      language: templateLanguage,
+    });
+    setText(generated);
+    setTemplateOpen(false);
+  }
+
   // Nạp thread NGAY trong handler bấm mở (event handler thường, không phải useEffect) —
   // tránh lỗi lint "set-state-in-effect" (gọi setState đồng bộ ngay đầu thân effect) mà
   // vẫn có đúng hành vi "mở popup -> tự fetch", không cần theo dõi `open` qua dependency
@@ -48,6 +115,8 @@ export function CaseSmsButton({
     if (!hasPhone) return;
     setOpen(true);
     setLoading(true);
+    setPendingImage(null);
+    setLocalImages([]);
     try {
       const rows = await fetchSmsThread(caseId);
       setMessages(rows);
@@ -59,13 +128,60 @@ export function CaseSmsButton({
 
   useEffect(() => {
     if (open) listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
-  }, [open, messages]);
+  }, [open, displayItems.length]);
+
+  function handlePasteImage(e: ClipboardEvent<HTMLTextAreaElement>) {
+    const item = Array.from(e.clipboardData.items).find((it) => it.type.startsWith("image/"));
+    if (!item) return;
+    const file = item.getAsFile();
+    if (!file) return;
+    e.preventDefault();
+    if (file.size > MAX_IMAGE_BYTES) {
+      void alertWarn(t("sms.imageTooLarge", { max: `${(MAX_IMAGE_BYTES / (1024 * 1024)).toFixed(1)}MB` }), {
+        title: t("sms.sendImageErrorTitle"),
+      });
+      return;
+    }
+    setPendingImage((prev) => {
+      if (prev) URL.revokeObjectURL(prev.previewUrl);
+      return { file, previewUrl: URL.createObjectURL(file) };
+    });
+  }
+
+  function clearPendingImage() {
+    setPendingImage((prev) => {
+      if (prev) URL.revokeObjectURL(prev.previewUrl);
+      return null;
+    });
+  }
 
   async function handleSend() {
     const trimmed = text.trim();
-    if (!trimmed || sending) return;
+    if (sending) return;
+    if (!trimmed && !pendingImage) return;
     setSending(true);
     try {
+      if (pendingImage) {
+        const dataUrl = await fileToDataUrl(pendingImage.file);
+        const base64 = dataUrl.split(",")[1] ?? "";
+        const result = await sendSmsImage(caseId, {
+          contentBase64: base64,
+          contentType: pendingImage.file.type || "image/jpeg",
+          filename: pendingImage.file.name || "image.jpg",
+          caption: trimmed || undefined,
+        });
+        if (!result.ok) {
+          await alertWarn(result.error, { title: t("sms.sendImageErrorTitle") });
+          return;
+        }
+        setLocalImages((prev) => [
+          ...prev,
+          { id: `local-${Date.now()}`, previewUrl: pendingImage.previewUrl, caption: trimmed, createdAt: new Date().toISOString() },
+        ]);
+        setPendingImage(null);
+        setText("");
+        return;
+      }
       const result = await sendSmsMessage(caseId, trimmed);
       if (!result.ok) {
         await alertWarn(result.error, { title: t("sms.sendErrorTitle") });
@@ -105,40 +221,81 @@ export function CaseSmsButton({
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between">
-                <h3 className="flex items-center gap-1.5 text-sm font-semibold">
-                  <MessageCircle size={15} />
-                  {t("sms.dialogTitle")} — {phone}
+                <h3 className="flex items-center gap-1.5 truncate text-sm font-semibold">
+                  <MessageCircle size={15} className="shrink-0" />
+                  <span className="truncate">
+                    {t("sms.dialogTitle")} — {taxpayerName ? `${taxpayerName} · ${phone}` : phone}
+                  </span>
                 </h3>
-                <button type="button" onClick={() => setOpen(false)} className="text-text-faint hover:text-text">
+                <button type="button" onClick={() => setOpen(false)} className="shrink-0 text-text-faint hover:text-text">
                   <X size={16} />
                 </button>
               </div>
 
               <div ref={listRef} className="mt-3 flex-1 space-y-2 overflow-y-auto rounded-lg bg-bg-elevated/40 p-2">
                 {loading && <p className="text-center text-xs text-text-faint">{t("common.loading")}</p>}
-                {!loading && messages.length === 0 && <p className="text-center text-xs text-text-faint">{t("sms.empty")}</p>}
-                {messages.map((m) => (
-                  <div key={m.id} className={`flex ${m.direction === "out" ? "justify-end" : "justify-start"}`}>
-                    <div
-                      className={`max-w-[80%] rounded-xl px-3 py-1.5 text-xs whitespace-pre-wrap break-words ${
-                        m.direction === "out"
-                          ? "gradient-btn text-white"
-                          : "border border-border bg-surface text-text"
-                      }`}
-                    >
-                      {m.text}
-                      <div className={`mt-0.5 text-[10px] ${m.direction === "out" ? "text-white/70" : "text-text-faint"}`}>
-                        {new Date(m.createdAt).toLocaleString()}
+                {!loading && displayItems.length === 0 && <p className="text-center text-xs text-text-faint">{t("sms.empty")}</p>}
+                {displayItems.map((item) =>
+                  item.kind === "message" ? (
+                    <div key={item.id} className={`flex ${item.direction === "out" ? "justify-end" : "justify-start"}`}>
+                      <div
+                        className={`max-w-[80%] rounded-xl px-3 py-1.5 text-xs whitespace-pre-wrap break-words ${
+                          item.direction === "out"
+                            ? "gradient-btn text-white"
+                            : "border border-border bg-surface text-text"
+                        }`}
+                      >
+                        {item.text}
+                        <div className={`mt-0.5 text-[10px] ${item.direction === "out" ? "text-white/70" : "text-text-faint"}`}>
+                          {new Date(item.createdAt).toLocaleString()}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  ) : (
+                    <div key={item.id} className="flex justify-end">
+                      <div className="max-w-[80%] rounded-xl bg-accent-soft p-1.5">
+                        {/* eslint-disable-next-line @next/next/no-img-element -- ảnh chỉ tồn tại trong bộ nhớ trình duyệt (object URL), không phải asset app nên không dùng next/image */}
+                        <img src={item.previewUrl} alt="" className="max-h-40 w-full rounded-lg object-cover" />
+                        {item.caption && <p className="mt-1 whitespace-pre-wrap break-words text-xs text-text">{item.caption}</p>}
+                        <div className="mt-0.5 text-[10px] text-text-faint">
+                          {new Date(item.createdAt).toLocaleString()} · {t("sms.localImageNote")}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                )}
               </div>
 
-              <div className="mt-3 flex items-end gap-2">
+              <button
+                type="button"
+                onClick={openTemplatePicker}
+                className="mt-2 flex items-center gap-1.5 self-start rounded-lg border border-dashed border-border-strong px-2.5 py-1 text-[11px] text-text-dim transition hover:bg-surface-hover hover:text-text"
+              >
+                <FileText size={12} />
+                {t("sms.templateBtn")}
+              </button>
+
+              {pendingImage && (
+                <div className="mt-2 flex items-center gap-2 rounded-lg border border-accent/40 bg-accent-soft px-2 py-1.5">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- preview object URL cục bộ, không phải asset app */}
+                  <img src={pendingImage.previewUrl} alt="" className="h-10 w-10 shrink-0 rounded-md object-cover" />
+                  <span className="flex-1 truncate text-[11px] text-text-dim">{t("sms.pastedImageReady")}</span>
+                  <button
+                    type="button"
+                    onClick={clearPendingImage}
+                    aria-label={t("sms.removeImage")}
+                    className="shrink-0 text-text-faint hover:text-red-400"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              )}
+
+              <div className="mt-2 flex items-end gap-2">
                 <textarea
                   value={text}
                   onChange={(e) => setText(e.target.value)}
+                  onPaste={handlePasteImage}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey) {
                       e.preventDefault();
@@ -152,12 +309,94 @@ export function CaseSmsButton({
                 <button
                   type="button"
                   onClick={() => void handleSend()}
-                  disabled={sending || !text.trim()}
+                  disabled={sending || (!text.trim() && !pendingImage)}
                   className="gradient-btn flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white disabled:opacity-50"
                 >
-                  <Send size={15} />
+                  {pendingImage ? <ImageIcon size={15} /> : <Send size={15} />}
                 </button>
               </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {templateOpen &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 px-4" onClick={() => setTemplateOpen(false)}>
+            <div className="popover flex max-h-full w-full max-w-sm flex-col rounded-2xl p-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="text-sm font-semibold">{t("sms.templateTitle")}</h3>
+                <button type="button" onClick={() => setTemplateOpen(false)} className="text-text-faint hover:text-text">
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="overflow-y-auto">
+                <div className="mb-3 flex gap-2">
+                  {(["vi", "en"] as const).map((lang) => (
+                    <button
+                      key={lang}
+                      type="button"
+                      onClick={() => setTemplateLanguage(lang)}
+                      className={`flex-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
+                        templateLanguage === lang
+                          ? "border-accent bg-accent-soft text-text"
+                          : "border-border bg-bg-elevated text-text-dim hover:border-accent"
+                      }`}
+                    >
+                      {lang === "vi" ? t("refundEmail.langVi") : t("refundEmail.langEn")}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  {REFUND_YEARS.map((year) => {
+                    const selected = templateYears.includes(year);
+                    return (
+                      <div key={year} className="flex flex-col gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => toggleTemplateYear(year)}
+                          className={`flex items-center justify-center rounded-lg border px-3 py-2 text-sm font-semibold transition ${
+                            selected
+                              ? "border-accent bg-accent-soft"
+                              : "border-border bg-bg-elevated hover:border-accent hover:bg-accent-soft"
+                          }`}
+                        >
+                          {year}
+                        </button>
+                        {selected && (
+                          <div className="rounded-lg border border-amber-500/60 bg-amber-500/10 p-1.5 light:border-amber-400 light:bg-amber-50">
+                            <label className="block text-[10px] font-medium text-amber-700 light:text-amber-800">
+                              {t("sms.templateIntLabel", { year })}
+                            </label>
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={templateAmounts[year] ?? ""}
+                              onChange={(e) =>
+                                setTemplateAmounts((prev) => ({ ...prev, [year]: e.target.value.replace(/[^\d.]/g, "") }))
+                              }
+                              placeholder="0"
+                              className="mt-1 w-full rounded-lg border border-border bg-bg-elevated px-2 py-1 text-xs text-text outline-none focus:border-accent"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={insertTemplate}
+                disabled={templateYears.length === 0}
+                className="gradient-btn mt-3 w-full rounded-lg py-1.5 text-xs font-medium text-white disabled:cursor-default disabled:opacity-50"
+              >
+                {t("sms.templateInsertBtn")}
+              </button>
             </div>
           </div>,
           document.body

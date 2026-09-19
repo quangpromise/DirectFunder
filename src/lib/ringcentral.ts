@@ -93,6 +93,40 @@ export async function sendRingCentralSms(to: string, text: string): Promise<{ id
   return { id: String(data.id) };
 }
 
+/** Gửi 1 MMS (ảnh đính kèm, kèm caption tuỳ chọn) từ số công ty tới `to` (E.164) — dùng
+ * multipart/form-data (2 part: JSON metadata + file nhị phân) theo đúng API "Create SMS
+ * Message" của RingCentral khi có attachment (khác nhánh SMS thuần ở `sendRingCentralSms`,
+ * chỉ JSON). CHỈ đẩy đi, KHÔNG lưu byte ảnh ở đâu trong app (xem route gọi hàm này). */
+export async function sendRingCentralMms(
+  to: string,
+  imageBuffer: Buffer,
+  contentType: string,
+  filename: string,
+  caption?: string
+): Promise<{ id: string }> {
+  const { token, serverUrl } = await getAccessToken();
+  const { fromNumber } = requiredEnv();
+  const form = new FormData();
+  form.append(
+    "json",
+    new Blob([JSON.stringify({ from: { phoneNumber: fromNumber }, to: [{ phoneNumber: to }], text: caption ?? "" })], {
+      type: "application/json",
+    })
+  );
+  form.append("attachment", new Blob([new Uint8Array(imageBuffer)], { type: contentType }), filename);
+  const res = await fetch(`${serverUrl}/restapi/v1.0/account/~/extension/~/sms`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new RingCentralApiError(`Gửi MMS thất bại (${res.status}): ${body.slice(0, 300)}`);
+  }
+  const data = (await res.json()) as { id: number | string };
+  return { id: String(data.id) };
+}
+
 interface RingCentralInboundMessage {
   id: string;
   fromNumber: string;

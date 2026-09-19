@@ -348,6 +348,11 @@ export const api = {
   sendSms: (caseId: string, text: string) =>
     request<SmsMessageRecord>(`/api/cases/${caseId}/sms`, { method: "POST", body: JSON.stringify({ text }) }),
   markSmsRead: (caseId: string) => request<{ ok: true; updated: number }>(`/api/cases/${caseId}/sms/mark-read`, { method: "POST" }),
+  /** Gửi ảnh đính kèm (MMS) — CHỈ ĐẨY ĐI, không lưu lại (xem route). */
+  sendSmsImage: (
+    caseId: string,
+    payload: { contentBase64: string; contentType: string; filename: string; caption?: string }
+  ) => request<{ ok: true }>(`/api/cases/${caseId}/sms/image`, { method: "POST", body: JSON.stringify(payload) }),
 
   /** Hộp thư tổng hợp SMS (SmsInboxButton, cạnh chuông thông báo) — theo số điện thoại
    * trực tiếp, không cần biết hồ sơ nào. Xem src/app/api/sms/**. */
