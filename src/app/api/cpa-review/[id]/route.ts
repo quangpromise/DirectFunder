@@ -121,8 +121,17 @@ export async function DELETE(request: NextRequest, ctx: RouteContext<"/api/cpa-r
   }
   await prisma.cpaReviewRecord.delete({ where: { id } });
 
+  // AWAIT trực tiếp (KHÔNG qua after()) — cùng bug class đã ghi nhận ở PATCH phía trên
+  // (comment 2026-09-12 về Notification): `after()` không đảm bảo hoàn tất network call
+  // (ở đây là Google Sheets API) trước khi Vercel dừng hẳn instance sau khi response đã trả
+  // về. Bug thật gặp production (2026-09-21, case "Kathy T Tran" dòng 49): xoá 1 dòng CPA
+  // Review qua app xoá ĐÚNG bản ghi DB ngay lập tức, nhưng `deleteRecordRowFromCpaReviewSheet`
+  // (đẩy qua after()) không kịp chạy xong -> dòng đó vẫn còn NGUYÊN dữ liệu trên Google Sheet,
+  // khiến app và Sheet lệch nhau (app thiếu 1 dòng Sheet vẫn có) mà không có cách nào tự phát
+  // hiện lại ngoài đối chiếu thủ công. Hàm này đã tự try/catch nội bộ (không throw ra ngoài,
+  // không ảnh hưởng response chính nếu Sheets API lỗi) nên await trực tiếp an toàn.
   if (existing) {
-    after(() => deleteRecordRowFromCpaReviewSheet(toCpaReviewRecord(existing)));
+    await deleteRecordRowFromCpaReviewSheet(toCpaReviewRecord(existing));
   }
   await broadcastCpaReviewChanged(id, request.headers.get("x-pusher-socket-id"));
 

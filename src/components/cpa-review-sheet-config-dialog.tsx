@@ -36,15 +36,43 @@ export function CpaReviewSheetConfigDialog({ month }: { month: string }) {
     webhookUrl: string;
     appsScript: string;
   } | null>(null);
+  // Tên quét lại riêng (thêm 2026-09-21) — KHÁC connectResult.distinctNames (chỉ có ngay sau
+  // lúc "Kết nối"/"Kết nối lại" trong CÙNG phiên mở dialog). Bug thật gặp: mở lại dialog sau
+  // đó (connectResult đã null) chỉ còn thấy Object.keys(config.nameToUserId) — tức CHỈ tên ĐÃ
+  // map từ trước, tên MỚI gõ thêm vào Sheet (vd "Webdy") không hiện ra để chọn map, và Admin
+  // không tìm thấy trong danh sách dù account thật (vd "Wendy") đã có sẵn trong dropdown chọn
+  // user. Nút "Quét lại tên" gọi action CHỈ ĐỌC (rescan-names), không đụng dữ liệu.
+  const [scannedNames, setScannedNames] = useState<string[] | null>(null);
+  const [scanningNames, setScanningNames] = useState(false);
 
   const configMap = useAppStore((s) => s.cpaReviewSheetConfig);
   const config = configMap[month] ?? null;
   const users = useAppStore((s) => s.users);
   const connect = useAppStore((s) => s.connectCpaReviewSheet);
   const resync = useAppStore((s) => s.resyncCpaReviewSheet);
+  const rescanNames = useAppStore((s) => s.rescanCpaReviewSheetNames);
   const updateMapping = useAppStore((s) => s.updateCpaReviewNameMapping);
   const disconnect = useAppStore((s) => s.disconnectCpaReviewSheet);
   const t = useT();
+
+  const displayNames = connectResult?.distinctNames ?? scannedNames ?? Object.keys(config?.nameToUserId ?? {});
+
+  async function handleRescanNames() {
+    setScanningNames(true);
+    setError(null);
+    const result = await rescanNames(month);
+    setScanningNames(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    // Gộp với tên ĐÃ map từ trước (phòng trường hợp tên cũ vừa bị xoá khỏi Sheet nhưng vẫn
+    // muốn giữ hiển thị để Admin thấy/gỡ mapping) — không để mất tên nào đang có.
+    const merged = Array.from(new Set([...result.distinctNames, ...Object.keys(config?.nameToUserId ?? {})])).sort((a, b) =>
+      a.localeCompare(b)
+    );
+    setScannedNames(merged);
+  }
 
   async function handleConnect() {
     if (!link.trim()) return;
@@ -57,6 +85,7 @@ export function CpaReviewSheetConfigDialog({ month }: { month: string }) {
       return;
     }
     setConnectResult(result);
+    setScannedNames(null);
     setLink("");
     setChangingLink(false);
   }
@@ -187,12 +216,23 @@ export function CpaReviewSheetConfigDialog({ month }: { month: string }) {
                     )}
 
                     <div>
-                      <label className="mb-1 block text-xs text-text-dim">{t("cpaReviewConnect.mappingLabel")}</label>
+                      <div className="mb-1 flex items-center justify-between">
+                        <label className="block text-xs text-text-dim">{t("cpaReviewConnect.mappingLabel")}</label>
+                        <button
+                          type="button"
+                          onClick={handleRescanNames}
+                          disabled={scanningNames || busy}
+                          className="flex items-center gap-1 text-[10px] text-accent transition hover:underline disabled:cursor-default disabled:opacity-60"
+                        >
+                          <RefreshCw size={10} className={scanningNames ? "animate-spin" : ""} />
+                          {t("cpaReviewConnect.rescanNamesBtn")}
+                        </button>
+                      </div>
                       <div className="flex max-h-48 flex-col gap-1 overflow-y-auto rounded-lg border border-border bg-bg-elevated p-1.5">
-                        {(connectResult?.distinctNames ?? Object.keys(config.nameToUserId)).length === 0 && (
+                        {displayNames.length === 0 && (
                           <p className="px-2 py-1.5 text-xs text-text-faint">{t("cpaReviewConnect.mappingEmpty")}</p>
                         )}
-                        {(connectResult?.distinctNames ?? Object.keys(config.nameToUserId)).map((name) => (
+                        {displayNames.map((name) => (
                           <div key={name} className="flex items-center gap-2 rounded-md bg-surface px-2 py-1.5 text-sm">
                             <span className="min-w-0 flex-1 truncate">{name}</span>
                             <select

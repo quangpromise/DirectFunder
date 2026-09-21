@@ -510,6 +510,14 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ action: "resync", month }),
     }),
+  /** Quét lại danh sách tên Processor/Agent trên Sheet đã kết nối (CHỈ ĐỌC, không đụng dữ
+   * liệu) — dùng để hiện tên MỚI gõ thêm vào Sheet sau lúc kết nối lần đầu trong bảng ánh xạ,
+   * không cần "Kết nối lại" (vốn chạy lại importSheetRows đầy đủ, rủi ro hơn). */
+  rescanCpaReviewSheetNames: (month: string) =>
+    request<{ ok: true; distinctNames: string[] }>("/api/config/cpa-review-sheet", {
+      method: "POST",
+      body: JSON.stringify({ action: "rescan-names", month }),
+    }),
   updateCpaReviewNameMapping: (nameToUserId: Record<string, string>, month: string) =>
     request<{ ok: true; nameToUserId: Record<string, string> }>("/api/config/cpa-review-sheet", {
       method: "PATCH",

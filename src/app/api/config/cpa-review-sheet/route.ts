@@ -313,13 +313,29 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json().catch(() => ({}));
-  const action = body?.action === "resync" ? "resync" : "connect";
+  const action = body?.action === "resync" ? "resync" : body?.action === "rescan-names" ? "rescan-names" : "connect";
   const month = typeof body?.month === "string" ? body.month : "";
   if (!isValidMonthKey(month)) {
     return NextResponse.json({ error: "Tháng không hợp lệ" }, { status: 400 });
   }
 
   try {
+    if (action === "rescan-names") {
+      // Quét lại DANH SÁCH TÊN Processor/Agent xuất hiện trên Sheet — CHỈ ĐỌC, không đụng gì
+      // tới CpaReviewRecord/rowIndex (khác "connect"/"reconnect" vốn chạy lại importSheetRows
+      // toàn bộ). Thêm vì bug thật gặp: dialog chỉ hiện danh sách tên lúc VỪA connect xong
+      // (connectResult.distinctNames) — tên MỚI gõ thêm vào Sheet sau đó không hiện lại cho
+      // tới khi mở dialog lần sau (fallback về Object.keys(nameToUserId), chỉ có tên ĐÃ map),
+      // khiến Admin không tìm thấy tên mới để ánh xạ mà không phải "Kết nối lại" (rủi ro hơn
+      // vì chạy lại importSheetRows đầy đủ, có thể gộp nhầm 2 dòng cùng SSN khác nhau).
+      const map = await getCpaReviewSheetConfigMap();
+      const existing = map[month];
+      if (!existing?.sheetId) return NextResponse.json({ error: "Tháng này chưa kết nối Sheet" }, { status: 400 });
+      const sheets = getServiceAccountSheetsClient();
+      const distinctNames = await scanDistinctNames(sheets, existing.sheetId, existing.tabName);
+      return NextResponse.json({ ok: true, distinctNames });
+    }
+
     if (action === "connect") {
       const sheets = getServiceAccountSheetsClient();
       const link = typeof body?.link === "string" ? body.link.trim() : "";

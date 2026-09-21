@@ -524,6 +524,8 @@ interface AppState {
     | { ok: false; error: string }
   >;
   resyncCpaReviewSheet: (month: string) => Promise<{ ok: true; pushed: number } | { ok: false; error: string }>;
+  /** Quét lại danh sách tên Processor/Agent trên Sheet (chỉ đọc) — xem api-client.ts. */
+  rescanCpaReviewSheetNames: (month: string) => Promise<{ ok: true; distinctNames: string[] } | { ok: false; error: string }>;
   updateCpaReviewNameMapping: (
     nameToUserId: Record<string, string>,
     month: string
@@ -2498,6 +2500,13 @@ export const useAppStore = create<AppState>()(
           return await api.resyncCpaReviewSheet(month);
         } catch (err) {
           return { ok: false, error: err instanceof Error ? err.message : "Đồng bộ lại thất bại" } as const;
+        }
+      },
+      rescanCpaReviewSheetNames: async (month) => {
+        try {
+          return await api.rescanCpaReviewSheetNames(month);
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Quét lại tên thất bại" } as const;
         }
       },
       updateCpaReviewNameMapping: async (nameToUserId, month) => {
