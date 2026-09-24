@@ -97,6 +97,13 @@ export function buildCpaReviewSheetCells(
       cells.push({ column: letterFor(index), value: formatted });
       continue;
     }
+    // App lưu 0 cho năm không có tiền (Test Sheet, xoá ô tiền trên Sheet) — ghi ô TRỐNG thay vì
+    // "0", nếu không mỗi lần app đẩy dòng xuống, cột Qualification/AE-AD mọi năm hiện 0 (báo
+    // cáo thật 2026-09-24, dòng 199). Ghi "" (không bỏ qua) để xoá luôn số 0 cũ đã lỡ ghi.
+    if (col?.type === "currency" && Number(value) === 0) {
+      cells.push({ column: letterFor(index), value: "" });
+      continue;
+    }
     if (typeof value === "number") {
       cells.push({ column: letterFor(index), value });
       continue;
