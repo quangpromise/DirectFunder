@@ -19,8 +19,8 @@ import {
 } from "@/lib/cpa-review-sheet-sync";
 import { yearNoteColumnIndex } from "@/lib/cpa-review-sheet-columns";
 import { CPA_REVIEW_YEARS } from "@/lib/cpa-review-columns";
-import { isValidMonthKey } from "@/lib/cpa-review-month";
-import type { CpaReviewSheetConfig, FeaturePermissions } from "@/lib/types";
+import { isValidMonthKey, monthKeyFromTabName } from "@/lib/cpa-review-month";
+import type { CpaReviewSheetConfig, CpaReviewSheetConfigMap, FeaturePermissions } from "@/lib/types";
 
 function buildWebhookUrl(request: NextRequest): string {
   return new URL("/api/cpa-review-sheet/webhook", request.nextUrl.origin).toString();
@@ -35,83 +35,70 @@ function yearNoteColumnsJson(): string {
   return JSON.stringify(map);
 }
 
-function buildAppsScript(webhookUrl: string, secret: string, tabName: string): string {
-  return `// LƯU Ý: hàm này CỐ Ý không tên "onEdit" — Apps Script tự chạy bất kỳ hàm nào tên
-// đúng "onEdit" dưới dạng SIMPLE TRIGGER, mà simple trigger LUÔN chạy ở chế độ hạn chế
-// (restricted authorization) và KHÔNG BAO GIỜ được phép gọi UrlFetchApp dù đã Run cấp
-// quyền cho cả project — gặp lỗi thật "Specified permissions are not sufficient to call
-// UrlFetchApp.fetch" (2026-08-15). Phải đăng ký làm INSTALLABLE TRIGGER (xem
-// installCpaReviewTriggers bên dưới) thì mới chạy full authorization, gọi UrlFetchApp được.
+/** Mỗi FILE Google Sheet chỉ có 1 Apps Script project — nên sinh 1 script CHUNG cho MỌI tháng
+ * đang kết nối vào cùng file đó (vd tab "Aug26" -> 2026-08, "Sep26" -> 2026-09), định tuyến theo
+ * TÊN TAB vừa sửa sang đúng secret của tháng tương ứng. Bản cũ sinh 1 script/tháng, cùng tên
+ * hàm/trigger: dán script tháng này đè mất script tháng kia, và tab tháng khác trong cùng file
+ * có thể bị đồng bộ nhầm (production 2026-09-02, 2026-09-24). Tab không có trong danh sách
+ * luôn bị bỏ qua hoàn toàn. */
+function buildAppsScript(webhookUrl: string, tabs: { tabName: string; secret: string; month: string }[]): string {
+  const tabMap: Record<string, string> = {};
+  for (const t of tabs) tabMap[t.tabName] = t.secret;
+  const tabList = tabs.map((t) => `//   "${t.tabName}" -> tháng ${t.month}`).join("\n");
+  return `// Script đồng bộ CPA Review cho CẢ FILE này — chỉ các tab dưới đây được đồng bộ, mỗi tab
+// chỉ vào đúng tháng của nó. Tab khác trong file bị bỏ qua hoàn toàn.
+${tabList}
+// Khi kết nối thêm 1 tháng mới vào file này, phải dán LẠI script mới (có thêm tab đó) rồi
+// chạy lại installCpaReviewTriggers.
+var CPA_REVIEW_WEBHOOK_URL = ${JSON.stringify(webhookUrl)};
+var CPA_REVIEW_TABS = ${JSON.stringify(tabMap)};
+
+function cpaReviewSecretFor(sheet) {
+  var name = sheet.getName();
+  return Object.prototype.hasOwnProperty.call(CPA_REVIEW_TABS, name) ? CPA_REVIEW_TABS[name] : null;
+}
+
+function cpaReviewPost(payload) {
+  UrlFetchApp.fetch(CPA_REVIEW_WEBHOOK_URL, {
+    method: "post",
+    contentType: "application/json",
+    payload: JSON.stringify(payload)
+  });
+}
+
+// CỐ Ý không tên "onEdit": simple trigger không được gọi UrlFetchApp — phải là installable
+// trigger (xem installCpaReviewTriggers).
 function onCpaReviewEdit(e) {
   var sheet = e.range.getSheet();
-  // CHỈ xử lý đúng tab đã kết nối ("${tabName}") — Apps Script BOUND vào cả FILE Google Sheet
-  // (không phải riêng 1 tab), nên onEdit bắn cho MỌI tab trong cùng file, kể cả các tab tháng
-  // KHÁC (vd "Aug26") nằm chung file với tab đang kết nối (vd "Sep26"). Thiếu dòng chặn này,
-  // sửa/gõ ở tab tháng khác vẫn bị gửi lên webhook kèm secret của tháng ĐANG kết nối, khiến dữ
-  // liệu tháng cũ bị đồng bộ NHẦM thành dữ liệu tháng mới (bug thật gặp production 2026-09-02:
-  // 18 dòng dữ liệu thật từ tab "Aug26" bị tạo nhầm thành record tháng 2026-09).
-  if (sheet.getName() !== "${tabName}") return;
-  // Bôi đen NHIỀU DÒNG rồi sửa/xoá/paste 1 lần (vd chọn A5:F20 rồi nhấn Delete, hoặc paste 1
-  // khối nhiều dòng từ nơi khác) chỉ bắn ĐÚNG 1 sự kiện onEdit cho CẢ VÙNG — bản trước chỉ đọc
-  // e.range.getRow() (dòng ĐẦU TIÊN của vùng), mọi dòng còn lại trong vùng bị bỏ sót hoàn
-  // toàn, không đồng bộ gì cả (bug thật gặp production 2026-09-02, phát hiện khi rà soát theo
-  // yêu cầu "tất cả sửa xoá ở các cột đều phải cập nhật đúng row"). Sửa: lặp qua TỪNG dòng
-  // trong e.range.getNumRows(), không chỉ dòng đầu.
+  var secret = cpaReviewSecretFor(sheet);
+  if (!secret) return;
+  // Bôi đen nhiều dòng rồi sửa/xoá/paste chỉ bắn 1 sự kiện cho cả vùng — lặp từng dòng.
   var startRow = e.range.getRow();
   var numRows = e.range.getNumRows();
   var editedStartIdx = e.range.getColumn() - 1;
   var editedNumCols = e.range.getNumColumns();
 
-  // LOCK — gõ nhanh nhiều ô liên tiếp (vd Tab qua từng cột, hoặc paste nhiều ô cùng lúc) có
-  // thể khiến 2 lượt onEdit CHẠY CHỒNG LẤN NHAU thật sự (UrlFetchApp.fetch tốn 200-500ms+,
-  // đủ để lượt sau bắt đầu trước khi lượt trước kịp lưu xong rowIndex) — lượt sau đọc
-  // rowIndex CŨ (chưa thấy record vừa tạo ở lượt trước), tưởng dòng này chưa từng đồng bộ nên
-  // TẠO THÊM 1 record trùng cho ĐÚNG 1 dòng Sheet (bug thật báo production 2026-08-31: "input
-  // 1 row dưới Google Sheet thì phần mềm nhảy 2 row"). Khoá tuần tự hoá MỌI lượt onCpaReviewEdit
-  // của CÙNG script (không chỉ cùng dòng — đơn giản/an toàn hơn khoá theo từng dòng), đảm bảo
-  // lượt sau LUÔN thấy đúng kết quả đã lưu của lượt trước trước khi tự quyết định tạo/cập nhật.
-  //
-  // "waitLock timeout -> vẫn tiếp tục KHÔNG có khoá" (SỬA 2026-09-03, thay vì bỏ qua hẳn) —
-  // bug thật gặp production: 1 Sheet có TỚI 2 người khác nhau từng tự chạy
-  // installCpaReviewTriggers (mỗi lần chạy chỉ xoá được trigger CỦA CHÍNH MÌNH —
-  // ScriptApp.getProjectTriggers() không thấy được trigger người khác cài — nên cả 2 bộ
-  // trigger cùng tồn tại song song, MỖI LẦN edit fire onCpaReviewEdit 2 LẦN). LockService là
-  // khoá CHUNG CHO CẢ SCRIPT (không phân biệt trigger nào/user nào gọi) — khi 1 trong 2 bộ
-  // trigger bị lỗi/treo (vd tài khoản cài trigger đó mất quyền UrlFetchApp), nó chiếm khoá
-  // suốt 10s rồi mới lỗi, khiến bộ trigger ĐÚNG luôn timeout waitLock theo, return sớm ->
-  // MẤT TRẮNG dữ liệu (không có tín hiệu nào gửi lên webhook, khác hẳn ý định ban đầu "cực
-  // hiếm, lượt sau sẽ tự bù lại" — với 2 trigger tranh chấp, tình huống này xảy ra THƯỜNG
-  // XUYÊN, không hiếm). Đánh đổi: chấp nhận rủi ro nhỏ tạo trùng dòng (nếu đúng lúc có 2 lượt
-  // edit chồng lấn THẬT — hiếm) còn hơn mất dữ liệu hoàn toàn (xảy ra liên tục khi có trigger
-  // trùng lặp/lỗi như trường hợp này).
+  // Khoá tuần tự để gõ nhanh nhiều ô không tạo trùng dòng; hết 10s vẫn chạy tiếp không khoá
+  // (mất dữ liệu tệ hơn 1 dòng trùng hiếm gặp).
   var lock = LockService.getScriptLock();
   var locked = false;
   try {
     lock.waitLock(10000);
     locked = true;
-  } catch (lockErr) {
-    // Không giành được khoá trong 10s — KHÔNG return nữa, tiếp tục chạy không khoá bên dưới.
-  }
+  } catch (lockErr) {}
 
   try {
     for (var i = 0; i < numRows; i++) {
       var row = startRow + i;
-      if (row < 4) continue; // bỏ qua hàng tiêu đề/tổng (1-3), kể cả nếu nằm trong vùng chọn
-      onCpaReviewEditLocked(sheet, row, editedStartIdx, editedNumCols);
+      if (row < 4) continue; // hàng 1-3 là tiêu đề/tổng
+      onCpaReviewEditLocked(sheet, secret, row, editedStartIdx, editedNumCols);
     }
   } finally {
     if (locked) lock.releaseLock();
   }
 }
 
-function onCpaReviewEditLocked(sheet, row, editedStartIdx, editedNumCols) {
-  // LUÔN quét lại TOÀN BỘ dòng (A..AH) và gửi đầy đủ, KHÔNG chỉ đúng ô vừa sửa, KHÔNG đòi
-  // phải có SSN mới gửi (đã bỏ yêu cầu này 2026-08-31, theo yêu cầu "không cần phải có SSN ở
-  // GGS mới đồng bộ lên phần mềm, mà cột nào có thông tin cũng phải đồng bộ") — trước đây chỉ
-  // gửi đúng 1 ô vừa sửa VÀ bắt buộc dòng phải có SSN, khiến gõ Name/Phone/... trước khi có
-  // SSN bị bỏ qua âm thầm, mất dữ liệu (lỗi thật báo trên production). Server tự định danh
-  // dòng qua số dòng thật (row) nếu chưa có SSN, hoặc qua SSN nếu có — không còn phụ thuộc
-  // riêng SSN nữa.
+function onCpaReviewEditLocked(sheet, secret, row, editedStartIdx, editedNumCols) {
   var width = Math.min(sheet.getLastColumn(), 34); // A..AH
   var rowValues = sheet.getRange(row, 1, 1, width).getValues()[0];
   var editedEndIdx = editedStartIdx + editedNumCols - 1;
@@ -121,129 +108,82 @@ function onCpaReviewEditLocked(sheet, row, editedStartIdx, editedNumCols) {
     var v = rowValues[c];
     var isEmpty = v === "" || v === null || v === undefined;
     if (!isEmpty) hasNonEmpty = true;
-    // Ô rỗng CHƯA TỪNG điền (nằm ngoài phạm vi ô vừa sửa lần này) vẫn bỏ qua như cũ — không
-    // có cách nào phân biệt "chưa từng điền" với "app đã có giá trị nhưng chưa kịp đẩy xuống
-    // Sheet" nếu gửi rỗng cho MỌI ô, sẽ xoá nhầm dữ liệu app đang giữ. Nhưng ô rỗng NẰM TRONG
-    // phạm vi vừa sửa (c từ editedStartIdx đến editedEndIdx, tính từ e.range — bao luôn
-    // paste/xoá nhiều ô cùng lúc) là tín hiệu người dùng CHỦ ĐỘNG xoá — PHẢI gửi (rawValue
-    // rỗng) để app xoá field tương ứng theo (bug thật báo production 2026-09-02: "Google sheet
-    // xoá date nhưng trên app không xoá" — bản trước bỏ qua MỌI ô rỗng vô điều kiện).
+    // Ô rỗng ngoài vùng vừa sửa: bỏ qua (chưa từng điền). Ô rỗng TRONG vùng vừa sửa: người
+    // dùng chủ động xoá -> gửi rỗng để app xoá theo.
     var wasJustEdited = c >= editedStartIdx && c <= editedEndIdx;
     if (isEmpty && !wasJustEdited) continue;
     cells.push({ columnIndex: c, rawValue: isEmpty ? "" : String(v) });
   }
+  var tab = sheet.getName();
   if (!hasNonEmpty) {
-    // Dòng vừa bị xoá trắng HOÀN TOÀN (mọi ô A..AH đều rỗng) — báo app tự xoá record tương
-    // ứng (thêm 2026-08-31, theo yêu cầu "row đó không còn bất cứ thông tin gì thì phần mềm
-    // tự động delete 1 dòng đó"). KHÁC hẳn onCpaReviewChange/rowsRemoved (dòng bị XOÁ HẲN
-    // khỏi Sheet, lệch số dòng những dòng sau) — đây là dòng VẪN CÒN đó nhưng nội dung rỗng.
-    UrlFetchApp.fetch("${webhookUrl}", {
-      method: "post",
-      contentType: "application/json",
-      payload: JSON.stringify({ secret: "${secret}", row: row, rowCleared: true })
-    });
+    cpaReviewPost({ secret: secret, tab: tab, row: row, rowCleared: true });
     return;
   }
-
-  var ssn = String(sheet.getRange(row, 4).getValue() || "").split("\\n")[0].trim(); // cột D, có thể rỗng
   var payload = {
-    secret: "${secret}",
-    ssn: ssn,
+    secret: secret,
+    tab: tab,
+    ssn: String(sheet.getRange(row, 4).getValue() || "").trim(), // cột D, có thể rỗng
     row: row,
     fullRowSync: true,
     cells: cells
   };
-  // Cột B (Name) có thể gắn link tới hồ sơ gốc (vd tax.agentc3.com) — luôn gửi kèm link hiện
-  // tại (nếu có) mỗi lần đồng bộ dòng, để app không làm mất link lúc đẩy ngược lại Sheet.
   var nameLink = sheet.getRange(row, 2).getRichTextValue().getLinkUrl();
   if (nameLink) payload.nameLink = nameLink;
-  UrlFetchApp.fetch("${webhookUrl}", {
-    method: "post",
-    contentType: "application/json",
-    payload: JSON.stringify(payload)
-  });
+  cpaReviewPost(payload);
 }
 
-// Phát hiện XOÁ dòng trực tiếp trên Sheet -> báo app xoá record tương ứng (thêm 2026-08-15,
-// yêu cầu "xoá phải giống nhau ở cả 2 chiều": app xoá dòng thì đã xoá thật dòng Sheet, nên
-// Sheet xoá dòng cũng phải xoá thật record trong app). onEdit KHÔNG bắt được sự kiện xoá
-// dòng (chỉ bắt sửa GIÁ TRỊ ô), phải dùng onChange (cũng cần cài installable trigger, cùng
-// lý do onEdit ở trên).
-//
-// SỬA LẠI cùng ngày (bug thật gặp trên production): bản đầu tự so sánh SSN hiện tại với
-// snapshot lưu ở PropertiesService, nhưng snapshot đó CHỈ được cập nhật lúc XOÁ — dòng thêm
-// mới (qua Sheet hoặc qua "Test Sheet") không bao giờ được ghi vào snapshot, nên xoá dòng đó
-// sau này không phát hiện được gì; đồng thời so khớp theo TẬP HỢP SSN không phân biệt được
-// SỐ LƯỢNG dòng cùng SSN (2 dòng cùng SSN xoá 1 dòng vẫn coi là "không đổi gì"). Bỏ hẳn
-// snapshot — hàm này giờ CHỈ báo "vừa có dòng bị xoá", server tự quét lại toàn bộ cột SSN để
-// biết chính xác bản ghi nào không còn khớp dòng nào nữa (xem webhook route).
+// Xoá hẳn dòng trên Sheet -> server tự quét lại cột SSN của ĐÚNG tab/tháng đó.
 function onCpaReviewChange(e) {
   if (e.changeType !== "REMOVE_ROW" && e.changeType !== "REMOVE_GRID") return;
-  // Cùng lý do chặn theo tab ở onCpaReviewEdit — onChange bắn cho CẢ FILE, không riêng tab đã
-  // kết nối. Event onChange không có e.range như onEdit, dùng getActiveSheet() (phản ánh đúng
-  // tab người dùng vừa thao tác lúc trigger này chạy, cách chuẩn Google gợi ý cho onChange).
-  var activeSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  if (activeSheet.getName() !== "${tabName}") return;
-  UrlFetchApp.fetch("${webhookUrl}", {
-    method: "post",
-    contentType: "application/json",
-    payload: JSON.stringify({ secret: "${secret}", rowsRemoved: true })
-  });
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  var secret = cpaReviewSecretFor(sheet);
+  if (!secret) return;
+  cpaReviewPost({ secret: secret, tab: sheet.getName(), rowsRemoved: true });
 }
 
-// Đồng bộ Ghi chú (Note, chuột phải ô → Insert note) ở ô "Ngày" mỗi năm — Google Sheets
-// KHÔNG bắn sự kiện onEdit khi thêm/sửa Note (chỉ bắt được khi sửa GIÁ TRỊ ô), nên phải quét
-// định kỳ qua trigger hẹn giờ thay vì tức thời như onEdit ở trên.
+// Ghi chú (Note) ở ô "Ngày" mỗi năm — onEdit không bắt được Note, nên quét định kỳ.
 var CPA_REVIEW_YEAR_NOTE_COLUMNS = ${yearNoteColumnsJson()};
 
 function syncCpaReviewNotes() {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("${tabName}");
-  var lastRow = sheet.getLastRow();
-  if (lastRow < 4) return;
-  var numRows = lastRow - 3;
-  var ssnValues = sheet.getRange(4, 4, numRows, 1).getValues();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
   var props = PropertiesService.getScriptProperties();
-  var cache = JSON.parse(props.getProperty("cpaReviewNoteCache") || "{}");
-  var changes = [];
+  var cache = JSON.parse(props.getProperty("cpaReviewNoteCacheByTab") || "{}");
   var seenKeys = {};
-  for (var year in CPA_REVIEW_YEAR_NOTE_COLUMNS) {
-    var col = CPA_REVIEW_YEAR_NOTE_COLUMNS[year];
-    var notes = sheet.getRange(4, col, numRows, 1).getNotes();
-    for (var i = 0; i < numRows; i++) {
-      var ssn = String(ssnValues[i][0] || "").split("\\n")[0].trim();
-      if (!ssn) continue;
-      var row = 4 + i;
-      var note = notes[i][0] || "";
-      // Cache theo DÒNG (không theo SSN) — nhiều dòng cùng SSN (gửi "Test Sheet" nhiều năm)
-      // trước đây dùng chung 1 slot cache theo SSN, khiến ghi chú của dòng này ghi đè/lẫn với
-      // dòng kia (bug thật gặp production 2026-08-15). Kèm số dòng trong payload để server
-      // khớp CHÍNH XÁC đúng record, không còn suy đoán qua SSN.
-      var key = row + "|" + year;
-      seenKeys[key] = true;
-      if (cache[key] !== note) {
-        changes.push({ ssn: ssn, year: year, note: note, row: row });
-        cache[key] = note;
+  for (var tab in CPA_REVIEW_TABS) {
+    var sheet = ss.getSheetByName(tab);
+    if (!sheet) continue;
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 4) continue;
+    var numRows = lastRow - 3;
+    var ssnValues = sheet.getRange(4, 4, numRows, 1).getValues();
+    var changes = [];
+    for (var year in CPA_REVIEW_YEAR_NOTE_COLUMNS) {
+      var notes = sheet.getRange(4, CPA_REVIEW_YEAR_NOTE_COLUMNS[year], numRows, 1).getNotes();
+      for (var i = 0; i < numRows; i++) {
+        var ssn = String(ssnValues[i][0] || "").trim();
+        if (!ssn) continue;
+        var row = 4 + i;
+        var note = notes[i][0] || "";
+        var key = tab + "|" + row + "|" + year;
+        seenKeys[key] = true;
+        if (cache[key] !== note) {
+          changes.push({ ssn: ssn, year: year, note: note, row: row });
+          cache[key] = note;
+        }
       }
+    }
+    if (changes.length > 0) {
+      cpaReviewPost({ secret: CPA_REVIEW_TABS[tab], tab: tab, notes: changes });
     }
   }
   for (var k in cache) {
     if (!seenKeys[k]) delete cache[k];
   }
-  if (changes.length === 0) return;
-  UrlFetchApp.fetch("${webhookUrl}", {
-    method: "post",
-    contentType: "application/json",
-    payload: JSON.stringify({ secret: "${secret}", notes: changes })
-  });
-  props.setProperty("cpaReviewNoteCache", JSON.stringify(cache));
+  props.setProperty("cpaReviewNoteCacheByTab", JSON.stringify(cache));
 }
 
-// Chạy hàm NÀY 1 lần (chọn "installCpaReviewTriggers" ở dropdown rồi bấm Run) để vừa cấp
-// quyền vừa cài 3 trigger: onCpaReviewEdit (installable — chạy full authorization, khác
-// simple trigger "onEdit" mặc định bị hạn chế) cho sửa ô tức thời, onCpaReviewChange cho xoá
-// dòng, và trigger hẹn giờ quét Note mỗi 1 phút. KHÔNG cần làm lại trừ khi Sheet bị ngắt kết
-// nối rồi kết nối lại (secret đổi) — hoặc script này được dán ĐÈ lên 1 bản cũ hơn (xoá
-// trigger cũ trước khi cài lại).
+// Chạy hàm NÀY 1 lần sau mỗi lần dán script (chọn ở dropdown rồi bấm Run) — xoá trigger cũ
+// rồi cài lại 3 trigger dùng chung cho mọi tab tháng trong file.
 function installCpaReviewTriggers() {
   var triggers = ScriptApp.getProjectTriggers();
   for (var i = 0; i < triggers.length; i++) {
@@ -256,6 +196,15 @@ function installCpaReviewTriggers() {
   ScriptApp.newTrigger("onCpaReviewEdit").forSpreadsheet(SpreadsheetApp.getActiveSpreadsheet()).onEdit().create();
   ScriptApp.newTrigger("onCpaReviewChange").forSpreadsheet(SpreadsheetApp.getActiveSpreadsheet()).onChange().create();
 }`;
+}
+
+/** Script cho FILE Sheet chứa tháng `month` — gồm mọi tháng đang kết nối vào cùng file đó. */
+function buildAppsScriptForFile(webhookUrl: string, map: CpaReviewSheetConfigMap, sheetId: string): string {
+  const tabs = Object.entries(map)
+    .filter(([, c]) => c?.sheetId === sheetId)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([month, c]) => ({ tabName: c.tabName, secret: c.webhookSecret, month }));
+  return buildAppsScript(webhookUrl, tabs);
 }
 
 async function requireManageAccess() {
@@ -289,7 +238,7 @@ export async function GET(request: NextRequest) {
     const map = await getCpaReviewSheetConfigMap();
     const existing = map[month];
     if (existing?.sheetId) {
-      appsScript = buildAppsScript(buildWebhookUrl(request), existing.webhookSecret, existing.tabName);
+      appsScript = buildAppsScriptForFile(buildWebhookUrl(request), map, existing.sheetId);
     }
   }
 
@@ -343,6 +292,26 @@ export async function POST(request: NextRequest) {
       const sheetId = extractSheetId(link);
       const gid = extractGid(link) ?? "0";
       const tabName = await resolveTabNameFromGid(sheets, sheetId, gid);
+
+      // Mỗi tháng chỉ được nối đúng tab của tháng đó — chặn dán nhầm link tab tháng khác và
+      // chặn 1 tab bị nối cho 2 tháng (cả 2 sẽ cùng đọc/ghi đè 1 tab).
+      const tabMonth = monthKeyFromTabName(tabName);
+      if (tabMonth && tabMonth !== month) {
+        return NextResponse.json(
+          { error: `Tab "${tabName}" là của tháng ${tabMonth}, không phải tháng ${month} đang chọn. Hãy mở đúng tab tháng ${month} rồi copy lại link.` },
+          { status: 400 }
+        );
+      }
+      const currentMap = await getCpaReviewSheetConfigMap();
+      const clash = Object.entries(currentMap).find(
+        ([m, c]) => m !== month && c?.sheetId === sheetId && (c.gid === gid || c.tabName === tabName)
+      );
+      if (clash) {
+        return NextResponse.json(
+          { error: `Tab "${tabName}" đang được kết nối cho tháng ${clash[0]}. Mỗi tháng phải dùng 1 tab riêng.` },
+          { status: 400 }
+        );
+      }
       // Tab mới/trống mặc định chỉ 1000 dòng x 26 cột (Z) — nhỏ hơn layout A-AH x 3003 dòng
       // cần dùng, tự phóng to trước khi quét/ghi để tránh lỗi "exceeds grid limits" (gặp
       // thật 2026-08-15). Chỉ tăng, không đụng dữ liệu hiện có.
@@ -365,7 +334,8 @@ export async function POST(request: NextRequest) {
         connectedByUserId: me.id,
       };
       const map = await getCpaReviewSheetConfigMap();
-      await saveCpaReviewSheetConfigMap({ ...map, [month]: newConfig });
+      const nextMap = { ...map, [month]: newConfig };
+      await saveCpaReviewSheetConfigMap(nextMap);
 
       return NextResponse.json({
         ok: true,
@@ -377,7 +347,7 @@ export async function POST(request: NextRequest) {
         distinctNames,
         webhookSecret,
         webhookUrl: buildWebhookUrl(request),
-        appsScript: buildAppsScript(buildWebhookUrl(request), webhookSecret, tabName),
+        appsScript: buildAppsScriptForFile(buildWebhookUrl(request), nextMap, sheetId),
       });
     }
 

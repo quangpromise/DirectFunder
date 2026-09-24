@@ -26,6 +26,19 @@ export function isValidMonthKey(key: string): boolean {
   return MONTH_KEY_RE.test(key);
 }
 
+const MONTH_ABBR = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+
+/** Đoán tháng từ tên tab Sheet kiểu "Sep26" / "Sep 26" / "September 2026". Trả null nếu tên
+ * tab không theo mẫu tháng (khi đó không kiểm được, cho qua). */
+export function monthKeyFromTabName(tabName: string): string | null {
+  const m = tabName.trim().match(/^([A-Za-z]{3,9})[\s'’_.-]*(\d{2}|\d{4})$/);
+  if (!m) return null;
+  const monthIdx = MONTH_ABBR.indexOf(m[1].slice(0, 3).toLowerCase());
+  if (monthIdx < 0) return null;
+  const year = m[2].length === 2 ? `20${m[2]}` : m[2];
+  return `${year}-${String(monthIdx + 1).padStart(2, "0")}`;
+}
+
 export function shiftMonthKey(key: string, delta: number): string {
   const [y, m] = key.split("-").map(Number);
   const date = new Date(y, m - 1 + delta, 1);

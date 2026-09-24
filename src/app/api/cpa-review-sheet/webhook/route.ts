@@ -9,6 +9,7 @@ import {
   findRowIndexKeyByRow,
   getCrmSourceOptions,
   rebuildCpaReviewRowIndex,
+  ssnMatchKey,
 } from "@/lib/cpa-review-sheet-sync";
 import { getServiceAccountSheetsClient } from "@/lib/google-service-account";
 import {
@@ -68,6 +69,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Secret không hợp lệ" }, { status: 401 });
   }
   const { month, config: sheetConfig } = found;
+  // Lớp chặn thứ 2 (ngoài script tự lọc tab): dữ liệu từ tab khác không bao giờ được ghi vào
+  // tháng của secret này. Script đời cũ không gửi `tab` nên vẫn được nhận.
+  if (typeof body?.tab === "string" && body.tab !== sheetConfig.tabName) {
+    console.warn(`[cpa-review webhook] bỏ qua: tab "${body.tab}" không phải tab "${sheetConfig.tabName}" của tháng ${month}`);
+    return NextResponse.json({ ok: true, skipped: "tab_mismatch" });
+  }
 
   // Payload dạng batch Ghi chú (Note) — gửi định kỳ bởi trigger hẹn giờ `syncCpaReviewNotes`
   // trong Apps Script (KHÁC payload sửa giá trị ô thường ở dưới: onEdit không bắn sự kiện
@@ -94,15 +101,15 @@ export async function POST(request: NextRequest) {
     // với payload sửa 1 ô thường ở dưới.
     const bySsn = new Map<string, (typeof rows)[number]>();
     for (const row of rows) {
-      const custom = row.custom as Record<string, unknown>;
-      if (typeof custom.ssn === "string" && custom.ssn.trim()) bySsn.set(custom.ssn.trim(), row);
+      const key = ssnMatchKey((row.custom as Record<string, unknown>).ssn);
+      if (key) bySsn.set(key, row);
     }
 
     const updatedIds = new Set<string>();
     for (const change of changes) {
       const hasRow = typeof change.row === "number" && Number.isFinite(change.row);
       const cachedKey = hasRow ? findRowIndexKeyByRow(sheetConfig.rowIndex, change.row as number) : undefined;
-      const row = (cachedKey ? rows.find((r) => r.id === cachedKey) : undefined) ?? bySsn.get(change.ssn.trim());
+      const row = (cachedKey ? rows.find((r) => r.id === cachedKey) : undefined) ?? bySsn.get(ssnMatchKey(change.ssn));
       if (!row) continue; // SSN lạ chưa từng đồng bộ — chỉ tạo record mới từ giá trị ô, không tạo riêng từ Note.
       if (isRecentlyUpdatedByApp(row.updatedAt)) continue; // "App luôn thắng".
       const key = yearNoteKey(change.year);
@@ -237,11 +244,8 @@ export async function POST(request: NextRequest) {
     const cachedKey = hasFullRowSheetRow ? findRowIndexKeyByRow(sheetConfig.rowIndex, fullRowSheetRow) : undefined;
     const existing =
       (cachedKey ? rows.find((r) => r.id === cachedKey) : undefined) ??
-      (fullRowSsn
-        ? rows.find((r) => {
-            const custom = r.custom as Record<string, unknown>;
-            return typeof custom.ssn === "string" && custom.ssn.trim() === fullRowSsn;
-          })
+      (ssnMatchKey(fullRowSsn)
+        ? rows.find((r) => ssnMatchKey((r.custom as Record<string, unknown>).ssn) === ssnMatchKey(fullRowSsn))
         : undefined);
 
     if (!existing) {
@@ -357,10 +361,7 @@ export async function POST(request: NextRequest) {
   const cachedKey = hasSheetRow ? findRowIndexKeyByRow(sheetConfig.rowIndex, sheetRow) : undefined;
   const row =
     (cachedKey ? rows.find((r) => r.id === cachedKey) : undefined) ??
-    rows.find((r) => {
-      const custom = r.custom as Record<string, unknown>;
-      return typeof custom.ssn === "string" && custom.ssn.trim() === ssn;
-    });
+    rows.find((r) => ssnMatchKey((r.custom as Record<string, unknown>).ssn) === ssnMatchKey(ssn));
 
   if (!row) {
     // Dòng mới trong Sheet (chưa từng đồng bộ) — tạo record mới trong đúng tháng, bắt đầu

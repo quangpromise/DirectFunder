@@ -39,6 +39,13 @@ export async function nextAppendCpaReviewSortOrder(month: string): Promise<numbe
   return (agg._max.sortOrder ?? 0) + 1;
 }
 
+/** Khoá so khớp 1 dòng CPA Review giữa Sheet và app: CHỮ SỐ của SSN ĐẦU TIÊN — SSN vợ chồng
+ * lưu 2 số cách nhau bằng xuống dòng HOẶC khoảng trắng tuỳ nguồn, và có/không có dấu gạch. */
+export function ssnMatchKey(value: unknown): string {
+  const first = String(value ?? "").trim().split(/\s+/)[0] ?? "";
+  return first.replace(/\D/g, "");
+}
+
 const SSN_COLUMN_INDEX = 3; // cột D
 const SCAN_START_ROW = 4; // hàng 1-3 là header/tổng, dữ liệu bắt đầu hàng 4 (xác nhận qua khảo sát thật)
 const SCAN_ROW_LIMIT = 3000;
@@ -256,23 +263,30 @@ export async function importSheetRows(
   const crmSourceOptions = await getCrmSourceOptions();
   const rowIndex: Record<string, number> = {};
   let imported = 0;
-  let sortOrder = -Date.now();
 
-  // Ghép SSN đã có sẵn trong THÁNG này (thêm 2026-08-15, cho phép "Đổi link" kết nối lại
-  // Sheet khác cho cùng 1 tháng mà KHÔNG tạo trùng lặp dòng) — trước đây hàm này CHỈ chạy
-  // đúng 1 lần lúc kết nối lần đầu (tháng luôn trống) nên chưa lộ ra vấn đề gì, nhưng nếu
-  // gọi lại khi tháng đã có dữ liệu (reconnect) sẽ tạo mới toàn bộ thay vì cập nhật.
-  const existing = await prisma.cpaReviewRecord.findMany({ where: { month }, select: { id: true, custom: true } });
-  const existingBySsn = new Map<string, { id: string; custom: Record<string, unknown> }>();
+  // Ghép hồ sơ đã có sẵn trong THÁNG này khi kết nối lại (reconnect). Khớp qua ssnMatchKey +
+  // HÀNG ĐỢI theo createdAt (cùng cách rebuildCpaReviewRowIndex) — bản cũ khớp chuỗi SSN dòng 1
+  // của Sheet với SSN ĐẦY ĐỦ của app nên hồ sơ vợ chồng (2 SSN) không bao giờ khớp, reconnect
+  // tạo trùng 23 dòng trên production 2026-09-24.
+  const existing = await prisma.cpaReviewRecord.findMany({
+    where: { month },
+    select: { id: true, custom: true },
+    orderBy: { createdAt: "asc" },
+  });
+  const existingBySsn = new Map<string, { id: string; custom: Record<string, unknown> }[]>();
   for (const r of existing) {
     const c = (r.custom as Record<string, unknown>) ?? {};
-    if (typeof c.ssn === "string" && c.ssn.trim()) existingBySsn.set(c.ssn.trim(), { id: r.id, custom: c });
+    const key = ssnMatchKey(c.ssn);
+    if (!key) continue;
+    existingBySsn.set(key, [...(existingBySsn.get(key) ?? []), { id: r.id, custom: c }]);
   }
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i] ?? [];
-    const ssn = (row[SSN_COLUMN_INDEX] ?? "").toString().trim().split("\n")[0]?.trim();
-    if (!ssn) continue;
+    const ssn = (row[SSN_COLUMN_INDEX] ?? "").toString().trim();
+    const matchKey = ssnMatchKey(ssn);
+    if (!matchKey) continue;
+    const sheetRow = SCAN_START_ROW + i;
 
     const custom: Record<string, string | number> = {};
     row.forEach((rawCell, columnIndex) => {
@@ -282,19 +296,25 @@ export async function importSheetRows(
       if (patch) custom[patch.key] = patch.value;
     });
     custom.ssn = ssn;
-    const nameLink = nameLinks.get(SCAN_START_ROW + i);
+    const nameLink = nameLinks.get(sheetRow);
     if (nameLink) custom.nameLink = nameLink;
 
-    const match = existingBySsn.get(ssn);
+    // sortOrder = đúng số dòng Sheet để thứ tự app khớp thứ tự Sheet; rowIndex theo record.id
+    // (kiểu cache hiện hành của pushRecordToSheet/webhook, không phải SSN).
+    const match = existingBySsn.get(matchKey)?.shift();
     if (match) {
       // Sheet thắng (khác "App luôn thắng" của webhook) — đây là hành động Admin CHỦ Ý bấm
       // kết nối/nhập lại từ Sheet, hợp lý để Sheet ghi đè giá trị app đang có cho SSN này.
       const merged = { ...match.custom, ...custom };
-      await prisma.cpaReviewRecord.update({ where: { id: match.id }, data: { custom: merged as Prisma.InputJsonValue } });
+      await prisma.cpaReviewRecord.update({
+        where: { id: match.id },
+        data: { custom: merged as Prisma.InputJsonValue, sortOrder: sheetRow },
+      });
+      rowIndex[match.id] = sheetRow;
     } else {
-      await prisma.cpaReviewRecord.create({ data: { custom, sortOrder: sortOrder++, month } });
+      const created = await prisma.cpaReviewRecord.create({ data: { custom, sortOrder: sheetRow, month } });
+      rowIndex[created.id] = sheetRow;
     }
-    rowIndex[ssn] = SCAN_START_ROW + i;
     imported++;
   }
 
@@ -349,21 +369,23 @@ export async function rebuildCpaReviewRowIndex(
     select: { id: true, custom: true },
     orderBy: { createdAt: "asc" },
   });
+  // Khoá khớp qua ssnMatchKey ở CẢ 2 phía — bản cũ so SSN dòng 1 của Sheet với SSN đầy đủ của
+  // app, hồ sơ vợ chồng (2 SSN) không bao giờ khớp nên webhook rowsRemoved XOÁ NHẦM chúng khỏi
+  // DB mỗi khi có ai xoá 1 dòng trên Sheet.
   const bySsn = new Map<string, string[]>();
   for (const r of records) {
-    const custom = r.custom as Record<string, unknown>;
-    if (typeof custom.ssn !== "string" || !custom.ssn.trim()) continue;
-    const ssn = custom.ssn.trim();
-    const queue = bySsn.get(ssn) ?? [];
+    const key = ssnMatchKey((r.custom as Record<string, unknown>).ssn);
+    if (!key) continue;
+    const queue = bySsn.get(key) ?? [];
     queue.push(r.id);
-    bySsn.set(ssn, queue);
+    bySsn.set(key, queue);
   }
 
   const nextRowIndex: Record<string, number> = {};
   rows.forEach((row, i) => {
-    const ssn = (row[0] ?? "").toString().trim().split("\n")[0]?.trim();
-    if (!ssn) return;
-    const recordId = bySsn.get(ssn)?.shift();
+    const key = ssnMatchKey(row[0]);
+    if (!key) return;
+    const recordId = bySsn.get(key)?.shift();
     if (recordId) nextRowIndex[recordId] = SCAN_START_ROW + i;
   });
   return nextRowIndex;

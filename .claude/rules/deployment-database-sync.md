@@ -1778,6 +1778,20 @@ ngay dữ liệu đang hiển thị sai, không cần đợi deploy.
 permission) — chỉ cần deploy code. Kiểm tra sau khi deploy: sửa 1 hồ sơ có 2 SĐT qua app (hoặc
 Test Sheet/Send to CPA Review) → xác nhận ô Phone trên Sheet hiện đúng 2 dòng riêng biệt.
 
+### 4.59 [CHỜ XỬ LÝ] CPA Review: fix so khớp SSN vợ chồng + mỗi tháng chỉ đồng bộ đúng tab tháng đó (thêm 2026-09-24)
+
+**Sự cố production 2026-09-24**: ai đó bấm "Kết nối Sheet" lại cho tháng 2026-09 → `importSheetRows` so SSN DÒNG 1 trên Sheet với SSN ĐẦY ĐỦ trong app → 23 hồ sơ vợ chồng (2 SSN cách nhau `\n`) không khớp, bị tạo TRÙNG với `sortOrder` âm (luôn hiện đầu bảng, cả bảng lệch 23 dòng so với Sheet). Cùng lỗi so khớp nằm trong `rebuildCpaReviewRowIndex` (nhánh webhook `rowsRemoved`) — mỗi lần xoá 1 dòng trên Sheet, mọi hồ sơ vợ chồng lưu 2 SSN bằng `\n` bị coi là "đã xoá" và **bị XOÁ khỏi DB**. Người dùng đã ngắt kết nối tháng 2026-09 (chỉ xoá config, không mất record, không ghi gì xuống Sheet).
+
+**Đã sửa**:
+1. `ssnMatchKey()` (`cpa-review-sheet-sync.ts`) — so khớp theo CHỮ SỐ của SSN đầu tiên (bất kể `\n`/khoảng trắng/gạch). Dùng ở `importSheetRows`, `rebuildCpaReviewRowIndex`, và mọi fallback SSN trong webhook.
+2. `importSheetRows` giờ khớp theo hàng đợi createdAt, lưu `rowIndex` theo `record.id` (không phải SSN), giữ SSN đầy đủ, và đặt `sortOrder` = đúng số dòng Sheet → kết nối lại tự sắp đúng thứ tự.
+3. **1 Apps Script chung cho mỗi FILE Sheet** (`buildAppsScriptForFile`) — chứa bảng `tab → secret của đúng tháng`, mọi trigger định tuyến theo tên tab vừa sửa; tab không có trong bảng bị bỏ qua. Trước đây mỗi tháng 1 script cùng tên hàm/trigger nên nhiều tháng chung 1 file sẽ đè nhau. Payload gửi kèm `tab`, webhook bỏ qua nếu `tab` ≠ tab của tháng mà secret thuộc về.
+4. "Kết nối Sheet" chặn: tên tab kiểu tháng (vd "Aug26") khác tháng đang chọn (`monthKeyFromTabName`), và 1 tab đã nối cho tháng khác.
+
+**Lưu ý nghiệp vụ**: nhiều dòng CÙNG SSN + tên là HỢP LỆ nếu khác năm có số tiền (vd Larry Tran: 1 dòng năm 23-24, 1 dòng năm 25) — không bao giờ coi là trùng chỉ vì trùng SSN.
+
+**Sau khi deploy PHẢI làm** (xoá mục này khi xong): (1) ✅ **Đã xong 2026-09-24** — đối chiếu chỉ đọc với tab Sep26 (218 dòng), xoá 23 bản nhân đôi do lỗi, xoá các ô bị trộn từ dòng khác (HA NGUYEN dòng 17 `amount_2023`; KATHY T TRAN dòng 49 `amount_2023/status_2023/efileDate_2023`; KEVIN DINH dòng 65 `efileDate_2023` theo Sheet) — app còn 218 dòng; (2) kết nối lại Sheet tháng 9; (3) dán lại script mới vào MỌI file Sheet đang kết nối + chạy `installCpaReviewTriggers` (nếu file có nhiều tháng, 1 script chung đã gồm đủ các tab); (4) thử sửa 1 ô ở tab không kết nối → không có gì đổi trong app; sửa ở đúng tab → đồng bộ bình thường.
+
 Mục 2–5 bên dưới là kiến trúc/quy trình đề xuất (phần lớn đã áp dụng đúng như mô tả, trừ Auth đã nêu ở trên). Mục 6 là checklist hành động cụ thể để đưa app này lên cloud thật.
 
 ## 2. Kiến trúc đề xuất
