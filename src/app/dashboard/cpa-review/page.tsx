@@ -285,6 +285,20 @@ export default function CpaReviewPage() {
     return () => clearTimeout(timer);
   }, [highlightId]);
 
+  // Vào tab / đổi tháng / quay lại từ "Báo cáo" -> tự cuộn xuống dòng cuối (dòng mới luôn nối
+  // vào cuối danh sách, khớp Sheet). Phụ thuộc `hasRows` (boolean) chứ không phải số dòng, nên
+  // chỉ chạy 1 lần khi dữ liệu nạp xong — realtime thêm dòng không giật người đang xem giữa bảng.
+  // Bỏ qua khi đang nhảy tới 1 dòng từ thông báo (highlightRecord), để effect bên dưới lo.
+  const tableScrollRef = useRef<HTMLDivElement>(null);
+  const hasRows = rows.length > 0;
+  useEffect(() => {
+    if (view !== "table" || !hasRows) return;
+    if (highlightId || searchParams.get("highlightRecord")) return;
+    const el = tableScrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, selectedMonth, hasRows]);
+
   useEffect(() => {
     if (!highlightId) return;
     const el = document.querySelector(`[data-row-id="${highlightId}"]`);
@@ -485,7 +499,7 @@ export default function CpaReviewPage() {
       )}
 
       {view === "table" && (
-      <div className="mt-4 flex-1 table-card">
+      <div ref={tableScrollRef} className="mt-4 flex-1 table-card">
         {/* border-separate (KHÔNG border-collapse) — bắt buộc để position:sticky trên
             <td>/<th> hoạt động đúng khi cuộn NGANG, tránh lỗi cột A-F "dính" luôn cả khi
             cuộn DỌC (trình duyệt tính sai containing-block của sticky khi border-collapse),
