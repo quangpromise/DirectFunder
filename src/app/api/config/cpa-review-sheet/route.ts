@@ -144,17 +144,22 @@ function onCpaReviewChange(e) {
 // Ghi chú (Note) ở ô "Ngày" mỗi năm — onEdit không bắt được Note, nên quét định kỳ.
 var CPA_REVIEW_YEAR_NOTE_COLUMNS = ${yearNoteColumnsJson()};
 
+// Cache chỉ giữ ô CÓ ghi chú, mỗi tab 1 property riêng: Script Properties giới hạn 9KB/giá
+// trị — bản cũ lưu cả ô rỗng (218 dòng x 4 năm ≈ 17KB) nên setProperty lỗi, mọi phút gửi lại
+// toàn bộ Ghi chú lên server, giữ database Neon thức liên tục và hết quota (2026-10-01).
 function syncCpaReviewNotes() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var props = PropertiesService.getScriptProperties();
-  var cache = JSON.parse(props.getProperty("cpaReviewNoteCacheByTab") || "{}");
-  var seenKeys = {};
+  props.deleteProperty("cpaReviewNoteCacheByTab"); // cache kiểu cũ, quá cỡ
   for (var tab in CPA_REVIEW_TABS) {
     var sheet = ss.getSheetByName(tab);
     if (!sheet) continue;
     var lastRow = sheet.getLastRow();
     if (lastRow < 4) continue;
     var numRows = lastRow - 3;
+    var propKey = "cpaReviewNotes|" + tab;
+    var cache = JSON.parse(props.getProperty(propKey) || "{}");
+    var next = {};
     var ssnValues = sheet.getRange(4, 4, numRows, 1).getValues();
     var changes = [];
     for (var year in CPA_REVIEW_YEAR_NOTE_COLUMNS) {
@@ -164,22 +169,18 @@ function syncCpaReviewNotes() {
         if (!ssn) continue;
         var row = 4 + i;
         var note = notes[i][0] || "";
-        var key = tab + "|" + row + "|" + year;
-        seenKeys[key] = true;
-        if (cache[key] !== note) {
+        var key = row + "|" + year;
+        if (note) next[key] = note;
+        if ((cache[key] || "") !== note) {
           changes.push({ ssn: ssn, year: year, note: note, row: row });
-          cache[key] = note;
         }
       }
     }
     if (changes.length > 0) {
       cpaReviewPost({ secret: CPA_REVIEW_TABS[tab], tab: tab, notes: changes });
     }
+    props.setProperty(propKey, JSON.stringify(next));
   }
-  for (var k in cache) {
-    if (!seenKeys[k]) delete cache[k];
-  }
-  props.setProperty("cpaReviewNoteCacheByTab", JSON.stringify(cache));
 }
 
 // Chạy hàm NÀY 1 lần sau mỗi lần dán script (chọn ở dropdown rồi bấm Run) — xoá trigger cũ

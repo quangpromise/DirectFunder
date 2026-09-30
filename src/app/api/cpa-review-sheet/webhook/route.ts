@@ -111,8 +111,10 @@ export async function POST(request: NextRequest) {
       const cachedKey = hasRow ? findRowIndexKeyByRow(sheetConfig.rowIndex, change.row as number) : undefined;
       const row = (cachedKey ? rows.find((r) => r.id === cachedKey) : undefined) ?? bySsn.get(ssnMatchKey(change.ssn));
       if (!row) continue; // SSN lạ chưa từng đồng bộ — chỉ tạo record mới từ giá trị ô, không tạo riêng từ Note.
-      if (isRecentlyUpdatedByApp(row.updatedAt)) continue; // "App luôn thắng".
       const key = yearNoteKey(change.year);
+      // Không đổi thì không ghi/broadcast — Apps Script đời cũ gửi lại toàn bộ Ghi chú mỗi phút.
+      if (((row.custom as Record<string, unknown>)?.[key] ?? "") === change.note) continue;
+      if (isRecentlyUpdatedByApp(row.updatedAt)) continue; // "App luôn thắng".
       const custom = { ...((row.custom as Record<string, unknown>) ?? {}) };
       if (change.note) custom[key] = change.note;
       else delete custom[key];
