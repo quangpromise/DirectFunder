@@ -17,8 +17,8 @@ import {
   ensureSheetGridSize,
   CPA_REVIEW_MIN_GRID,
 } from "@/lib/cpa-review-sheet-sync";
-import { yearNoteColumnIndex } from "@/lib/cpa-review-sheet-columns";
-import { CPA_REVIEW_YEARS } from "@/lib/cpa-review-columns";
+import { yearNoteColumnIndex, letterFor } from "@/lib/cpa-review-sheet-columns";
+import { CPA_REVIEW_YEARS, CPA_REVIEW_KEY_TO_SHEET_COLUMN } from "@/lib/cpa-review-columns";
 import { isValidMonthKey, monthKeyFromTabName } from "@/lib/cpa-review-month";
 import type { CpaReviewSheetConfig, CpaReviewSheetConfigMap, FeaturePermissions } from "@/lib/types";
 
@@ -99,7 +99,7 @@ function onCpaReviewEdit(e) {
 }
 
 function onCpaReviewEditLocked(sheet, secret, row, editedStartIdx, editedNumCols) {
-  var width = Math.min(sheet.getLastColumn(), 34); // A..AH
+  var width = Math.min(sheet.getLastColumn(), 35); // A..AI
   var rowValues = sheet.getRange(row, 1, 1, width).getValues()[0];
   var editedEndIdx = editedStartIdx + editedNumCols - 1;
   var cells = [];
@@ -310,6 +310,17 @@ export async function POST(request: NextRequest) {
       if (clash) {
         return NextResponse.json(
           { error: `Tab "${tabName}" đang được kết nối cho tháng ${clash[0]}. Mỗi tháng phải dùng 1 tab riêng.` },
+          { status: 400 }
+        );
+      }
+      // Bố cục cột cố định theo tab Oct26 trở đi (có "Pre-Processing Date" ở AG) — tab cũ hơn
+      // thiếu cột này sẽ lệch 1 cột Processing/EL Date ở cả 2 chiều, nên từ chối luôn.
+      const preCol = letterFor(CPA_REVIEW_KEY_TO_SHEET_COLUMN.preProcessingDate);
+      const header = await sheets.spreadsheets.values.get({ spreadsheetId: sheetId, range: `'${tabName}'!${preCol}1:${preCol}3` });
+      const headerText = (header.data.values ?? []).flat().join(" ").toLowerCase();
+      if (!headerText.includes("pre")) {
+        return NextResponse.json(
+          { error: `Tab "${tabName}" chưa có cột "Pre-Processing Date" ở cột ${preCol} (trước "Processing Date"). Hãy thêm cột đó cho khớp bố cục tab Oct26 rồi kết nối lại.` },
           { status: 400 }
         );
       }

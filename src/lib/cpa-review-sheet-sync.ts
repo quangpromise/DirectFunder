@@ -49,7 +49,7 @@ export function ssnMatchKey(value: unknown): string {
 const SSN_COLUMN_INDEX = 3; // cột D
 const SCAN_START_ROW = 4; // hàng 1-3 là header/tổng, dữ liệu bắt đầu hàng 4 (xác nhận qua khảo sát thật)
 const SCAN_ROW_LIMIT = 3000;
-const FULL_ROW_LAST_COL = 33; // AH
+const FULL_ROW_LAST_COL = 34; // AI
 
 export class SheetNotAccessibleError extends Error {}
 

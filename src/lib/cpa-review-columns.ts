@@ -111,11 +111,14 @@ export const CPA_REVIEW_COLUMNS: CpaReviewColumnDef[] = [
   // sao riêng ở đây. Xem caseStatusOptionsForCrmSource() bên dưới + cpa-review/page.tsx.
   { key: "crmSource", label: "CRM Source", type: "select", width: 110 },
   { key: "fcDate", label: "FC Date", type: "date", width: 110 },
+  // Cột AG trên Sheet từ tab Oct26 trở đi (thêm 2026-10-06) — tab cũ hơn (Sep26 trở về trước)
+  // KHÔNG có cột này nên "Kết nối Sheet" từ chối tab thiếu nó (xem route connect).
+  { key: "preProcessingDate", label: "Pre-Processing Date", type: "date", width: 150 },
   { key: "processingDate", label: "Processing Date", type: "date", width: 130 },
   { key: "elDate", label: "EL Date", type: "date", width: 110 },
 ];
 
-/** Map chỉ số cột Sheet (0-indexed, A=0..AH=33) -> key trong custom — dùng cho đồng bộ 2
+/** Map chỉ số cột Sheet (0-indexed, A=0..AI=34) -> key trong custom — dùng cho đồng bộ 2
  * chiều (App<->Sheet). Cột G (index 6, "Client Zipcode") và cột phụ tính SUM trong mỗi
  * khối năm (offset 3/4) CỐ Ý không có mặt ở đây — không đồng bộ (đã xác nhận với user). */
 export const CPA_REVIEW_SHEET_COLUMN_MAP: Record<number, string> = {
@@ -130,8 +133,9 @@ export const CPA_REVIEW_SHEET_COLUMN_MAP: Record<number, string> = {
   29: "agentUserId",
   30: "crmSource",
   31: "fcDate",
-  32: "processingDate",
-  33: "elDate",
+  32: "preProcessingDate",
+  33: "processingDate",
+  34: "elDate",
 };
 const YEAR_BLOCK_START = 7;
 const YEAR_BLOCK_SIZE = 5;

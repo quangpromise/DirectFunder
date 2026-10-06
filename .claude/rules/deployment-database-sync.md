@@ -1792,6 +1792,12 @@ Test Sheet/Send to CPA Review) → xác nhận ô Phone trên Sheet hiện đún
 
 **Sau khi deploy PHẢI làm** (xoá mục này khi xong): (1) ✅ **Đã xong 2026-09-24** — đối chiếu chỉ đọc với tab Sep26 (218 dòng), xoá 23 bản nhân đôi do lỗi, xoá các ô bị trộn từ dòng khác (HA NGUYEN dòng 17 `amount_2023`; KATHY T TRAN dòng 49 `amount_2023/status_2023/efileDate_2023`; KEVIN DINH dòng 65 `efileDate_2023` theo Sheet) — app còn 218 dòng; (2) kết nối lại Sheet tháng 9; (3) dán lại script mới vào MỌI file Sheet đang kết nối + chạy `installCpaReviewTriggers` (nếu file có nhiều tháng, 1 script chung đã gồm đủ các tab); (4) thử sửa 1 ô ở tab không kết nối → không có gì đổi trong app; sửa ở đúng tab → đồng bộ bình thường.
 
+### 4.60 [CHỜ XỬ LÝ] CPA Review: thêm cột "Pre-Processing Date" (AG) trước "Processing Date" — bố cục Sheet đổi từ tab Oct26 (thêm 2026-10-06)
+
+Tab **Oct26** trên Sheet thật có thêm cột "Pre-Processing Date" ở AG (index 32), đẩy "Processing Date" sang AH (33) và "EL Date" sang AI (34) — tab Sep26 trở về trước KHÔNG có cột này. App vẫn dùng bố cục cũ nên từ 01/10 tới 06/10 tháng 10 đồng bộ **lệch 1 cột** ở cả 2 chiều (app `processingDate` = Pre-Processing của Sheet, app `elDate` = Processing Date của Sheet, EL Date thật không đồng bộ). Đã sửa: thêm `preProcessingDate` vào `CPA_REVIEW_COLUMNS` + `CPA_REVIEW_SHEET_COLUMN_MAP` (32/33/34), `FULL_ROW_LAST_COL = 34`, Apps Script quét tới cột AI (35 cột). Bố cục là **hằng số toàn cục** — "Kết nối Sheet" giờ từ chối tab không có chữ "pre" ở tiêu đề cột AG (tab bố cục cũ), nếu cần nối lại tab cũ phải thêm cột đó trên Sheet trước. Không đổi schema (`custom` JSON), không cần migration/merge `AppConfig`.
+
+**Sau khi deploy PHẢI làm** (xoá mục này khi xong): (1) nạp lại 3 field `preProcessingDate`/`processingDate`/`elDate` của tháng 2026-10 từ Sheet (Sheet là nguồn đúng, script 1 lần — KHÔNG làm trước khi deploy vì code cũ sẽ đẩy ngược giá trị vào sai cột); (2) dán lại Apps Script mới + chạy `installCpaReviewTriggers` (script cũ không gửi cột AI); (3) kiểm tra dòng 30 tab Oct26 (Processing Date = EL Date = 09/25/26, nghi bị app ghi đè lúc lệch cột).
+
 Mục 2–5 bên dưới là kiến trúc/quy trình đề xuất (phần lớn đã áp dụng đúng như mô tả, trừ Auth đã nêu ở trên). Mục 6 là checklist hành động cụ thể để đưa app này lên cloud thật.
 
 ## 2. Kiến trúc đề xuất
