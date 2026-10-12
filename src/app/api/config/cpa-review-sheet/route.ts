@@ -99,7 +99,7 @@ function onCpaReviewEdit(e) {
 }
 
 function onCpaReviewEditLocked(sheet, secret, row, editedStartIdx, editedNumCols) {
-  var width = Math.min(sheet.getLastColumn(), 35); // A..AI
+  var width = Math.min(sheet.getLastColumn(), 36); // A..AJ
   var rowValues = sheet.getRange(row, 1, 1, width).getValues()[0];
   var editedEndIdx = editedStartIdx + editedNumCols - 1;
   var cells = [];
@@ -313,14 +313,16 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
-      // Bố cục cột cố định theo tab Oct26 trở đi (có "Pre-Processing Date" ở AG) — tab cũ hơn
-      // thiếu cột này sẽ lệch 1 cột Processing/EL Date ở cả 2 chiều, nên từ chối luôn.
-      const preCol = letterFor(CPA_REVIEW_KEY_TO_SHEET_COLUMN.preProcessingDate);
-      const header = await sheets.spreadsheets.values.get({ spreadsheetId: sheetId, range: `'${tabName}'!${preCol}1:${preCol}3` });
-      const headerText = (header.data.values ?? []).flat().join(" ").toLowerCase();
-      if (!headerText.includes("pre")) {
+      // Bố cục cột cố định theo tab Oct26 (AG "Pre-Processing Date (1)", AH "... (Latest)", AI
+      // "Processing Date") — tab thiếu/thừa cột sẽ lệch Processing/EL Date ở cả 2 chiều, nên
+      // từ chối luôn nếu tiêu đề 3 cột đó không khớp.
+      const pre1Col = letterFor(CPA_REVIEW_KEY_TO_SHEET_COLUMN.preProcessingDate1);
+      const procCol = letterFor(CPA_REVIEW_KEY_TO_SHEET_COLUMN.processingDate);
+      const header = await sheets.spreadsheets.values.get({ spreadsheetId: sheetId, range: `'${tabName}'!${pre1Col}1:${procCol}1` });
+      const [h1 = "", h2 = "", h3 = ""] = (header.data.values?.[0] ?? []).map((v) => String(v).toLowerCase());
+      if (!h1.includes("pre") || !h2.includes("pre") || h3.includes("pre") || !h3.includes("processing")) {
         return NextResponse.json(
-          { error: `Tab "${tabName}" chưa có cột "Pre-Processing Date" ở cột ${preCol} (trước "Processing Date"). Hãy thêm cột đó cho khớp bố cục tab Oct26 rồi kết nối lại.` },
+          { error: `Tab "${tabName}" không khớp bố cục cột: cần ${pre1Col} "Pre-Processing Date (1)", rồi "Pre-Processing Date (Latest)", rồi ${procCol} "Processing Date" (như tab Oct26). Hãy sửa cột trên Sheet rồi kết nối lại.` },
           { status: 400 }
         );
       }

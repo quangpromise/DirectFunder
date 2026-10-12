@@ -1798,6 +1798,8 @@ Tab **Oct26** trên Sheet thật có thêm cột "Pre-Processing Date" ở AG (i
 
 **Sau khi deploy PHẢI làm** (xoá mục này khi xong): (1) nạp lại 3 field `preProcessingDate`/`processingDate`/`elDate` của tháng 2026-10 từ Sheet (Sheet là nguồn đúng, script 1 lần — KHÔNG làm trước khi deploy vì code cũ sẽ đẩy ngược giá trị vào sai cột); (2) dán lại Apps Script mới + chạy `installCpaReviewTriggers` (script cũ không gửi cột AI); (3) kiểm tra dòng 30 tab Oct26 (Processing Date = EL Date = 09/25/26, nghi bị app ghi đè lúc lệch cột).
 
+**Bổ sung 2026-10-13** — tab Oct26 chèn thêm cột "Pre-Processing Date (1)" ở AG, đẩy "Pre-Processing Date (Latest)" sang AH, Processing Date sang AI, EL Date sang AJ. Đã sửa: key mới `preProcessingDate1` (32), `preProcessingDate` giữ nguyên key nhưng đổi nhãn "(Latest)" (33), `processingDate` 34, `elDate` 35, `FULL_ROW_LAST_COL = 35`, Apps Script quét tới AJ (36 cột). "Kết nối Sheet" giờ kiểm tra tiêu đề AG/AH chứa "pre" và AI là "Processing" (không chứa "pre"). Sau deploy: nạp lại 4 cột ngày tháng 2026-10 từ Sheet + dán lại Apps Script.
+
 Mục 2–5 bên dưới là kiến trúc/quy trình đề xuất (phần lớn đã áp dụng đúng như mô tả, trừ Auth đã nêu ở trên). Mục 6 là checklist hành động cụ thể để đưa app này lên cloud thật.
 
 ## 2. Kiến trúc đề xuất
