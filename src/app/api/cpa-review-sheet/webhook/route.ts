@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sheetChangeToPatch } from "@/lib/cpa-review-sheet-columns";
-import { yearNoteKey, CPA_REVIEW_YEARS } from "@/lib/cpa-review-columns";
+import { yearNoteKey, CPA_REVIEW_YEARS, CPA_REVIEW_SHEET_COLUMN_MAP } from "@/lib/cpa-review-columns";
 import {
   getCpaReviewSheetConfigMap,
   saveCpaReviewSheetConfigMap,
@@ -25,6 +25,34 @@ import {
 const NOTIFY_FROM_SHEET_SYNC = "system:cpa-review-sheet-sync";
 import { broadcastCpaReviewChanged } from "@/lib/pusher-server";
 import type { Prisma } from "@prisma/client";
+import type { CpaReviewSheetConfig, CpaReviewSheetConfigMap } from "@/lib/types";
+
+/** Dò lại vị trí MỌI hồ sơ của tháng theo SSN trên Sheet (dòng bị xoá/chèn/sắp xếp làm số dòng
+ * cũ không còn đúng), xoá hồ sơ không còn dòng nào trên Sheet (trừ hồ sơ app vừa sửa), đồng bộ
+ * sortOrder theo dòng mới. Trả về rowIndex mới. */
+async function reconcileRowIndexWithSheet(
+  configMap: CpaReviewSheetConfigMap,
+  sheetConfig: CpaReviewSheetConfig,
+  month: string
+): Promise<{ rowIndex: Record<string, number>; deleted: number }> {
+  const sheets = getServiceAccountSheetsClient();
+  const nextRowIndex = await rebuildCpaReviewRowIndex(sheets, sheetConfig, month);
+  const matchedIds = new Set(Object.keys(nextRowIndex));
+  const rows = await prisma.cpaReviewRecord.findMany({ where: { month } });
+  const missing = rows.filter((r) => !matchedIds.has(r.id) && !isRecentlyUpdatedByApp(r.updatedAt));
+  if (missing.length > 0) {
+    await prisma.cpaReviewRecord.deleteMany({ where: { id: { in: missing.map((r) => r.id) } } });
+  }
+  await saveCpaReviewSheetConfigMap({ ...configMap, [month]: { ...sheetConfig, rowIndex: nextRowIndex } });
+  for (const r of rows) {
+    const row = nextRowIndex[r.id];
+    if (typeof row === "number" && r.sortOrder !== row) {
+      await prisma.cpaReviewRecord.update({ where: { id: r.id }, data: { sortOrder: row } });
+    }
+  }
+  for (const r of missing) await broadcastCpaReviewChanged(r.id, null);
+  return { rowIndex: nextRowIndex, deleted: missing.length };
+}
 
 /** Khoảng thời gian "app vừa sửa record này" tính là còn mới — nếu webhook Sheet gửi thay
  * đổi tới trong lúc record đã được app cập nhật gần đây hơn khoảng này, coi thay đổi từ
@@ -144,38 +172,8 @@ export async function POST(request: NextRequest) {
   // mặt trong rowIndex mới) coi là đã bị xoá trên Sheet -> xoá luôn trong DB. Không còn phụ
   // thuộc trạng thái lưu ở phía Apps Script nên không thể bị "quên cập nhật" như trước.
   if (body?.rowsRemoved === true) {
-    const sheets = getServiceAccountSheetsClient();
-    const nextRowIndex = await rebuildCpaReviewRowIndex(sheets, sheetConfig, month);
-    const matchedIds = new Set(Object.keys(nextRowIndex));
-
-    const rows = await prisma.cpaReviewRecord.findMany({ where: { month } });
-    // "App luôn thắng" — record vừa được app cập nhật gần đây (vd Test Sheet vừa tạo, hoặc
-    // vừa sửa xong) không xoá dù chưa khớp được dòng nào, coi tín hiệu Sheet là stale/đụng độ
-    // thời điểm (chưa kịp đẩy App->Sheet xong thì Sheet đã báo xoá).
-    const missing = rows.filter((r) => !matchedIds.has(r.id) && !isRecentlyUpdatedByApp(r.updatedAt));
-    if (missing.length > 0) {
-      await prisma.cpaReviewRecord.deleteMany({ where: { id: { in: missing.map((r) => r.id) } } });
-    }
-    await saveCpaReviewSheetConfigMap({ ...configMap, [month]: { ...sheetConfig, rowIndex: nextRowIndex } });
-
-    // "Chữa lành" sortOrder khớp lại đúng dòng Sheet mới sau khi rebuild — bug thật gặp
-    // production (2026-09-02): rowIndex (map ID<->dòng thật) được cập nhật ở đây, nhưng
-    // sortOrder (quyết định THỨ TỰ HIỂN THỊ trên app, dùng ở GET /api/cpa-review) trước đây
-    // KHÔNG được đồng bộ theo — nếu 1 dòng bị xoá làm các dòng sau dịch chuyển vị trí, record
-    // tương ứng có thể bị hiển thị SAI THỨ TỰ (sortOrder cũ không còn khớp rowIndex mới) dù
-    // rowIndex đã đúng, dữ liệu App->Sheet vẫn đúng dòng — chỉ riêng thứ tự HIỂN THỊ bị lệch.
-    for (const r of rows) {
-      if (missing.some((m) => m.id === r.id)) continue;
-      const row = nextRowIndex[r.id];
-      if (typeof row === "number" && r.sortOrder !== row) {
-        await prisma.cpaReviewRecord.update({ where: { id: r.id }, data: { sortOrder: row } });
-      }
-    }
-
-    for (const r of missing) {
-      await broadcastCpaReviewChanged(r.id, null);
-    }
-    return NextResponse.json({ ok: true, deleted: missing.length });
+    const { deleted } = await reconcileRowIndexWithSheet(configMap, sheetConfig, month);
+    return NextResponse.json({ ok: true, deleted });
   }
 
   // Dòng VẪN CÒN trên Sheet (không bị xoá hẳn — khác `rowsRemoved` ở trên) nhưng nội dung đã
@@ -231,6 +229,22 @@ export async function POST(request: NextRequest) {
       const patch = sheetChangeToPatch({ columnIndex: cellColumnIndex, rawValue: cellRawValue }, sheetConfig.nameToUserId, crmSourceOptions);
       if (patch) merged[patch.key] = patch.value;
     }
+    // Sheet là nguồn đúng của CẢ dòng: ô trống không được gửi lên cũng phải xoá trống trong app,
+    // nếu không số cũ (vd tiền năm 2023 của khách trước đó ở dòng này) bị giữ lại mãi (bug thật
+    // 2026-10-22: tổng app 413 vs Sheet 382). Chỉ làm khi script gửi `width` (bản mới) — script
+    // cũ quét ít cột hơn, xoá theo nó sẽ xoá nhầm các cột cuối.
+    const sentWidth = typeof body.width === "number" ? body.width : NaN;
+    if (Number.isFinite(sentWidth)) {
+      const sentColumns = new Set(
+        (body.cells as unknown[]).map((raw) => Number((raw as { columnIndex?: unknown }).columnIndex))
+      );
+      for (const indexStr of Object.keys(CPA_REVIEW_SHEET_COLUMN_MAP)) {
+        const index = Number(indexStr);
+        if (index >= sentWidth || sentColumns.has(index)) continue;
+        const patch = sheetChangeToPatch({ columnIndex: index, rawValue: "" }, sheetConfig.nameToUserId, crmSourceOptions);
+        if (patch) merged[patch.key] = patch.value;
+      }
+    }
     // Link đính kèm ô Name (cột B) — bug thật gặp production (thêm 2026-08-31, sửa cùng lúc
     // với việc bỏ SSN bắt buộc): nhánh fullRowSync mới THIẾU HẲN xử lý field này (chỉ nhánh
     // single-cell CŨ, không còn Apps Script nào gửi nữa, mới có) — insert link trên Sheet
@@ -242,8 +256,17 @@ export async function POST(request: NextRequest) {
     if (fullRowNameLink) merged.nameLink = fullRowNameLink;
     merged.__syncedFrom = "sheet";
 
-    const rows = await prisma.cpaReviewRecord.findMany({ where: { month } });
-    const cachedKey = hasFullRowSheetRow ? findRowIndexKeyByRow(sheetConfig.rowIndex, fullRowSheetRow) : undefined;
+    let rows = await prisma.cpaReviewRecord.findMany({ where: { month } });
+    let cachedKey = hasFullRowSheetRow ? findRowIndexKeyByRow(sheetConfig.rowIndex, fullRowSheetRow) : undefined;
+    // Dòng này trên Sheet giờ là khách KHÁC hồ sơ đang gắn với số dòng (dòng bị chèn/sắp xếp
+    // lại) — không ghi đè sang hồ sơ kia, dò lại vị trí toàn bộ theo SSN rồi mới khớp.
+    const cachedSsnKey = cachedKey ? ssnMatchKey((rows.find((r) => r.id === cachedKey)?.custom as Record<string, unknown> | undefined)?.ssn) : "";
+    if (cachedKey && cachedSsnKey && ssnMatchKey(fullRowSsn) && cachedSsnKey !== ssnMatchKey(fullRowSsn)) {
+      const { rowIndex } = await reconcileRowIndexWithSheet(configMap, sheetConfig, month);
+      sheetConfig.rowIndex = rowIndex;
+      rows = await prisma.cpaReviewRecord.findMany({ where: { month } });
+      cachedKey = findRowIndexKeyByRow(rowIndex, fullRowSheetRow);
+    }
     const existing =
       (cachedKey ? rows.find((r) => r.id === cachedKey) : undefined) ??
       (ssnMatchKey(fullRowSsn)

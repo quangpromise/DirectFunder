@@ -1800,6 +1800,14 @@ Tab **Oct26** trên Sheet thật có thêm cột "Pre-Processing Date" ở AG (i
 
 **Bổ sung 2026-10-13** — tab Oct26 chèn thêm cột "Pre-Processing Date (1)" ở AG, đẩy "Pre-Processing Date (Latest)" sang AH, Processing Date sang AI, EL Date sang AJ. Đã sửa: key mới `preProcessingDate1` (32), `preProcessingDate` giữ nguyên key nhưng đổi nhãn "(Latest)" (33), `processingDate` 34, `elDate` 35, `FULL_ROW_LAST_COL = 35`, Apps Script quét tới AJ (36 cột). "Kết nối Sheet" giờ kiểm tra tiêu đề AG/AH chứa "pre" và AI là "Processing" (không chứa "pre"). Sau deploy: nạp lại 4 cột ngày tháng 2026-10 từ Sheet + dán lại Apps Script.
 
+### 4.61 Fix: CPA Review tháng 10 app lệch Sheet (tổng 413 vs 382) do dòng Sheet bị chèn/sắp xếp lại (thêm 2026-10-22)
+
+Tổng "Total > 0" 3 năm (ô A1 Sheet `=Q1+V1+AA1` / tổng trên header app) lệch 413 vs 382. Nguyên nhân: dòng trên Sheet bị chèn/sắp xếp lại → 1 số dòng giờ là khách khác; webhook `fullRowSync` khớp theo SỐ DÒNG và chỉ merge các ô Sheet CÓ giá trị → số tiền năm 2023/2024 của khách cũ ở dòng đó bị giữ lại mãi; dòng 228 còn bị gắn nhầm hồ sơ JOHN T NGUYEN cho khách Harbinder Madar; 2 dòng (198, 212) chưa có hồ sơ. **Đã dọn dữ liệu production** (chỉ ghi app, KHÔNG ghi Sheet — theo yêu cầu "app phải giống sheet"): nạp lại toàn bộ cột tháng 2026-10 từ Sheet, tạo 2 hồ sơ thiếu, xoá 1 hồ sơ gắn nhầm → 231 hồ sơ, tổng 383 khớp Sheet.
+
+**Sửa code**: (1) `fullRowSync` xoá trống các cột không được gửi lên (Sheet là nguồn đúng cả dòng) — chỉ khi payload có `width` (Apps Script mới), script cũ quét ít cột hơn nên không xoá theo nó; (2) nếu SSN của dòng Sheet khác SSN hồ sơ đang gắn với số dòng đó → dò lại toàn bộ vị trí theo SSN (`reconcileRowIndexWithSheet`, dùng chung với nhánh `rowsRemoved`) thay vì ghi đè nhầm; (3) Apps Script gửi `width`, và `onCpaReviewChange` báo cả `INSERT_ROW` (không chỉ xoá dòng).
+
+**Sau khi deploy PHẢI làm** (xoá mục này khi xong): dán lại Apps Script mới vào file Sheet đang kết nối + chạy `installCpaReviewTriggers` — chưa dán thì 2 sửa (1)/(3) chưa có hiệu lực.
+
 Mục 2–5 bên dưới là kiến trúc/quy trình đề xuất (phần lớn đã áp dụng đúng như mô tả, trừ Auth đã nêu ở trên). Mục 6 là checklist hành động cụ thể để đưa app này lên cloud thật.
 
 ## 2. Kiến trúc đề xuất

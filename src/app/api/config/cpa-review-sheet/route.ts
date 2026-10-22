@@ -125,6 +125,7 @@ function onCpaReviewEditLocked(sheet, secret, row, editedStartIdx, editedNumCols
     ssn: String(sheet.getRange(row, 4).getValue() || "").trim(), // cột D, có thể rỗng
     row: row,
     fullRowSync: true,
+    width: width,
     cells: cells
   };
   var nameLink = sheet.getRange(row, 2).getRichTextValue().getLinkUrl();
@@ -132,9 +133,10 @@ function onCpaReviewEditLocked(sheet, secret, row, editedStartIdx, editedNumCols
   cpaReviewPost(payload);
 }
 
-// Xoá hẳn dòng trên Sheet -> server tự quét lại cột SSN của ĐÚNG tab/tháng đó.
+// Xoá/chèn dòng trên Sheet -> server tự quét lại cột SSN của ĐÚNG tab/tháng đó (số dòng của
+// các dòng phía sau đã dịch chuyển).
 function onCpaReviewChange(e) {
-  if (e.changeType !== "REMOVE_ROW" && e.changeType !== "REMOVE_GRID") return;
+  if (e.changeType !== "REMOVE_ROW" && e.changeType !== "REMOVE_GRID" && e.changeType !== "INSERT_ROW") return;
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
   var secret = cpaReviewSecretFor(sheet);
   if (!secret) return;
