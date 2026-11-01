@@ -40,28 +40,53 @@ export function useRealtime(userId: string | undefined): void {
     const pusher = getPusherClient();
     if (!pusher || !userId) return;
 
+    // Gộp các tín hiệu tới dồn dập trong 500ms, rồi chỉ tải ĐÚNG những hồ sơ/dòng vừa đổi
+    // (không tải lại cả bảng — tốn băng thông Neon, hết hạn mức 5GB tháng 10/2026). Quá nhiều
+    // id cùng lúc (vd nhập Excel/đồng bộ hàng loạt) thì tải lại cả bảng 1 lần cho gọn.
+    const MAX_TARGETED = 20;
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-    function onCaseChanged() {
+    const pendingCaseIds = new Set<string>();
+    let pendingFullCases = false;
+    let pendingSms = false;
+    function onCaseChanged(data?: { caseId?: string | null; sms?: boolean }) {
+      if (data?.sms) pendingSms = true;
+      else if (typeof data?.caseId === "string" && data.caseId) pendingCaseIds.add(data.caseId);
+      else pendingFullCases = true;
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
         const state = useAppStore.getState();
-        state.refetchCases();
-        // Gửi/nhận SMS (RingCentral webhook lẫn route gửi) đều bắn lại ĐÚNG tín hiệu
-        // case:changed này (không tạo kênh Pusher riêng, xem pusher-server.ts) — refetch
-        // luôn hộp thư tổng hợp để badge số chưa đọc cạnh chuông thông báo tự cập nhật mà
-        // không cần mở dropdown. Gate theo quyền sendSms để tránh gọi API vô ích cho user
-        // không có quyền (server cũng tự chặn 403, đây chỉ là tối ưu, không phải bảo mật).
+        const ids = [...pendingCaseIds];
+        const full = pendingFullCases || ids.length > MAX_TARGETED;
+        const sms = pendingSms;
+        pendingCaseIds.clear();
+        pendingFullCases = false;
+        pendingSms = false;
+        if (full) state.refetchCases();
+        else if (ids.length > 0) state.applyCaseChanges(ids);
+        if (sms && !full) state.refreshUnreadSmsFlags();
+        // Hộp thư SMS tổng hợp (badge cạnh chuông) chỉ cần nạp lại khi tin nhắn thật sự đổi.
+        // Gate theo quyền sendSms để tránh gọi API vô ích (server cũng tự chặn 403).
         const me = state.users.find((u) => u.id === userId);
-        if (me && hasFeature(state.featurePermissions, "sendSms", me.role)) {
+        if (sms && me && hasFeature(state.featurePermissions, "sendSms", me.role)) {
           state.fetchSmsInbox();
         }
       }, 500);
     }
     let cpaReviewDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-    function onCpaReviewChanged() {
+    const pendingCpaReviewIds = new Set<string>();
+    let pendingFullCpaReview = false;
+    function onCpaReviewChanged(data?: { recordId?: string | null }) {
+      if (typeof data?.recordId === "string" && data.recordId) pendingCpaReviewIds.add(data.recordId);
+      else pendingFullCpaReview = true;
       if (cpaReviewDebounceTimer) clearTimeout(cpaReviewDebounceTimer);
       cpaReviewDebounceTimer = setTimeout(() => {
-        useAppStore.getState().refetchCpaReview();
+        const state = useAppStore.getState();
+        const ids = [...pendingCpaReviewIds];
+        const full = pendingFullCpaReview || ids.length > MAX_TARGETED;
+        pendingCpaReviewIds.clear();
+        pendingFullCpaReview = false;
+        if (full) state.refetchCpaReview();
+        else if (ids.length > 0) state.applyCpaReviewChanges(ids);
       }, 500);
     }
     function onNotification(n: AppNotification) {

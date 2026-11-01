@@ -16,7 +16,7 @@ import { INITIAL_CASES, INITIAL_NOTIFICATIONS, INITIAL_USERS } from "@/lib/mock-
 import { getFullName, primarySsn, splitNameLastWord } from "@/lib/client-name";
 import { summarizeCheckInitial } from "@/lib/check-initial";
 import { DEFAULT_REFUND_YEAR_STATUS, findRefundStatusOption } from "@/lib/refund-status";
-import { api, syncInBackground, type ClientProfilePayload } from "@/lib/api-client";
+import { api, isNotFoundError, syncInBackground, type ClientProfilePayload } from "@/lib/api-client";
 import type { ParsedCaseRow, DuplicateSsnInfo } from "@/lib/excel";
 import { formatSsn } from "@/lib/ssn";
 import { toE164US } from "@/lib/phone";
@@ -253,6 +253,16 @@ interface AppState {
    * thay đổi đến từ webhook Google Sheet (Sheet -> App), trước đây KHÔNG có cơ chế nào báo
    * cho tab đang mở biết để tự cập nhật, chỉ thấy sau khi F5 tay. */
   refetchCpaReview: () => Promise<void>;
+  /** Cập nhật ĐÚNG các hồ sơ vừa đổi (tín hiệu realtime kèm caseId) thay vì tải lại cả danh
+   * sách — tiết kiệm băng thông Neon. Hồ sơ trả 404 (đã xoá/hết quyền xem) bị bỏ khỏi bảng. */
+  applyCaseChanges: (caseIds: string[]) => Promise<void>;
+  /** Cập nhật lại cờ "có SMS chưa đọc" của mọi hồ sơ (tín hiệu realtime `sms`). */
+  refreshUnreadSmsFlags: () => Promise<void>;
+  /** Như applyCaseChanges nhưng cho tab CPA Review (chỉ áp vào tháng đã nạp). */
+  applyCpaReviewChanges: (recordIds: string[]) => Promise<void>;
+  /** Nạp lịch sử sửa/xoá — chỉ gọi khi mở màn hình History (không nạp mỗi lần vào dashboard
+   * nữa, bảng này lớn và tốn băng thông). */
+  loadHistory: () => Promise<void>;
   /** Nạp lại rules sau khi nhận tín hiệu "rules:changed" qua Pusher — trước đây rules chỉ
    * nạp 1 lần lúc hydrateFromServer nên user khác thấy rule mới rất trễ (phải tự F5). */
   refetchRules: () => Promise<void>;
@@ -826,7 +836,7 @@ export const useAppStore = create<AppState>()(
           get().processorReportSelectedMonth && get().processorReportSelectedMonth >= nowMonth
             ? get().processorReportSelectedMonth
             : nowMonth;
-        const [users, cases, config, rules, collectingRecords, cpaReviewRecords, notifications, editHistory, deletionHistory] =
+        const [users, cases, config, rules, collectingRecords, cpaReviewRecords, notifications] =
           await Promise.all([
           api.listUsers(),
           api.listCases(),
@@ -838,12 +848,8 @@ export const useAppStore = create<AppState>()(
           // giờ server là nguồn thật duy nhất (xem prisma model Notification + PATCH
           // /api/cases/[id]), luôn nạp lại mỗi lần vào dashboard giống users/cases/...
           api.listNotifications(),
-          // Tương tự notifications — trước 2026-08-13 editHistory/deletionHistory chỉ tồn tại
-          // local (mỗi trình duyệt chỉ thấy thay đổi do CHÍNH nó thực hiện), giờ server là
-          // nguồn thật duy nhất nên MỌI user xem được TOÀN BỘ lịch sử (xem
-          // EditHistoryEntry/DeletedRowEntry trong schema.prisma).
-          api.listEditHistory(),
-          api.listDeletionHistory(),
+          // Lịch sử sửa/xoá KHÔNG nạp ở đây nữa (bảng lớn, tải mỗi lần vào dashboard làm hết
+          // băng thông Neon 2026-10) — HistoryDialog tự gọi loadHistory() khi mở.
         ]);
         set({
           users,
@@ -875,8 +881,6 @@ export const useAppStore = create<AppState>()(
           processorReportSelectedMonth: nextProcessorReportMonth,
           cpaReviewLoadedMonths: [initialCpaReviewMonth],
           notifications,
-          editHistory,
-          deletionHistory,
           hydrated: true,
         });
       },
@@ -899,6 +903,58 @@ export const useAppStore = create<AppState>()(
       refetchCases: async () => {
         const cases = await api.listCases();
         set({ cases });
+      },
+      applyCaseChanges: async (caseIds) => {
+        const results = await Promise.all(
+          caseIds.map(async (id) => {
+            try {
+              return { id, record: await api.getCase(id) };
+            } catch (err) {
+              return isNotFoundError(err) ? { id, record: null } : null; // lỗi mạng: giữ nguyên dòng cũ
+            }
+          })
+        );
+        set((s) => {
+          let cases = s.cases;
+          for (const r of results) {
+            if (!r) continue;
+            const exists = cases.some((c) => c.id === r.id);
+            if (!r.record) cases = cases.filter((c) => c.id !== r.id);
+            else if (exists) cases = cases.map((c) => (c.id === r.id ? r.record! : c));
+            else cases = [...cases, r.record];
+          }
+          return { cases: [...cases].sort((a, b) => a.sortOrder - b.sortOrder) };
+        });
+      },
+      refreshUnreadSmsFlags: async () => {
+        const ids = new Set(await api.listUnreadSmsCaseIds());
+        set((s) => ({
+          cases: s.cases.map((c) => (c.hasUnreadSms === ids.has(c.id) ? c : { ...c, hasUnreadSms: ids.has(c.id) })),
+        }));
+      },
+      applyCpaReviewChanges: async (recordIds) => {
+        const results = await Promise.all(
+          recordIds.map(async (id) => {
+            try {
+              return { id, record: await api.getCpaReview(id) };
+            } catch (err) {
+              return isNotFoundError(err) ? { id, record: null } : null;
+            }
+          })
+        );
+        set((s) => {
+          let records = s.cpaReviewRecords;
+          for (const r of results) {
+            if (!r) continue;
+            records = records.filter((x) => x.id !== r.id);
+            if (r.record && s.cpaReviewLoadedMonths.includes(r.record.month)) records = [...records, r.record];
+          }
+          return { cpaReviewRecords: [...records].sort((a, b) => a.sortOrder - b.sortOrder) };
+        });
+      },
+      loadHistory: async () => {
+        const [editHistory, deletionHistory] = await Promise.all([api.listEditHistory(), api.listDeletionHistory()]);
+        set({ editHistory, deletionHistory });
       },
       refetchRules: async () => {
         const rules = await api.listRules();

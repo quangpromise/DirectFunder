@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
-import { canEditCase, canEditColumn, hasFeature } from "@/lib/rbac";
+import { canEditCase, canEditColumn, canViewCase, hasFeature } from "@/lib/rbac";
 import { getFullName, primarySsn } from "@/lib/client-name";
 import { todayIsoDate } from "@/lib/date-format";
 import { broadcastCaseChanged, broadcastNotification } from "@/lib/pusher-server";
 import { toNotificationRecord } from "@/app/api/notifications/route";
+import { toCaseRecord } from "@/app/api/cases/route";
+import { toE164US } from "@/lib/phone";
 import type { ClientNameEntry, ColumnDef, FeaturePermissions, OrderRecord } from "@/lib/types";
 import type { Prisma } from "@prisma/client";
 
@@ -68,6 +70,37 @@ const ALLOWED_FIELDS = new Set([
   "refundYearEfileDate",
   "refundYearAlarm",
 ]);
+
+/** Đúng 1 hồ sơ — trình duyệt gọi khi nhận tín hiệu realtime "case:changed" thay vì tải lại
+ * CẢ danh sách (tốn băng thông Neon, gói Free giới hạn 5GB/tháng — hết hạn mức 2026-10-31).
+ * 404 = đã xoá hoặc user không còn quyền xem -> client bỏ dòng đó khỏi bảng. */
+export async function GET(_request: NextRequest, ctx: RouteContext<"/api/cases/[id]">) {
+  const me = await requireUser();
+  if (!me) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
+  const { id } = await ctx.params;
+  const row = await prisma.case.findUnique({ where: { id } });
+  if (!row) return NextResponse.json({ error: "Không tìm thấy" }, { status: 404 });
+  const phones = [toE164US(row.phone), toE164US(row.phone2)].filter((n): n is string => n !== null);
+  const unread =
+    phones.length > 0
+      ? await prisma.smsMessage.count({ where: { direction: "in", readAt: null, counterpartNumber: { in: phones } } })
+      : 0;
+  const record = toCaseRecord(row, unread > 0);
+  const visible = canViewCase(
+    me.role,
+    me.id,
+    {
+      assignedTo: record.assignedTo,
+      assignedProcessor: record.assignedProcessor,
+      assignedTo2: record.assignedTo2,
+      assignedProcessor2: record.assignedProcessor2,
+      createdBy: record.createdBy,
+    },
+    me.teamMemberIds
+  );
+  if (!visible) return NextResponse.json({ error: "Không tìm thấy" }, { status: 404 });
+  return NextResponse.json(record);
+}
 
 export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/cases/[id]">) {
   const me = await requireUser();

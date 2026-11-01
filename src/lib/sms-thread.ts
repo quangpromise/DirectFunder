@@ -1,6 +1,6 @@
 import { prisma } from "./prisma";
 import { sendRingCentralSms, sendRingCentralMms } from "./ringcentral";
-import { broadcastCaseChanged } from "./pusher-server";
+import { broadcastSmsChanged } from "./pusher-server";
 import { toE164US } from "./phone";
 import { getAllClientNames } from "./client-name";
 import type { SmsMessageRecord, SmsConversationSummary } from "./types";
@@ -56,7 +56,7 @@ export async function sendSmsToPhone(
   const created = await prisma.smsMessage.create({
     data: { direction: "out", counterpartNumber: phone, text, ringcentralMessageId: sent.id, sentByUserId },
   });
-  await broadcastCaseChanged(phone, socketId);
+  await broadcastSmsChanged(socketId);
   return toSmsRecord(created);
 }
 
@@ -79,7 +79,7 @@ export async function sendMmsToPhone(
   const created = await prisma.smsMessage.create({
     data: { direction: "out", counterpartNumber: phone, text, ringcentralMessageId: sent.id, sentByUserId },
   });
-  await broadcastCaseChanged(phone, socketId);
+  await broadcastSmsChanged(socketId);
   return toSmsRecord(created);
 }
 
@@ -93,7 +93,7 @@ export async function markPhonesRead(phones: string[], socketId: string | null):
     where: { direction: "in", readAt: null, counterpartNumber: { in: phones } },
     data: { readAt: new Date() },
   });
-  if (result.count > 0) await broadcastCaseChanged(phones[0], socketId);
+  if (result.count > 0) await broadcastSmsChanged(socketId);
   return result.count;
 }
 
@@ -105,7 +105,7 @@ export async function deleteSmsMessage(id: string, socketId: string | null): Pro
   const existing = await prisma.smsMessage.findUnique({ where: { id }, select: { counterpartNumber: true } });
   if (!existing) return null;
   await prisma.smsMessage.delete({ where: { id } });
-  await broadcastCaseChanged(existing.counterpartNumber, socketId);
+  await broadcastSmsChanged(socketId);
   return existing.counterpartNumber;
 }
 
@@ -114,7 +114,7 @@ export async function deleteSmsMessage(id: string, socketId: string | null): Pro
  * SmsMessage hiện có, không phải bảng riêng nên không cần xoá gì thêm). */
 export async function deleteThreadForPhone(phone: string, socketId: string | null): Promise<number> {
   const result = await prisma.smsMessage.deleteMany({ where: { counterpartNumber: phone } });
-  if (result.count > 0) await broadcastCaseChanged(phone, socketId);
+  if (result.count > 0) await broadcastSmsChanged(socketId);
   return result.count;
 }
 

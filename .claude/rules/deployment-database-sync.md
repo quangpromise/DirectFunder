@@ -1808,6 +1808,16 @@ Tổng "Total > 0" 3 năm (ô A1 Sheet `=Q1+V1+AA1` / tổng trên header app) l
 
 **Sau khi deploy PHẢI làm** (xoá mục này khi xong): dán lại Apps Script mới vào file Sheet đang kết nối + chạy `installCpaReviewTriggers` — chưa dán thì 2 sửa (1)/(3) chưa có hiệu lực.
 
+### 4.62 Giảm băng thông Neon — realtime chỉ tải đúng bản ghi vừa đổi (thêm 2026-11-01)
+
+Production bị khoá lần 2 (2026-10-31) vì hết hạn mức **data transfer 5GB/tháng** của gói Free Neon (khác lần 1 hết compute hours do trigger Ghi chú CPA Review). DB thật chỉ ~5MB, băng thông bị tiêu do đọc lại CẢ bảng liên tục: mỗi tín hiệu `case:changed` khiến MỌI trình duyệt đang mở gọi `GET /api/cases` (cả bảng, ~1MB), `cpaReview:changed` tải lại cả tháng, webhook Sheet đọc cả tháng ở mỗi lần sửa 1 ô, và lịch sử sửa/xoá (~1.4MB) tải ở mỗi lần vào dashboard. Đã sửa:
+- `GET /api/cases/[id]` và `GET /api/cpa-review/[id]` (mới, 404 = đã xoá/không còn quyền xem) — `use-realtime.ts` gom id trong 500ms rồi chỉ gọi các endpoint này (`applyCaseChanges`/`applyCpaReviewChanges` trong `app-store.ts`); >20 id cùng lúc mới tải lại cả bảng.
+- SMS đổi tín hiệu riêng `broadcastSmsChanged` (cùng sự kiện `case:changed`, payload `{caseId:null, sms:true}`) — client chỉ gọi `GET /api/cases?unreadSms=1` (danh sách id có SMS chưa đọc) + hộp thư, không tải lại hồ sơ.
+- Webhook CPA Review `fullRowSync` chỉ `findUnique` hồ sơ đã biết qua `rowIndex`, chỉ đọc cả tháng khi chưa biết dòng/đổi khách.
+- `hydrateFromServer` không nạp lịch sử nữa; `HistoryDialog` gọi `loadHistory()` mỗi lần mở.
+
+Đã verify sống ở local (dev server + 2 phiên Playwright thật): sửa 1 hồ sơ ở phiên B → phiên A chỉ gọi `GET /api/cases/<id>` và ô cập nhật đúng; tạo/sửa/xoá dòng CPA Review → A chỉ gọi `GET /api/cpa-review/<id>`, dòng hiện/đổi/biến mất đúng; Agent gọi hồ sơ không thuộc mình → 404. Không đổi schema, không cần bước production nào — chỉ deploy code. Theo dõi trang Usage của Neon sau vài ngày để xác nhận băng thông/ngày giảm rõ.
+
 Mục 2–5 bên dưới là kiến trúc/quy trình đề xuất (phần lớn đã áp dụng đúng như mô tả, trừ Auth đã nêu ở trên). Mục 6 là checklist hành động cụ thể để đưa app này lên cloud thật.
 
 ## 2. Kiến trúc đề xuất

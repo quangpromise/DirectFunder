@@ -256,22 +256,26 @@ export async function POST(request: NextRequest) {
     if (fullRowNameLink) merged.nameLink = fullRowNameLink;
     merged.__syncedFrom = "sheet";
 
-    let rows = await prisma.cpaReviewRecord.findMany({ where: { month } });
+    // Chỉ đọc ĐÚNG hồ sơ đang gắn với số dòng này (đã biết qua rowIndex) — đọc cả tháng ở MỌI
+    // lần sửa 1 ô trên Sheet từng làm hết băng thông Neon (2026-10). Chỉ đọc cả tháng khi thật
+    // sự cần: chưa biết dòng này là hồ sơ nào, hoặc dòng đã đổi sang khách khác.
+    const fullRowSsnKey = ssnMatchKey(fullRowSsn);
     let cachedKey = hasFullRowSheetRow ? findRowIndexKeyByRow(sheetConfig.rowIndex, fullRowSheetRow) : undefined;
+    let existing = cachedKey ? await prisma.cpaReviewRecord.findUnique({ where: { id: cachedKey } }) : null;
+    const cachedSsnKey = existing ? ssnMatchKey((existing.custom as Record<string, unknown>)?.ssn) : "";
     // Dòng này trên Sheet giờ là khách KHÁC hồ sơ đang gắn với số dòng (dòng bị chèn/sắp xếp
     // lại) — không ghi đè sang hồ sơ kia, dò lại vị trí toàn bộ theo SSN rồi mới khớp.
-    const cachedSsnKey = cachedKey ? ssnMatchKey((rows.find((r) => r.id === cachedKey)?.custom as Record<string, unknown> | undefined)?.ssn) : "";
-    if (cachedKey && cachedSsnKey && ssnMatchKey(fullRowSsn) && cachedSsnKey !== ssnMatchKey(fullRowSsn)) {
+    if (existing && cachedSsnKey && fullRowSsnKey && cachedSsnKey !== fullRowSsnKey) {
       const { rowIndex } = await reconcileRowIndexWithSheet(configMap, sheetConfig, month);
       sheetConfig.rowIndex = rowIndex;
-      rows = await prisma.cpaReviewRecord.findMany({ where: { month } });
       cachedKey = findRowIndexKeyByRow(rowIndex, fullRowSheetRow);
+      existing = cachedKey ? await prisma.cpaReviewRecord.findUnique({ where: { id: cachedKey } }) : null;
     }
-    const existing =
-      (cachedKey ? rows.find((r) => r.id === cachedKey) : undefined) ??
-      (ssnMatchKey(fullRowSsn)
-        ? rows.find((r) => ssnMatchKey((r.custom as Record<string, unknown>).ssn) === ssnMatchKey(fullRowSsn))
-        : undefined);
+    if (existing && existing.month !== month) existing = null;
+    if (!existing && fullRowSsnKey) {
+      const rows = await prisma.cpaReviewRecord.findMany({ where: { month } });
+      existing = rows.find((r) => ssnMatchKey((r.custom as Record<string, unknown>).ssn) === fullRowSsnKey) ?? null;
+    }
 
     if (!existing) {
       const created = await prisma.cpaReviewRecord.create({

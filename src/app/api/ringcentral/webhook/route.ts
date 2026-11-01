@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { fetchRecentInboundSms, isRingCentralConfigured } from "@/lib/ringcentral";
-import { broadcastCaseChanged } from "@/lib/pusher-server";
+import { broadcastSmsChanged } from "@/lib/pusher-server";
 
 /**
  * Webhook nhận SMS đến real-time (RingCentral subscription, xem POST /api/config/ringcentral
@@ -54,7 +54,7 @@ export async function POST(request: Request) {
       }
     }
     if (createdCount > 0) {
-      await broadcastCaseChanged("sms", null);
+      await broadcastSmsChanged(null);
     }
     return NextResponse.json({ ok: true, created: createdCount });
   } catch (err) {

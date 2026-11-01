@@ -104,7 +104,28 @@ export function toCaseRecord(row: {
   };
 }
 
-export async function GET() {
+/** id các hồ sơ đang có tin nhắn SMS chưa đọc — nhẹ hơn hẳn tải lại cả danh sách hồ sơ khi
+ * chỉ có tin nhắn SMS thay đổi (tín hiệu realtime `sms`). */
+async function unreadSmsCaseIds(): Promise<string[]> {
+  const unreadRows = await prisma.smsMessage.findMany({
+    where: { direction: "in", readAt: null },
+    select: { counterpartNumber: true },
+    distinct: ["counterpartNumber"],
+  });
+  if (unreadRows.length === 0) return [];
+  const unreadNumbers = new Set(unreadRows.map((r) => r.counterpartNumber));
+  const phones = await prisma.case.findMany({ select: { id: true, phone: true, phone2: true } });
+  return phones
+    .filter((c) => [toE164US(c.phone), toE164US(c.phone2)].some((n) => n !== null && unreadNumbers.has(n)))
+    .map((c) => c.id);
+}
+
+export async function GET(request: NextRequest) {
+  if (request.nextUrl.searchParams.get("unreadSms") === "1") {
+    const me = await requireUser();
+    if (!me) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
+    return NextResponse.json(await unreadSmsCaseIds());
+  }
   const me = await requireUser();
   if (!me) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
 

@@ -30,6 +30,17 @@ function canEditRecord(me: { id: string; role: string }, custom: Record<string, 
 
 const ROW_LOCKED_MESSAGE = "Dòng này đã gán cho Processor khác — chỉ đúng Processor đó hoặc Quản lý/Processor Leader mới sửa/xoá được";
 
+/** Đúng 1 dòng — trình duyệt gọi khi nhận tín hiệu realtime "cpaReview:changed" thay vì tải
+ * lại cả tháng (tiết kiệm băng thông Neon). 404 = đã xoá -> client bỏ dòng đó. */
+export async function GET(_request: NextRequest, ctx: RouteContext<"/api/cpa-review/[id]">) {
+  const me = await requireUser();
+  if (!me) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
+  const { id } = await ctx.params;
+  const row = await prisma.cpaReviewRecord.findUnique({ where: { id } });
+  if (!row) return NextResponse.json({ error: "Không tìm thấy" }, { status: 404 });
+  return NextResponse.json(toCpaReviewRecord(row));
+}
+
 /** Không kiểm tra editableBy theo từng key (cột cố định, không admin cấu hình) — mọi user
  * có quyền viewCpaReview đều sửa được mọi ô (đơn giản hoá, đúng tinh thần "tab riêng biệt"
  * yêu cầu 2026-08-14), enforcement chỉ ở mức đã đăng nhập tại server, ẩn/hiện toàn tab ở

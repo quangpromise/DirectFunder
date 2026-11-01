@@ -68,6 +68,13 @@ export async function broadcastCaseChanged(caseId: string, socketId: string | nu
   await safeTrigger(CASES_CHANNEL, "case:changed", { caseId }, socketId);
 }
 
+/** Tin nhắn SMS vừa đổi (gửi/nhận/đánh dấu đã đọc) — cùng kênh/sự kiện "case:changed" để
+ * client cũ vẫn chạy, nhưng gắn cờ `sms` thay vì caseId giả (số điện thoại) để client mới chỉ
+ * tải lại hộp thư + cờ chưa đọc, không tải lại cả danh sách hồ sơ. */
+export async function broadcastSmsChanged(socketId: string | null): Promise<void> {
+  await safeTrigger(CASES_CHANNEL, "case:changed", { caseId: null, sms: true }, socketId);
+}
+
 /** Tín hiệu RỖNG tương tự broadcastCaseChanged nhưng cho bảng "CPA Review" (độc lập với
  * Case) — cần riêng vì mọi thay đổi tới bảng này (kể cả từ webhook Google Sheet, xem
  * src/app/api/cpa-review-sheet/webhook/route.ts) trước đây KHÔNG bắn tín hiệu gì, khiến

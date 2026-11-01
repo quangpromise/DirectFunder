@@ -27,7 +27,16 @@ import type {
 import type { MyNotesData } from "./my-notes";
 import { getSocketId } from "./pusher-client";
 
-class ApiError extends Error {}
+class ApiError extends Error {
+  constructor(message: string, readonly status?: number) {
+    super(message);
+  }
+}
+
+/** Lỗi 404 từ API (bản ghi đã xoá hoặc không còn quyền xem). */
+export function isNotFoundError(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 404;
+}
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   // Gắn socket_id Pusher hiện tại (nếu có) — server đọc header này để loại trừ, không bắn
@@ -47,7 +56,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => null);
-    throw new ApiError(body?.error ?? `Request failed: ${res.status}`);
+    throw new ApiError(body?.error ?? `Request failed: ${res.status}`, res.status);
   }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
@@ -102,6 +111,8 @@ export const api = {
   removeUser: (userId: string) => request<{ ok: true }>(`/api/users/${userId}`, { method: "DELETE" }),
 
   listCases: () => request<CaseRecord[]>("/api/cases"),
+  getCase: (caseId: string) => request<CaseRecord>(`/api/cases/${caseId}`),
+  listUnreadSmsCaseIds: () => request<string[]>("/api/cases?unreadSms=1"),
   createCase: (kase: CaseRecord) => request<CaseRecord>("/api/cases", { method: "POST", body: JSON.stringify(kase) }),
   patchCase: (caseId: string, patch: Partial<CaseRecord>) =>
     request<{ id: string; updatedAt: string }>(`/api/cases/${caseId}`, { method: "PATCH", body: JSON.stringify(patch) }),
@@ -117,6 +128,7 @@ export const api = {
     }),
   deleteCollecting: (rowId: string) => request<{ ok: true }>(`/api/collecting/${rowId}`, { method: "DELETE" }),
 
+  getCpaReview: (rowId: string) => request<CpaReviewRecord>(`/api/cpa-review/${rowId}`),
   listCpaReview: (month?: string) =>
     request<CpaReviewRecord[]>(month ? `/api/cpa-review?month=${encodeURIComponent(month)}` : "/api/cpa-review"),
   createCpaReview: (row: CpaReviewRecord) =>

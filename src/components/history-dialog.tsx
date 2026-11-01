@@ -7,6 +7,7 @@ import { DeletedRowRecord, EditHistoryRecord, User } from "@/lib/types";
 import { getFullName, primarySsn } from "@/lib/client-name";
 import { useT } from "@/lib/i18n";
 import { toPhoenixDateStr } from "@/lib/report-period";
+import { useAppStore } from "@/store/app-store";
 
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleString("vi-VN", {
@@ -50,7 +51,11 @@ export function HistoryDialog({
   return (
     <>
       <button
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          setOpen(true);
+          // Lịch sử không nạp sẵn lúc vào dashboard (tốn băng thông) — nạp mỗi lần mở.
+          useAppStore.getState().loadHistory().catch(() => {});
+        }}
         className="flex h-9 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-sm text-text-dim transition hover:bg-surface-hover hover:text-text"
         title={t("history.button")}
       >
