@@ -430,8 +430,20 @@ async function pushRecordToSheet(
       targetRow = legacyRow;
       removeLegacyKey = ssn;
     } else {
+      // Dòng trống đầu tiên SAU dòng cuối có dữ liệu THẬT trên Sheet (đọc trực tiếp cột A-E) —
+      // KHÔNG chỉ dựa vào max(rowIndex): rowIndex chỉ có các dòng app đã biết, Sheet thường dài
+      // hơn (dòng gõ tay chưa đồng bộ về app), nên "max+1" từng trỏ vào dòng đã có dữ liệu và
+      // GHI ĐÈ mất dữ liệu Sheet (bug thật 2026-11-03, Kim Bang Tran bị ghi đè dòng 29).
       const occupied = Object.values(config.rowIndex);
-      targetRow = occupied.length > 0 ? Math.max(...occupied) + 1 : SCAN_START_ROW;
+      let lastSheetRow = SCAN_START_ROW - 1;
+      const scan = await sheets.spreadsheets.values.get({
+        spreadsheetId: config.sheetId,
+        range: `'${config.tabName}'!A${SCAN_START_ROW}:E${SCAN_START_ROW + SCAN_ROW_LIMIT - 1}`,
+      });
+      (scan.data.values ?? []).forEach((r, i) => {
+        if ((r ?? []).some((c) => String(c ?? "").trim())) lastSheetRow = SCAN_START_ROW + i;
+      });
+      targetRow = Math.max(lastSheetRow, ...occupied, SCAN_START_ROW - 1) + 1;
       appendedRow = targetRow;
     }
   }
@@ -512,6 +524,10 @@ export async function syncRecordToCpaReviewSheet(record: CpaReviewRecord): Promi
         ...map,
         [record.month]: { ...sheetConfig, rowIndex: applyRowIndexResult(sheetConfig.rowIndex, result) },
       });
+      // Giữ sortOrder (thứ tự hiển thị) = đúng số dòng Sheet vừa chọn để app khớp Sheet.
+      if (record.sortOrder !== result.row) {
+        await prisma.cpaReviewRecord.update({ where: { id: record.id }, data: { sortOrder: result.row } });
+      }
     }
   } catch (err) {
     console.error("syncRecordToCpaReviewSheet thất bại (bỏ qua, không ảnh hưởng response chính):", err);
