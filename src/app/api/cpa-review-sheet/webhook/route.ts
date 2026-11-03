@@ -277,6 +277,16 @@ export async function POST(request: NextRequest) {
       existing = rows.find((r) => ssnMatchKey((r.custom as Record<string, unknown>).ssn) === fullRowSsnKey) ?? null;
     }
 
+    // Dòng Sheet chỉ có số 0 do công thức cột Tổng (Q/V/AA) và không có dữ liệu thật nào thì
+    // KHÔNG tạo hồ sơ mới — nếu không, sửa/xoá 1 vùng dòng trống phía dưới bảng sẽ sinh hàng
+    // trăm hồ sơ rỗng trong app (bug thật 2026-11-03: 124 dòng trống, row 143-266).
+    const hasRealData = Object.entries(merged).some(
+      ([key, value]) => key !== "__syncedFrom" && (typeof value === "number" ? value !== 0 : String(value ?? "").trim() !== "")
+    );
+    if (!existing && !hasRealData) {
+      return NextResponse.json({ ok: true, skipped: "empty_row" });
+    }
+
     if (!existing) {
       const created = await prisma.cpaReviewRecord.create({
         // sortOrder = ĐÚNG số dòng Sheet (thêm 2026-08-31, theo yêu cầu "đảm bảo dữ liệu từ
